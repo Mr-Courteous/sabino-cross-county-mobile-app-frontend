@@ -22,34 +22,40 @@ import { API_BASE_URL } from '@/utils/api-service';
 const { width } = Dimensions.get('window');
 
 interface Grade {
-    subject_name: string;
-    ca1_score: number;
-    ca2_score: number;
-    ca3_score: number;
-    ca4_score: number;
-    exam_score: number;
-    student_total: number;
-    class_average: number;
+    subject_name: string | null;
+    ca1_score: number | string | null;
+    ca2_score: number | string | null;
+    ca3_score: number | string | null;
+    ca4_score: number | string | null;
+    exam_score: number | string | null;
+    student_total?: number | string | null; // some endpoints return `student_total`
+    total_score?: number | string | null; // others return `total_score`
+    class_average?: number | string | null;
 }
 
 interface Enrollment {
     enrollment_id: number;
     session_id: number;
+    academic_year_label: string;
     academic_session: string;
+    enrollment_status: string;
+    class_id: number;
     class_name: string;
+    created_at: string;
 }
 
 interface Session {
     id: number;
-    session_name: string;
+    year_label: string;
 }
 
 interface Summary {
-    position: number;
-    total_students: number;
-    average_score: number;
-    subjects_passed: number;
-    subjects_failed: number;
+    position?: number | string | null;
+    total_students?: number | string | null;
+    student_total_score?: number | string | null;
+    average_score?: number | string | null;
+    subjects_passed?: number | string | null;
+    subjects_failed?: number | string | null;
 }
 
 const getToken = async () => {
@@ -97,8 +103,8 @@ export default function StudentGrades() {
                 return;
             }
 
-            // Fetch Academic Sessions
-            const sessRes = await fetch(`${API_BASE_URL}/api/academic-sessions`, {
+            // Fetch Academic Years
+            const sessRes = await fetch(`${API_BASE_URL}/api/academic-years`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const sessData = await sessRes.json();
@@ -152,30 +158,26 @@ export default function StudentGrades() {
         try {
             const token = await getToken();
 
-            // Fetch detailed scores (subject-wise + class averages)
-            const reportRes = await fetch(`${API_BASE_URL}/api/reports/data/student/${selectedEnrollment.enrollment_id}?term=${selectedTerm}&sessionId=${selectedSessionId}`, {
+            // Fetch detailed scores and summary stats from my-grades endpoint
+            // prefer the enrollment's session_id when available (ensures accuracy)
+            const sessionIdToUse = selectedEnrollment?.session_id || selectedSessionId;
+            const res = await fetch(`${API_BASE_URL}/api/scores/my-grades?term=${selectedTerm}&sessionId=${sessionIdToUse}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const reportData = await reportRes.json();
+            const data = await res.json();
 
-            // Fetch summary stats (ranking, passed/failed)
-            const statsRes = await fetch(`${API_BASE_URL}/api/scores/my-grades?term=${selectedTerm}&sessionId=${selectedSessionId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const statsData = await statsRes.json();
+            // Debugging logs
+            console.log('🟣 fetchGrades: my-grades data =>', data);
 
-            if (reportData.success) {
-                setGrades(reportData.data);
+            if (data.success) {
+                setGrades(data.data);
+                setSummary(data.summary);
             } else {
                 setGrades([]);
+                setSummary(null);
                 Alert.alert('No Records', 'No scores found for the selected period.');
             }
 
-            if (statsData.success) {
-                setSummary(statsData.summary);
-            } else {
-                setSummary(null);
-            }
         } catch (error) {
             console.error('Grades fetch error:', error);
             Alert.alert('Error', 'Could not retrieve academic records');
@@ -195,6 +197,10 @@ export default function StudentGrades() {
 
     const handleEnrollmentChange = (enr: Enrollment) => {
         setSelectedEnrollment(enr);
+        // Keep selected session in sync with chosen enrollment to avoid mismatches
+        if (enr?.session_id) {
+            setSelectedSessionId(enr.session_id);
+        }
         setGrades([]);
         setSummary(null);
     };
@@ -206,31 +212,82 @@ export default function StudentGrades() {
     };
 
     const handleDownloadReport = async () => {
-        if (!selectedEnrollment || !selectedSessionId) return;
+        if (!selectedEnrollment) {
+            Alert.alert('Error', 'Please select an enrollment first');
+            return;
+        }
 
         setDownloading(true);
         try {
             const token = await getToken();
-            const downloadUrl = `${API_BASE_URL}/api/reports/download/official-report/${selectedEnrollment.enrollment_id}?term=${selectedTerm}&sessionId=${selectedSessionId}&token=${token}`;
+            if (!token) {
+                Alert.alert('Error', 'Authentication required. Please login again.');
+                return;
+            }
+
+            const sessionIdToUse = selectedEnrollment?.session_id || selectedSessionId;
+            const downloadUrl = `${API_BASE_URL}/api/reports/download/official-report/${selectedEnrollment.enrollment_id}?term=${selectedTerm}&sessionId=${sessionIdToUse}`;
             const fileName = `Official_Report_${selectedEnrollment.class_name}_T${selectedTerm}.pdf`;
 
             if (Platform.OS === 'web') {
-                window.open(downloadUrl, '_blank');
+                // For web, fetch the PDF and download as blob
+                try {
+                    const response = await fetch(downloadUrl, {
+                        method: 'GET',
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const blob = await response.blob();
+                    
+                    // Create blob URL and trigger download
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    
+                    // Cleanup
+                    setTimeout(() => {
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(blobUrl);
+                    }, 100);
+
+                    Alert.alert('Success', `Report downloaded: ${fileName}`);
+                } catch (fetchError) {
+                    console.error('Fetch error:', fetchError);
+                    throw fetchError;
+                }
             } else {
+                // For mobile, download to device
                 const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+                console.log('Downloading from:', downloadUrl);
+                console.log('Saving to:', fileUri);
+
                 const result = await FileSystem.downloadAsync(downloadUrl, fileUri, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
-                if (result.status === 200) {
+                if (result?.status === 200) {
+                    console.log('PDF downloaded to:', result.uri);
                     Alert.alert('Success', 'Report card downloaded successfully.', [
-                        { text: 'View', onPress: () => Linking.openURL(result.uri) },
+                        { text: 'View', onPress: () => Linking.openURL(result.uri!) },
                         { text: 'Done' }
                     ]);
+                } else {
+                    throw new Error('Download failed with status: ' + result?.status);
                 }
             }
         } catch (error) {
-            Alert.alert('Error', 'Failed to download report card');
+            console.error('Download Error:', error);
+            Alert.alert('Download Failed', error instanceof Error ? error.message : 'Failed to download report card');
         } finally {
             setDownloading(false);
         }
@@ -278,7 +335,7 @@ export default function StudentGrades() {
                                     onPress={() => handleSessionChange(sess.id)}
                                 >
                                     <Text style={[styles.pillText, selectedSessionId === sess.id && styles.pillTextActive]}>
-                                        {sess.session_name}
+                                        {sess.year_label}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -349,28 +406,37 @@ export default function StudentGrades() {
                         <>
                             {summary && (
                                 <View style={styles.summaryContainer}>
-                                    <MetricCard label="Class Rank" value={`${summary.position}/${summary.total_students}`} icon="trophy" color="#FACC15" />
-                                    <MetricCard label="Average" value={`${parseFloat(summary.average_score as any).toFixed(1)}%`} icon="trending-up" color="#3B82F6" />
-                                    <MetricCard label="Standing" value={`${summary.subjects_passed} / ${summary.subjects_passed + summary.subjects_failed}`} icon="ribbon" color="#10B981" />
+                                    <MetricCard label="Class Rank" value={`${summary.position ?? '-'} / ${summary.total_students ?? '-'}`} icon="trophy" color="#FACC15" />
+                                    <MetricCard label="Average" value={summary.average_score ? `${parseFloat(summary.average_score as any).toFixed(1)}%` : 'N/A'} icon="trending-up" color="#3B82F6" />
+                                    <MetricCard label="Standing" value={`${summary.subjects_passed ?? 0} / ${((Number(summary.subjects_passed) || 0) + (Number(summary.subjects_failed) || 0))}`} icon="ribbon" color="#10B981" />
                                 </View>
                             )}
 
                             <View style={styles.gradesList}>
                                 {grades.map((grade, idx) => {
-                                    const letterGrade = getLetterGrade(grade.student_total);
-                                    const diff = (grade.student_total - grade.class_average).toFixed(1);
-                                    const isAbove = parseFloat(diff) >= 0;
+                                    // Normalize numeric fields (they may come as strings or null)
+                                    const ca1 = Number(grade.ca1_score) || 0;
+                                    const ca2 = Number(grade.ca2_score) || 0;
+                                    const ca3 = Number(grade.ca3_score) || 0;
+                                    const ca4 = Number(grade.ca4_score) || 0;
+                                    const exam = Number(grade.exam_score) || 0;
+                                    const total = Number(grade.student_total ?? grade.total_score) || 0;
+                                    const classAvg = grade.class_average !== undefined && grade.class_average !== null ? Number(grade.class_average) : null;
+
+                                    const letterGrade = getLetterGrade(total);
+                                    const diff = classAvg !== null ? (total - classAvg).toFixed(1) : '—';
+                                    const isAbove = diff !== '—' ? parseFloat(diff) >= 0 : false;
 
                                     return (
                                         <View key={idx} style={styles.gradeCard}>
                                             <View style={styles.gradeHeader}>
                                                 <View style={{ flex: 1 }}>
-                                                    <Text style={styles.subjectTitle}>{grade.subject_name}</Text>
+                                                    <Text style={styles.subjectTitle}>{grade.subject_name || 'Subject'}</Text>
                                                     <View style={styles.compRow}>
-                                                        <Text style={styles.avgText}>Avg: {parseFloat(grade.class_average as any).toFixed(1)}%</Text>
+                                                        <Text style={styles.avgText}>Avg: {classAvg !== null ? `${classAvg.toFixed(1)}%` : 'N/A'}</Text>
                                                         <View style={[styles.diffBadge, { backgroundColor: isAbove ? '#10B98120' : '#EF444420' }]}>
                                                             <Text style={[styles.diffValue, { color: isAbove ? '#10B981' : '#EF4444' }]}>
-                                                                {isAbove ? '+' : ''}{diff}%
+                                                                {diff === '—' ? '—' : `${isAbove ? '+' : ''}${diff}%`}
                                                             </Text>
                                                         </View>
                                                     </View>
@@ -381,16 +447,16 @@ export default function StudentGrades() {
                                             </View>
 
                                             <View style={styles.breakdown}>
-                                                <ScorePart label="CA" val={grade.ca1_score + grade.ca2_score + grade.ca3_score + grade.ca4_score} max={40} />
-                                                <ScorePart label="Exam" val={grade.exam_score} max={60} />
+                                                <ScorePart label="CA" val={ca1 + ca2 + ca3 + ca4} max={40} />
+                                                <ScorePart label="Exam" val={exam} max={60} />
                                                 <View style={styles.totalBlock}>
                                                     <Text style={styles.totalLabel}>Grand Total</Text>
-                                                    <Text style={styles.totalNum}>{grade.student_total}</Text>
+                                                    <Text style={styles.totalNum}>{total || '—'}</Text>
                                                 </View>
                                             </View>
 
                                             <View style={styles.barContainer}>
-                                                <View style={[styles.barFill, { width: `${grade.student_total}%`, backgroundColor: letterGrade.color }]} />
+                                                <View style={[styles.barFill, { width: `${Math.min(total, 100)}%`, backgroundColor: letterGrade.color }]} />
                                             </View>
                                         </View>
                                     );
