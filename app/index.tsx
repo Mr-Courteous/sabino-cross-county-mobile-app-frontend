@@ -39,9 +39,9 @@ export default function HomePage() {
               <TouchableOpacity
                 activeOpacity={0.9}
                 style={styles.ctaButton}
-                onPress={() => router.push('/(auth)/register')}
+                onPress={() => router.push('/(auth)/verify-email')}
               >
-                <Text style={styles.ctaButtonText}>GET STARTED</Text>
+                <Text style={styles.ctaButtonText}>CREATE NEW ACCOUNT</Text>
                 <Ionicons name="arrow-forward-circle" size={24} color="#fff" style={{ marginLeft: 10 }} />
               </TouchableOpacity>
 
@@ -200,8 +200,19 @@ const styles = StyleSheet.create({
   fTitle: { fontSize: 16, fontWeight: '900', color: '#1E293B', letterSpacing: -0.3 },
   fDesc: { fontSize: 13, color: '#64748B', marginTop: 8, lineHeight: 20, fontWeight: '500' },
 
-  loginOutline: { marginTop: 25, padding: 20, borderRadius: 15, borderWidth: 2, borderColor: '#F1F5F9', alignItems: 'center' },
-  loginOutlineText: { color: '#1E293B', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
+  loginOutline: {
+    backgroundColor: '#2563EB',
+    marginTop: 25,
+    padding: 20,
+    borderRadius: 15,
+    alignItems: 'center',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  loginOutlineText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 1 },
 
   footer: { backgroundColor: '#0F172A', padding: 60, alignItems: 'center' },
   footerBrand: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 6 },

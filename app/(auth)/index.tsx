@@ -19,6 +19,7 @@ export default function LoginScreen() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -115,12 +116,15 @@ export default function LoginScreen() {
                 }
             } else {
                 console.error('❌ Login failed:', data);
-                setError(data.message || 'Invalid email or password');
+                // Display actual backend error message
+                const errorMsg = data.error || data.message || 'Invalid email or password';
+                setError(errorMsg);
                 setIsLoading(false);
             }
         } catch (err) {
             console.error('❌ Login error:', err);
-            setError('Login failed. Please try again.');
+            const errorMsg = err instanceof Error ? err.message : 'Login failed. Please try again.';
+            setError(errorMsg);
             setIsLoading(false);
         }
     };
@@ -142,15 +146,28 @@ export default function LoginScreen() {
                     placeholderTextColor="#999"
                 />
 
-                <TextInput
-                    placeholder="Password"
-                    secureTextEntry
-                    style={styles.input}
-                    value={password}
-                    onChangeText={setPassword}
-                    editable={!isLoading}
-                    placeholderTextColor="#999"
-                />
+                <View style={{ position: 'relative' }}>
+                    <TextInput
+                        placeholder="Password"
+                        secureTextEntry={!showPassword}
+                        style={styles.input}
+                        value={password}
+                        onChangeText={setPassword}
+                        editable={!isLoading}
+                        placeholderTextColor="#999"
+                    />
+                    <TouchableOpacity
+                        style={{
+                            position: 'absolute',
+                            right: 15,
+                            top: 15,
+                            padding: 5,
+                        }}
+                        onPress={() => setShowPassword(!showPassword)}
+                    >
+                        <Text style={{ fontSize: 20 }}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+                    </TouchableOpacity>
+                </View>
 
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -164,6 +181,14 @@ export default function LoginScreen() {
                     ) : (
                         <Text style={styles.buttonText}>Login to Dashboard</Text>
                     )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    onPress={() => router.push('/(auth)/forgot-password')}
+                    disabled={isLoading}
+                    style={{ marginTop: 15, alignItems: 'center' }}
+                >
+                    <Text style={styles.link}>Forgot or Change Password?</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity

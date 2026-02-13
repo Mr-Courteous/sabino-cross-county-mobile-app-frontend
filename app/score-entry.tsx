@@ -59,7 +59,7 @@ export default function ScoreEntryScreen() {
   // Data
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [academicSessions, setAcademicSessions] = useState<{id: number; session_name: string}[]>([]);
+  const [academicSessions, setAcademicSessions] = useState<{ id: number; session_name: string }[]>([]);
   const [scoreEntries, setScoreEntries] = useState<ScoreEntry[]>([]);
 
   // Selection State
@@ -229,7 +229,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(
         `${API_BASE_URL}/api/classes`,
         {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${tokenValue}`,
             'Content-Type': 'application/json',
           },
@@ -266,7 +266,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(
         `${API_BASE_URL}/api/classes/subjects`,
         {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${tokenValue}`,
             'Content-Type': 'application/json',
           },
@@ -302,11 +302,11 @@ export default function ScoreEntryScreen() {
     try {
       setSearchingSubjects(true);
       console.log(`🔍 Searching subjects with keyword: ${keyword}`);
-      
+
       const response = await fetch(
         `${API_BASE_URL}/api/subjects/search?keyword=${encodeURIComponent(keyword)}`,
         {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
@@ -345,7 +345,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(
         `${API_BASE_URL}/api/academic-sessions`,
         {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${tokenValue}`,
             'Content-Type': 'application/json',
           },
@@ -390,11 +390,11 @@ export default function ScoreEntryScreen() {
       setSheetError('');
 
       console.log(`📥 Loading scoring sheet with classId=${classId}, subjectId=${selectedSubject.id}, sessionId=${selectedSessionId}, termId=${selectedTermId}`);
-      
+
       const response = await fetch(
         `${API_BASE_URL}/api/scores/sheet?classId=${classId}&subjectId=${selectedSubject.id}&sessionId=${selectedSessionId}&termId=${selectedTermId}`,
         {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
@@ -406,14 +406,14 @@ export default function ScoreEntryScreen() {
       // Handle success response
       if (response.ok && data.success) {
         console.log(`✓ Scoring sheet loaded successfully: ${data.data.length} students`);
-        
+
         // Pre-populate score entries with existing scores from server
         const entries: ScoreEntry[] = data.data.map((item: any) => {
           // Check if this student has existing scores
-          const hasScores = item.ca1_score !== null || item.ca2_score !== null || 
-                           item.ca3_score !== null || item.ca4_score !== null || 
-                           item.exam_score !== null;
-          
+          const hasScores = item.ca1_score !== null || item.ca2_score !== null ||
+            item.ca3_score !== null || item.ca4_score !== null ||
+            item.exam_score !== null;
+
           if (hasScores) {
             console.log(`  ✓ Student ${item.first_name} ${item.last_name}: CA1=${item.ca1_score}, CA2=${item.ca2_score}, CA3=${item.ca3_score}, CA4=${item.ca4_score}, Exam=${item.exam_score}`);
           }
@@ -437,7 +437,7 @@ export default function ScoreEntryScreen() {
             exam: item.exam_score !== null ? String(item.exam_score) : '',
           };
         });
-        
+
         setScoreEntries(entries);
         console.log(`✓ All ${entries.length} student records loaded and ready for editing`);
       } else {
@@ -650,7 +650,7 @@ export default function ScoreEntryScreen() {
             type="title"
             style={{ color: '#fff', marginBottom: 6 }}
           >
-            Score Management
+            Upload Results
           </ThemedText>
           <ThemedText style={{ color: '#e8f5e9', fontSize: 13 }}>
             Enter student scores for continuous assessment and exams

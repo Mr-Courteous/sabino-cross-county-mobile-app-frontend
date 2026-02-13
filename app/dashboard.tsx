@@ -179,13 +179,13 @@ export default function DashboardPage() {
 
         <View style={styles.mainActionGrid}>
           <MainActionCard
-            title="Reports"
+            title="Results"
             icon="document"
             color="#059669"
             onPress={() => router.push('/report-cards')}
           />
           <MainActionCard
-            title="View Reports"
+            title="View Results"
             icon="eye"
             color={themeColor}
             onPress={() => router.push({
@@ -212,6 +212,8 @@ export default function DashboardPage() {
           <SmallCard title="Settings" icon="settings" onPress={() => { }} themeColor={themeColor} />
           <SmallCard title="Support" icon="chatbubbles" onPress={() => { }} themeColor={themeColor} />
           <SmallCard title="Analytics" icon="stats-chart" onPress={() => { }} themeColor={themeColor} />
+          <SmallCard title="Payments" icon="card" onPress={() => router.push('/(payments)/initiate')} themeColor={themeColor} />
+          <SmallCard title="Reset Pwd" icon="lock-closed" onPress={() => router.push('/(auth)/forgot-password')} themeColor={themeColor} />
           <SmallCard title="Add-ons" icon="add-circle" isPlaceholder themeColor={themeColor} />
         </View>
 

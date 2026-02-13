@@ -434,6 +434,13 @@ export default function StudentDashboard() {
                                 color="#8B5CF6"
                                 onPress={() => Alert.alert('Coming Soon', 'Schedule will be available soon!')}
                             />
+                            <ActionCard
+                                icon="lock-closed-outline"
+                                title="Reset Password"
+                                description="Change your account security"
+                                color="#F472B6"
+                                onPress={() => router.push('/(student)/forgot-password' as any)}
+                            />
                         </View>
                     </View>
 

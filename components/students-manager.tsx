@@ -11,13 +11,14 @@ import {
   Platform,
   Alert,
   ScrollView,
-  Dimensions
+  Dimensions,
+  Share
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '@/utils/api-service';
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 

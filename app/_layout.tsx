@@ -51,15 +51,19 @@ export default function RootLayout() {
         ? await SecureStore.getItemAsync('userToken')
         : localStorage.getItem('userToken');
 
-      const currentRoot = segments[0];
+      const currentRoot = segments[0] as any;
       const inAuthGroup = !segments.length || currentRoot === '(auth)' || currentRoot === 'index';
       const inStudentGroup = currentRoot === '(student)';
-      const inDashboard = currentRoot === 'dashboard';
+
+      // Allow student login and registration routes without token
+      const isPublicStudentRoute = inStudentGroup && (!segments[1] || ['verify-email', 'verify-otp', 'register'].includes(segments[1]));
+
+      const inDashboard = currentRoot === 'dashboard' || (inStudentGroup && segments[1] === 'dashboard');
 
       if (!token) {
-        console.log('🔄 No token found, redirecting to home');
-        // No token - redirect to home/auth
-        if (!inAuthGroup) {
+        // If no token, allow public routes, otherwise redirect to home
+        if (!inAuthGroup && !isPublicStudentRoute) {
+          console.log('🔄 No token found, redirecting to home');
           router.replace('/' as any);
         }
         return;
@@ -80,7 +84,8 @@ export default function RootLayout() {
 
       // Handle school routing
       if (detectedUserType === 'school') {
-        if (inStudentGroup || inAuthGroup) {
+        const isResetRoute = currentRoot === '(auth)' && ['forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1] as string);
+        if (inStudentGroup || (inAuthGroup && !isResetRoute)) {
           console.log('🚀 Routing school to /dashboard');
           router.replace('/dashboard' as any);
         }

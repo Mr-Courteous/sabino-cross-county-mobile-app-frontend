@@ -90,7 +90,8 @@ export default function StudentLogin() {
             }
         } catch (error: any) {
             console.error('❌ Login Error:', error);
-            setError(error.message || 'An error occurred during login');
+            const errorMsg = error.message || 'An error occurred during login';
+            setError(errorMsg);
         } finally {
             setLoading(false);
         }
@@ -189,6 +190,14 @@ export default function StudentLogin() {
                             )}
                         </TouchableOpacity>
 
+                        <TouchableOpacity
+                            onPress={() => router.push('/(student)/forgot-password' as any)}
+                            disabled={loading}
+                            style={{ marginTop: 15, alignItems: 'center' }}
+                        >
+                            <Text style={styles.registerButtonText}>FORGOT OR CHANGE PASSWORD?</Text>
+                        </TouchableOpacity>
+
                         {/* Divider */}
                         <View style={styles.divider}>
                             <View style={styles.dividerLine} />
@@ -199,7 +208,10 @@ export default function StudentLogin() {
                         {/* Register Link */}
                         <TouchableOpacity
                             style={styles.registerButton}
-                            onPress={() => router.push('/(student)/register' as any)}
+                            onPress={() => {
+                                console.log('➡️ Navigating to Student Registration...');
+                                router.push('/(student)/verify-email' as any);
+                            }}
                             disabled={loading}
                         >
                             <Text style={styles.registerButtonText}>CREATE NEW ACCOUNT</Text>

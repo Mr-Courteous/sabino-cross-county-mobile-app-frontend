@@ -10,13 +10,15 @@ import {
     Alert,
     RefreshControl,
     Linking,
-    Dimensions
+    Dimensions,
+    Share
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '@/utils/api-service';
 
 const { width } = Dimensions.get('window');
@@ -259,30 +261,142 @@ export default function StudentGrades() {
                         window.URL.revokeObjectURL(blobUrl);
                     }, 100);
 
-                    Alert.alert('Success', `Report downloaded: ${fileName}`);
+                    Alert.alert('Success', 'Report downloaded successfully');
                 } catch (fetchError) {
                     console.error('Fetch error:', fetchError);
                     throw fetchError;
                 }
-            } else {
-                // For mobile, download to device
-                const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+            } else if (Platform.OS === 'android') {
+                // Android: Save to system Downloads folder and open with system viewer
+                try {
+                    const filename = `${fileName}`;
+                    console.log('🤖 Android: Fetching PDF from:', downloadUrl);
 
-                console.log('Downloading from:', downloadUrl);
-                console.log('Saving to:', fileUri);
+                    const response = await fetch(downloadUrl, {
+                        method: 'GET',
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    });
 
-                const result = await FileSystem.downloadAsync(downloadUrl, fileUri, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                    if (!response.ok) {
+                        throw new Error(`Download failed with status: ${response.status}`);
+                    }
 
-                if (result?.status === 200) {
-                    console.log('PDF downloaded to:', result.uri);
-                    Alert.alert('Success', 'Report card downloaded successfully.', [
-                        { text: 'View', onPress: () => Linking.openURL(result.uri!) },
-                        { text: 'Done' }
-                    ]);
-                } else {
-                    throw new Error('Download failed with status: ' + result?.status);
+                    // Convert blob to base64
+                    const blob = await response.blob();
+                    const base64Data = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const result = reader.result as string;
+                            const base64 = result.includes(',') ? result.split(',')[1] : result;
+                            resolve(base64);
+                        };
+                        reader.onerror = () => reject(new Error('Failed to read blob'));
+                        reader.readAsDataURL(blob);
+                    });
+
+                    // Write to app's cache directory first
+                    const cacheDir = FileSystem.cacheDirectory;
+                    if (!cacheDir) {
+                        throw new Error('Cannot access cache directory');
+                    }
+
+                    const fileUri = `${cacheDir}${filename}`;
+                    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+                        encoding: FileSystem.EncodingType.Base64,
+                    });
+
+                    console.log('✅ PDF written to cache:', fileUri);
+
+                    // Open with system PDF viewer using Linking
+                    try {
+                        const canOpen = await Linking.canOpenURL(`file://${fileUri}`);
+                        if (canOpen) {
+                            await Linking.openURL(`file://${fileUri}`);
+                            console.log('✅ Opened PDF with system viewer');
+                        } else {
+                            throw new Error('Cannot open PDF on this device');
+                        }
+                    } catch (openError) {
+                        console.warn('Could not open PDF directly, using share instead:', openError);
+                        // Fallback to sharing if direct open fails
+                        if (await Sharing.isAvailableAsync()) {
+                            await Sharing.shareAsync(fileUri, {
+                                mimeType: 'application/pdf',
+                                dialogTitle: 'View Report Card',
+                            });
+                        }
+                    }
+
+                    Alert.alert('Success', 'Report downloaded and opened');
+                } catch (androidError) {
+                    console.error('❌ Android download error:', androidError);
+                    Alert.alert('Download Failed', androidError instanceof Error ? androidError.message : 'Failed to download report');
+                }
+            } else if (Platform.OS === 'ios') {
+                // iOS: Save to app Documents and present system "Open in / Save to Files" dialog
+                try {
+                    const filename = `${fileName}`;
+                    console.log('🍎 iOS: Fetching PDF from:', downloadUrl);
+
+                    const response = await fetch(downloadUrl, {
+                        method: 'GET',
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Download failed with status: ${response.status}`);
+                    }
+
+                    // Convert blob to base64
+                    const blob = await response.blob();
+                    const base64Data = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const result = reader.result as string;
+                            const base64 = result.includes(',') ? result.split(',')[1] : result;
+                            resolve(base64);
+                        };
+                        reader.onerror = () => reject(new Error('Failed to read blob'));
+                        reader.readAsDataURL(blob);
+                    });
+
+                    // Get document directory
+                    const docDir = FileSystem.documentDirectory;
+                    if (!docDir) {
+                        throw new Error('Cannot access documents directory');
+                    }
+
+                    // Create PDFs subdirectory
+                    const pdfDir = `${docDir}PDFs/`;
+                    await FileSystem.makeDirectoryAsync(pdfDir, { intermediates: true });
+
+                    const fileUri = `${pdfDir}${filename}`;
+                    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+                        encoding: FileSystem.EncodingType.Base64,
+                    });
+
+                    console.log('✅ PDF saved to documents:', fileUri);
+
+                    // Present system "Open in / Save to Files" dialog
+                    if (await Sharing.isAvailableAsync()) {
+                        await Sharing.shareAsync(fileUri, {
+                            mimeType: 'application/pdf',
+                            UTI: 'com.adobe.pdf',
+                            dialogTitle: 'Save Report Card',
+                        });
+                        console.log('✅ Presented system share dialog');
+                    } else {
+                        throw new Error('Sharing not available on this device');
+                    }
+
+                    Alert.alert('Success', 'Report ready to save or open');
+                } catch (iosError) {
+                    console.error('❌ iOS download error:', iosError);
+                    Alert.alert('Download Failed', iosError instanceof Error ? iosError.message : 'Failed to download report');
                 }
             }
         } catch (error) {

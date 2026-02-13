@@ -5,14 +5,15 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { validatePassword } from '@/utils/password-validator';
 
 export default function CompleteRegistrationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  
+
   const email = params.email as string;
 
-  const [countries, setCountries] = useState<Array<{id: number, code: string, name: string, description: string}>>([]);
+  const [countries, setCountries] = useState<Array<{ id: number, code: string, name: string, description: string }>>([]);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [countriesError, setCountriesError] = useState('');
@@ -31,6 +32,8 @@ export default function CompleteRegistrationScreen() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Fetch countries on component mount
   useEffect(() => {
@@ -41,7 +44,7 @@ export default function CompleteRegistrationScreen() {
     try {
       setLoadingCountries(true);
       setCountriesError('');
-      
+
       const response = await fetch(`${API_BASE_URL}/api/auth/countries`);
       const data = await response.json();
 
@@ -75,8 +78,10 @@ export default function CompleteRegistrationScreen() {
       return false;
     }
 
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters');
+    // Validate password strength
+    const passwordValidation = validatePassword(formData.password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.errorMessage);
       return false;
     }
 
@@ -159,9 +164,12 @@ export default function CompleteRegistrationScreen() {
 
         router.replace('/dashboard');
       } else {
-        setError(data.message || 'Registration failed');
+        // Display actual backend error
+        const errorMsg = data.error || data.message || 'Registration failed';
+        setError(errorMsg);
       }
     } catch (err) {
+      console.error('Registration Error:', err);
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
       setError(errorMessage);
     } finally {
@@ -461,50 +469,78 @@ export default function CompleteRegistrationScreen() {
           <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
             Password *
           </ThemedText>
-          <TextInput
-            style={{
-              borderWidth: 1,
-              borderColor: '#ddd',
-              borderRadius: 6,
-              padding: 10,
-              fontSize: 14,
-              backgroundColor: '#fff',
-            }}
-            placeholder="Min. 8 characters"
-            placeholderTextColor="#999"
-            value={formData.password}
-            onChangeText={(text) => {
-              setFormData({ ...formData, password: text });
-              setError('');
-            }}
-            editable={!loading}
-            secureTextEntry
-          />
+          <View style={{ position: 'relative' }}>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#ddd',
+                borderRadius: 6,
+                padding: 10,
+                paddingRight: 45,
+                fontSize: 14,
+                backgroundColor: '#fff',
+              }}
+              placeholder="Must include: A-Z, a-z, 0-9, symbol"
+              placeholderTextColor="#999"
+              value={formData.password}
+              onChangeText={(text) => {
+                setFormData({ ...formData, password: text });
+                setError('');
+              }}
+              editable={!loading}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                right: 10,
+                top: 10,
+                padding: 5,
+              }}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Text style={{ fontSize: 18 }}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={{ marginBottom: 16 }}>
           <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
             Confirm Password *
           </ThemedText>
-          <TextInput
-            style={{
-              borderWidth: 1,
-              borderColor: '#ddd',
-              borderRadius: 6,
-              padding: 10,
-              fontSize: 14,
-              backgroundColor: '#fff',
-            }}
-            placeholder="Re-enter password"
-            placeholderTextColor="#999"
-            value={formData.confirmPassword}
-            onChangeText={(text) => {
-              setFormData({ ...formData, confirmPassword: text });
-              setError('');
-            }}
-            editable={!loading}
-            secureTextEntry
-          />
+          <View style={{ position: 'relative' }}>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#ddd',
+                borderRadius: 6,
+                padding: 10,
+                paddingRight: 45,
+                fontSize: 14,
+                backgroundColor: '#fff',
+              }}
+              placeholder="Re-enter password"
+              placeholderTextColor="#999"
+              value={formData.confirmPassword}
+              onChangeText={(text) => {
+                setFormData({ ...formData, confirmPassword: text });
+                setError('');
+              }}
+              editable={!loading}
+              secureTextEntry={!showConfirmPassword}
+            />
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                right: 10,
+                top: 10,
+                padding: 5,
+              }}
+              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            >
+              <Text style={{ fontSize: 18 }}>{showConfirmPassword ? '👁️' : '👁️‍🗨️'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {error ? (
