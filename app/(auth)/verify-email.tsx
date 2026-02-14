@@ -52,6 +52,14 @@ export default function VerifyEmailScreen() {
       });
 
       const result = await response.json();
+      // If the email is already registered, redirect to login
+      if (response.status === 409) {
+        Alert.alert('Already Registered', 'This email is already registered. Go to login?', [
+          { text: 'Cancel' },
+          { text: 'Login', onPress: () => router.replace('/(auth)') }
+        ]);
+        return;
+      }
 
       if (response.ok && result.success) {
         setOtpSent(true);
@@ -214,6 +222,13 @@ export default function VerifyEmailScreen() {
         onPress={() => router.back()}
       >
         <Text style={{ color: '#94A3B8', fontSize: 14, fontWeight: '600' }}>← Back to Selection</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={{ marginTop: 12, alignItems: 'center' }}
+        onPress={() => router.replace('/(auth)')}
+      >
+        <Text style={{ color: '#FACC15', fontSize: 14, fontWeight: '700' }}>Already registered? Login</Text>
       </TouchableOpacity>
     </ThemedView>
   );

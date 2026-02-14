@@ -9,7 +9,8 @@ import {
   Platform,
   ActivityIndicator,
   Image,
-  SafeAreaView
+  SafeAreaView,
+  Alert
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
@@ -92,8 +93,39 @@ export default function DashboardPage() {
   }, []);
 
   const handleLogout = async () => {
-    await clearAllStorage();
-    router.replace('/');
+    if (Platform.OS === 'web') {
+      try {
+        // use browser confirm on web
+        const ok = window.confirm('Are you sure you want to logout?');
+        if (ok) {
+          await clearAllStorage();
+          router.replace('/');
+        }
+      } catch (e) {
+        // fallback to alert if window.confirm unavailable
+        Alert.alert('Logout', 'Are you sure you want to logout?', [
+          { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+          { text: 'Logout', onPress: async () => { await clearAllStorage(); router.replace('/'); }, style: 'destructive' }
+        ]);
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'Logout',
+          onPress: async () => {
+            await clearAllStorage();
+            router.replace('/');
+          },
+          style: 'destructive'
+        }
+      ]
+    );
   };
 
   if (loading) return (
@@ -130,7 +162,8 @@ export default function DashboardPage() {
           </View>
 
           <TouchableOpacity onPress={handleLogout} style={styles.logoutIcon}>
-            <Ionicons name="power" size={20} color="#FACC15" />
+            <Ionicons name="power" size={18} color="#FACC15" />
+            <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>
 
@@ -210,10 +243,7 @@ export default function DashboardPage() {
             highlight
           />
           <SmallCard title="Settings" icon="settings" onPress={() => { }} themeColor={themeColor} />
-          <SmallCard title="Support" icon="chatbubbles" onPress={() => { }} themeColor={themeColor} />
-          <SmallCard title="Analytics" icon="stats-chart" onPress={() => { }} themeColor={themeColor} />
           <SmallCard title="Payments" icon="card" onPress={() => router.push('/(payments)/initiate')} themeColor={themeColor} />
-          <SmallCard title="Reset Pwd" icon="lock-closed" onPress={() => router.push('/(auth)/forgot-password')} themeColor={themeColor} />
           <SmallCard title="Add-ons" icon="add-circle" isPlaceholder themeColor={themeColor} />
         </View>
 
@@ -293,7 +323,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4
   },
   schoolName: { color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 2 },
-  logoutIcon: { padding: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10 },
+  logoutIcon: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 10 },
+  logoutText: { color: '#FACC15', marginLeft: 8, fontWeight: '900' },
 
   infoBar: { gap: 6, marginTop: 5 },
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

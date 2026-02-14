@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
+import { TouchableOpacity, Text, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { clearAllStorage } from '@/utils/storage';
 
@@ -8,13 +8,34 @@ export default function TabLayout() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    try {
-      await clearAllStorage();
-    } catch (e) {
-      console.warn('Failed to clear storage during logout', e);
+    if (Platform.OS === 'web') {
+      try {
+        const ok = window.confirm('Are you sure you want to logout?');
+        if (ok) {
+          try { await clearAllStorage(); } catch (e) { console.warn('Failed to clear storage during logout', e); }
+          router.replace('/');
+        }
+      } catch (e) {
+        Alert.alert(
+          'Logout',
+          'Are you sure you want to logout?',
+          [
+            { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+            { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { console.warn(e); } router.replace('/'); }, style: 'destructive' }
+          ]
+        );
+      }
+      return;
     }
 
-    router.replace('/');
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { console.warn(e); } router.replace('/'); }, style: 'destructive' }
+      ]
+    );
   };
 
   return (
@@ -23,9 +44,10 @@ export default function TabLayout() {
         headerRight: () => (
           <TouchableOpacity
             onPress={handleLogout}
-            style={{ marginRight: 15 }}
+            style={{ marginRight: 15, flexDirection: 'row', alignItems: 'center' }}
           >
-            <Ionicons name="log-out" size={24} color="#d32f2f" />
+            <Ionicons name="log-out" size={20} color="#d32f2f" />
+            <Text style={{ color: '#d32f2f', fontWeight: '700', marginLeft: 6 }}>Logout</Text>
           </TouchableOpacity>
         ),
       }}

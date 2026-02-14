@@ -24,7 +24,7 @@ export default function HomePage() {
           >
             <View style={styles.logoBadge}>
               <Ionicons name="ribbon" size={22} color="#FACC15" />
-              <Text style={styles.logoText}>SABINO PRO</Text>
+              <Text style={styles.logoText}>SABINO SCHOOL</Text>
             </View>
 
             {/* ULTRA BOLD HEADER */}
@@ -74,7 +74,7 @@ export default function HomePage() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerBrand}>SABINO</Text>
+          <Text style={styles.footerBrand}>SABINO SCHOOL</Text>
           <Text style={styles.footerCopyright}>THE GOLD STANDARD FOR ACADEMIC REPORTING</Text>
           <View style={styles.footerDivider} />
           <Text style={styles.footerYear}>© 2026 SABINO SYSTEMS GLOBAL</Text>

@@ -12,7 +12,8 @@ import {
     RefreshControl,
     Modal,
     FlatList,
-    Linking
+    Linking,
+    AlertIOS
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -143,8 +144,37 @@ export default function StudentDashboard() {
     };
 
     const handleLogout = async () => {
-        // Immediate logout for better UX — removes stored tokens and returns to home
-        await performLogout();
+        if (Platform.OS === 'web') {
+            try {
+                const ok = window.confirm('Are you sure you want to logout?');
+                if (ok) await performLogout();
+            } catch (e) {
+                Alert.alert(
+                    'Logout',
+                    'Are you sure you want to logout?',
+                    [
+                        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+                        { text: 'Logout', onPress: async () => { await performLogout(); }, style: 'destructive' }
+                    ]
+                );
+            }
+            return;
+        }
+
+        Alert.alert(
+            'Logout',
+            'Are you sure you want to logout?',
+            [
+                { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+                {
+                    text: 'Logout',
+                    onPress: async () => {
+                        await performLogout();
+                    },
+                    style: 'destructive'
+                }
+            ]
+        );
     };
 
     const handleEditProfile = () => {
@@ -307,7 +337,8 @@ export default function StudentDashboard() {
                                 <Text style={styles.studentName}>{student.first_name}!</Text>
                             </View>
                             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+                                <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+                                <Text style={styles.logoutText}>Logout</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -433,13 +464,6 @@ export default function StudentDashboard() {
                                 description="View class schedule"
                                 color="#8B5CF6"
                                 onPress={() => Alert.alert('Coming Soon', 'Schedule will be available soon!')}
-                            />
-                            <ActionCard
-                                icon="lock-closed-outline"
-                                title="Reset Password"
-                                description="Change your account security"
-                                color="#F472B6"
-                                onPress={() => router.push('/(student)/forgot-password' as any)}
                             />
                         </View>
                     </View>
@@ -636,9 +660,17 @@ const styles = StyleSheet.create({
         letterSpacing: -0.5,
     },
     logoutButton: {
-        padding: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 10,
         borderRadius: 12,
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    },
+    logoutText: {
+        color: '#EF4444',
+        marginLeft: 8,
+        fontWeight: '700',
     },
     profileCard: {
         marginBottom: 32,

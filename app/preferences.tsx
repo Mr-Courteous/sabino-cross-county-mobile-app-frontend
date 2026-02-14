@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, ScrollView, 
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Platform, SafeAreaView
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
@@ -9,6 +9,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '@/utils/api-service';
 import { useTheme } from '@/contexts/theme-context';
 import { useRouter } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import { Image } from 'expo-image';
 
 // Preset color palette
 const PRESET_COLORS = [
@@ -32,6 +34,8 @@ export default function SchoolPreferencesScreen() {
     report_footer_text: '',
     show_attendance: false,
   });
+  const [logoFile, setLogoFile] = useState<any>(null);
+  const [stampFile, setStampFile] = useState<any>(null);
 
   useEffect(() => {
     fetchPreferences();
@@ -54,7 +58,7 @@ export default function SchoolPreferencesScreen() {
   const fetchPreferences = async () => {
     try {
       const { token, schoolId } = await getAuthData();
-      
+
       if (!token || !schoolId) {
         Alert.alert("Auth Error", "Please log in again.");
         return;
@@ -62,9 +66,9 @@ export default function SchoolPreferencesScreen() {
 
       const response = await fetch(`${API_BASE_URL}/api/preferences/${schoolId}`, {
         method: 'GET',
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json' 
+          'Content-Type': 'application/json'
         },
       });
 
@@ -88,32 +92,187 @@ export default function SchoolPreferencesScreen() {
     }
   };
 
+  const handlePickDocument = async (type: 'logo' | 'stamp') => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        console.log(`📁 ${type} file picked:`, {
+          name: file.name,
+          uri: file.uri,
+          mimeType: file.mimeType,
+          size: file.size
+        });
+
+        if (type === 'logo') {
+          setLogoFile(file);
+          // Show preview immediately
+          setPrefs(prev => ({ ...prev, logo_url: file.uri }));
+        } else {
+          setStampFile(file);
+          setPrefs(prev => ({ ...prev, stamp_url: file.uri }));
+        }
+      }
+    } catch (err) {
+      console.log('Document Picker Error:', err);
+      Alert.alert('Error', 'Failed to pick file: ' + (err instanceof Error ? err.message : ''));
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       const { token, schoolId } = await getAuthData();
 
+      console.log('🚀 Starting save process...');
+      console.log('Logo file:', logoFile);
+      console.log('Stamp file:', stampFile);
+      console.log('Platform:', Platform.OS);
+
+      const formData = new FormData();
+
+      // Text fields
+      formData.append('theme_color', prefs.theme_color);
+      formData.append('header_text', prefs.report_footer_text);
+      formData.append('show_attendance', String(prefs.show_attendance));
+
+      // Handle Logo - Convert uri to Blob for upload
+      if (logoFile) {
+        console.log('📸 Preparing logo for upload...');
+        const fileName = logoFile.name || 'logo.png';
+        const mimeType = logoFile.mimeType || 'image/png';
+
+        try {
+          if (Platform.OS === 'web') {
+            // On web: fetch the uri and convert to Blob
+            console.log('Web: Fetching logo from uri...', logoFile.uri);
+            console.log('File size from picker:', logoFile.size, 'bytes');
+            
+            const response = await fetch(logoFile.uri);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+            }
+            
+            const blob = await response.blob();
+            console.log('Web: Logo blob created, size:', blob.size, 'bytes');
+            
+            if (blob.size === 0) {
+              throw new Error('Logo file is empty. Please try again.');
+            }
+            
+            // Create a proper File object
+            const file = new File([blob], fileName, { type: mimeType });
+            console.log('Logo File object:', { name: file.name, size: file.size, type: file.type });
+            formData.append('logo', file);
+          } else {
+            // On native: Use uri-based format that React Native FormData understands
+            const logoToUpload: any = {
+              uri: Platform.OS === 'ios' ? logoFile.uri.replace('file://', '') : logoFile.uri,
+              name: fileName,
+              type: mimeType,
+            };
+            console.log('Native: Logo upload object:', logoToUpload);
+            formData.append('logo', logoToUpload);
+          }
+        } catch (fileErr) {
+          console.error('Error processing logo file:', fileErr);
+          Alert.alert("Error", "Failed to process logo file: " + (fileErr instanceof Error ? fileErr.message : ''));
+          setSaving(false);
+          return;
+        }
+      } else if (prefs.logo_url && !logoFile) {
+        console.log('📝 Using existing logo URL:', prefs.logo_url);
+        formData.append('logo_url', prefs.logo_url);
+      }
+
+      // Handle Stamp - Convert uri to Blob for upload
+      if (stampFile) {
+        console.log('📸 Preparing stamp for upload...');
+        const fileName = stampFile.name || 'stamp.png';
+        const mimeType = stampFile.mimeType || 'image/png';
+
+        try {
+          if (Platform.OS === 'web') {
+            // On web: fetch the uri and convert to Blob
+            console.log('Web: Fetching stamp from uri...', stampFile.uri);
+            console.log('File size from picker:', stampFile.size, 'bytes');
+            
+            const response = await fetch(stampFile.uri);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+            }
+            
+            const blob = await response.blob();
+            console.log('Web: Stamp blob created, size:', blob.size, 'bytes');
+            
+            if (blob.size === 0) {
+              throw new Error('Stamp file is empty. Please try again.');
+            }
+            
+            // Create a proper File object
+            const file = new File([blob], fileName, { type: mimeType });
+            console.log('Stamp File object:', { name: file.name, size: file.size, type: file.type });
+            formData.append('stamp', file);
+          } else {
+            // On native: Use uri-based format
+            const stampToUpload: any = {
+              uri: Platform.OS === 'ios' ? stampFile.uri.replace('file://', '') : stampFile.uri,
+              name: fileName,
+              type: mimeType,
+            };
+            console.log('Native: Stamp upload object:', stampToUpload);
+            formData.append('stamp', stampToUpload);
+          }
+        } catch (fileErr) {
+          console.error('Error processing stamp file:', fileErr);
+          Alert.alert("Error", "Failed to process stamp file: " + (fileErr instanceof Error ? fileErr.message : ''));
+          setSaving(false);
+          return;
+        }
+      } else if (prefs.stamp_url && !stampFile) {
+        console.log('📝 Using existing stamp URL:', prefs.stamp_url);
+        formData.append('stamp_url', prefs.stamp_url);
+      }
+
+      console.log('📤 Sending request to:', `${API_BASE_URL}/api/preferences/${schoolId}`);
+      console.log('FormData keys:', Array.from(formData.entries()).map(([k]) => k));
+
       const response = await fetch(`${API_BASE_URL}/api/preferences/${schoolId}`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json' 
+          // Do NOT set Content-Type - let fetch set it with multipart/form-data boundary
         },
-        body: JSON.stringify(prefs),
+        body: formData,
       });
 
+      console.log('📨 Response status:', response.status);
       const data = await response.json();
+      console.log('📨 Response data:', data);
 
-      if (response.ok) {
-        // Reload theme from preferences to update app colors
+      if (response.ok && data.success) {
+        console.log('✅ Upload successful, returned URLs:', {
+          logo_url: data.data.logo_url,
+          stamp_url: data.data.stamp_url
+        });
         await loadThemeFromPreferences();
         Alert.alert("Success", "Branding updated successfully!");
+        setLogoFile(null);
+        setStampFile(null);
+        // Reload preferences to show updated URLs
+        await new Promise(resolve => setTimeout(resolve, 500));
+        fetchPreferences();
       } else {
-        Alert.alert("Update Failed", data.error || "Could not save changes.");
+        console.error('❌ Update failed:', data);
+        Alert.alert("Update Failed", data.error || data.details || "Could not save changes.");
       }
     } catch (err) {
-      console.error('Save Error:', err);
-      Alert.alert("Error", "An error occurred while saving.");
+      console.error('❌ Save Error:', err);
+      Alert.alert("Error", "An error occurred while saving: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSaving(false);
     }
@@ -145,7 +304,7 @@ export default function SchoolPreferencesScreen() {
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         {/* Theme Color Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
@@ -204,32 +363,42 @@ export default function SchoolPreferencesScreen() {
           </View>
 
           <View style={styles.card}>
-            <View style={styles.inputGroup}>
-              <View style={styles.labelRow}>
-                <Ionicons name="image" size={18} color={themeColor} />
+            <View style={styles.imageUploadRow}>
+              {prefs.logo_url ? (
+                <Image source={{ uri: prefs.logo_url }} style={styles.previewImage} contentFit="contain" />
+              ) : (
+                <View style={styles.placeholderImage}>
+                  <Ionicons name="image-outline" size={32} color="#CBD5E1" />
+                </View>
+              )}
+              <View style={{ flex: 1, marginLeft: 15 }}>
                 <Text style={styles.cardLabel}>School Logo</Text>
+                <Text style={styles.helperText}>Used on clear backgrounds</Text>
+                <TouchableOpacity style={styles.uploadButton} onPress={() => handlePickDocument('logo')}>
+                  <Ionicons name="cloud-upload-outline" size={16} color="#475569" />
+                  <Text style={styles.uploadButtonText}>Upload Logo</Text>
+                </TouchableOpacity>
               </View>
-              <TextInput
-                style={styles.input}
-                value={prefs.logo_url}
-                onChangeText={(txt) => setPrefs({ ...prefs, logo_url: txt })}
-                placeholder="https://..."
-              />
-              <Text style={styles.helperText}>URL to your school logo (PNG/JPG recommended)</Text>
             </View>
+          </View>
 
-            <View style={styles.inputGroup}>
-              <View style={styles.labelRow}>
-                <Ionicons name="ribbon" size={18} color={themeColor} />
-                <Text style={styles.cardLabel}>Official Stamp/Seal</Text>
+          <View style={styles.inputGroup}>
+            <View style={styles.imageUploadRow}>
+              {prefs.stamp_url ? (
+                <Image source={{ uri: prefs.stamp_url }} style={styles.previewImage} contentFit="contain" />
+              ) : (
+                <View style={styles.placeholderImage}>
+                  <Ionicons name="ribbon-outline" size={32} color="#CBD5E1" />
+                </View>
+              )}
+              <View style={{ flex: 1, marginLeft: 15 }}>
+                <Text style={styles.cardLabel}>Official Stamp</Text>
+                <Text style={styles.helperText}>Used on official reports</Text>
+                <TouchableOpacity style={styles.uploadButton} onPress={() => handlePickDocument('stamp')}>
+                  <Ionicons name="cloud-upload-outline" size={16} color="#475569" />
+                  <Text style={styles.uploadButtonText}>Upload Stamp</Text>
+                </TouchableOpacity>
               </View>
-              <TextInput
-                style={styles.input}
-                value={prefs.stamp_url}
-                onChangeText={(txt) => setPrefs({ ...prefs, stamp_url: txt })}
-                placeholder="https://..."
-              />
-              <Text style={styles.helperText}>URL to your official seal or stamp</Text>
             </View>
           </View>
         </View>
@@ -260,8 +429,8 @@ export default function SchoolPreferencesScreen() {
         </View>
 
         {/* Save Button */}
-        <TouchableOpacity 
-          style={[styles.saveButton, { backgroundColor: prefs.theme_color }]} 
+        <TouchableOpacity
+          style={[styles.saveButton, { backgroundColor: prefs.theme_color }]}
           onPress={handleSave}
           disabled={saving}
           activeOpacity={0.85}
@@ -276,8 +445,8 @@ export default function SchoolPreferencesScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.cancelButton} 
+        <TouchableOpacity
+          style={styles.cancelButton}
           onPress={() => router.back()}
         >
           <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -502,5 +671,50 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 15,
     fontWeight: '700',
+  },
+
+  // Upload Styles
+  imageUploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  previewImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  placeholderImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  uploadButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    marginLeft: 6,
   },
 });

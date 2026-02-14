@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, SafeAreaView, Platform
+  Dimensions, SafeAreaView, Platform, Alert
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,8 +17,30 @@ export default function SchoolAdminDashboard() {
   const [user, setUser] = useState<any>(null);
 
   const handleLogout = async () => {
-    await clearAllStorage();
-    router.replace('/');
+    if (Platform.OS === 'web') {
+      const ok = window.confirm('Are you sure you want to logout?');
+      if (ok) {
+        await clearAllStorage();
+        router.replace('/');
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'Logout',
+          onPress: async () => {
+            await clearAllStorage();
+            router.replace('/');
+          },
+          style: 'destructive'
+        }
+      ]
+    );
   };
 
   useEffect(() => {
@@ -55,11 +77,12 @@ export default function SchoolAdminDashboard() {
         <SafeAreaView>
           <View style={styles.headerContent}>
             <View>
-              <Text style={styles.brandName}>SABINO<Text style={{ color: '#2563EB' }}>CORE</Text></Text>
+              <Text style={styles.brandName}>SABINO<Text style={{ color: '#2563EB' }}>SCHOOL</Text></Text>
               <Text style={styles.schoolName}>{user?.firstName?.toUpperCase() || "SCHOOL"} ADMINISTRATION</Text>
             </View>
             <TouchableOpacity style={styles.profileBtn} onPress={handleLogout}>
-              <Ionicons name="power" size={20} color="#FACC15" />
+              <Ionicons name="power" size={18} color="#FACC15" />
+              <Text style={styles.profileLogoutText}>Logout</Text>
             </TouchableOpacity>
           </View>
 
@@ -145,7 +168,8 @@ const styles = StyleSheet.create({
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Platform.OS === 'android' ? 40 : 10 },
   brandName: { color: '#fff', fontSize: 22, fontWeight: '900', letterSpacing: 1 },
   schoolName: { color: '#94A3B8', fontSize: 11, fontWeight: '800', marginTop: 4 },
-  profileBtn: { width: 45, height: 45, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  profileBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.02)' },
+  profileLogoutText: { color: '#FACC15', marginLeft: 8, fontWeight: '900' },
   idBadge: { backgroundColor: 'rgba(0,0,0,0.3)', alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginTop: 20 },
   idText: { color: '#FACC15', fontSize: 10, fontWeight: '900' },
 
