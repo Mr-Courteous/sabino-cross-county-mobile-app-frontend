@@ -20,6 +20,7 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { clearAllStorage } from '@/utils/storage';
 import { useTheme } from '@/contexts/theme-context';
+import Footer from './components/Footer';
 
 const { width } = Dimensions.get('window');
 
@@ -247,9 +248,7 @@ export default function DashboardPage() {
           <SmallCard title="Add-ons" icon="add-circle" isPlaceholder themeColor={themeColor} />
         </View>
 
-        <TouchableOpacity style={styles.footerLogout} onPress={handleLogout}>
-          <Text style={styles.footerLogoutText}>TERMINATE SECURE SESSION</Text>
-        </TouchableOpacity>
+        <Footer themeColor={themeColor} schoolName={schoolData?.name} onLogout={handleLogout} />
 
       </ScrollView>
     </SafeAreaView>

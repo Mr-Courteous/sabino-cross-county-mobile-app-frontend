@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "sabino-mobile-app",
+    "name": "sabino school",
     "slug": "sabino-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/sabino.png",
     "scheme": "sabinomobileapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,43 +17,39 @@
     },
     "android": {
       "package": "com.courteous.sabinomobile",
+      "permissions": ["com.android.vending.BILLING"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/sabino.png"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "edgeToEdgeEnabled": true
     },
     "plugins": [
       "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/sabino.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ],
-      "expo-font",
-      "expo-secure-store",
-      "expo-web-browser"
+      "react-native-iap"
     ],
-    "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
-    },
     "extra": {
-      "router": {},
       "eas": {
         "projectId": "d21da891-6ad0-487f-8177-ef1c44334aa9"
       }

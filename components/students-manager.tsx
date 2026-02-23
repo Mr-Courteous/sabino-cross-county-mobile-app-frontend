@@ -17,6 +17,9 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '@/utils/api-service';
+import { useRouter } from 'expo-router';
+import { clearAllStorage } from '@/utils/storage';
+import Footer from '../app/components/Footer';
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
@@ -43,6 +46,7 @@ type Class = {
 };
 
 export default function StudentsManager() {
+  const router = useRouter();
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [academicSessions, setAcademicSessions] = useState<string[]>([]);
@@ -305,6 +309,17 @@ export default function StudentsManager() {
     </View>
   );
 
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+        { text: 'Logout', onPress: async () => { await clearAllStorage(); router.replace('/'); }, style: 'destructive' }
+      ]
+    );
+  };
+
   const generateCalendarDays = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -522,6 +537,7 @@ export default function StudentsManager() {
           </View>
         </View>
       </Modal>
+      <Footer onLogout={handleLogout} />
     </View>
   );
 }

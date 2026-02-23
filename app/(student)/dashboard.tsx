@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { clearAllStorage } from '@/utils/storage';
+import Footer from '../components/Footer';
 
 interface StudentData {
     id: number;
@@ -592,6 +593,9 @@ export default function StudentDashboard() {
                     </View>
                 </View>
             </Modal>
+
+            <Footer onLogout={handleLogout} />
+
         </View >
     );
 }

@@ -107,8 +107,8 @@ const styles = StyleSheet.create({
   mainWrapper: { flex: 1, backgroundColor: '#0F172A' },
   scrollContainer: { flexGrow: 1 },
 
-  hero: { width: '100%', height: 550 },
-  overlay: { flex: 1, padding: 30, justifyContent: 'center', alignItems: 'center' },
+  hero: { width: '100%', minHeight: 700, paddingBottom: 45 },
+  overlay: { flex: 1, paddingHorizontal: 20, paddingVertical: 60, justifyContent: 'center', alignItems: 'center' },
 
   logoBadge: {
     flexDirection: 'row',
@@ -139,41 +139,44 @@ const styles = StyleSheet.create({
   ctaButton: {
     flexDirection: 'row',
     backgroundColor: '#2563EB',
-    paddingVertical: 20,
-    paddingHorizontal: 45,
+    paddingVertical: 18,
+    paddingHorizontal: 25,
     borderRadius: 15,
-    marginTop: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#2563EB',
     shadowOpacity: 0.5,
     shadowRadius: 20,
-    elevation: 10
+    elevation: 8
   },
-  ctaButtonText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1 },
+  ctaButtonText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
 
   buttonRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 15,
-    marginTop: 35,
+    gap: 12,
+    marginTop: 40,
     flexWrap: 'wrap',
+    width: '100%',
   },
 
   studentLoginButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#fff',
     paddingVertical: 18,
-    paddingHorizontal: 30,
+    paddingHorizontal: 25,
     borderRadius: 15,
     borderWidth: 2,
     borderColor: '#2563EB',
     shadowColor: '#2563EB',
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 10,
-    elevation: 5
+    elevation: 4
   },
-  studentLoginText: { color: '#2563EB', fontWeight: '900', fontSize: 14, letterSpacing: 1 },
+  studentLoginText: { color: '#2563EB', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
 
   content: {
     padding: 24,
