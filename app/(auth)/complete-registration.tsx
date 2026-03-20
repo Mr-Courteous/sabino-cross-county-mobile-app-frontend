@@ -1,5 +1,5 @@
 import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, ScrollView, Alert, Platform, FlatList } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
@@ -12,11 +12,16 @@ export default function CompleteRegistrationScreen() {
   const params = useLocalSearchParams();
 
   const email = params.email as string;
+  const isMobilePlatform = Platform.OS === 'android' || Platform.OS === 'ios';
 
   const [countries, setCountries] = useState<Array<{ id: number, code: string, name: string, description: string }>>([]);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [countriesError, setCountriesError] = useState('');
+
+  // REGISTRATION STEP MANAGEMENT
+  const [currentStep, setCurrentStep] = useState<'form' | 'payment'>('form');
+  const [registrationData, setRegistrationData] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     password: '',
@@ -35,10 +40,18 @@ export default function CompleteRegistrationScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Fetch countries on component mount
-  useEffect(() => {
-    fetchCountries();
-  }, []);
+  // BILLING STATE
+  const [billingPlan, setBillingPlan] = useState<any>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [billingError, setBillingError] = useState('');
+  const [isResumingPayment, setIsResumingPayment] = useState(false);
+  const [loadingBilling, setLoadingBilling] = useState(true);
+
+  // Use refs to handle the async nature of InAppPurchases listener
+  const purchaseResolverRef = useRef<any>(null);
+
+  // Your subscription ID from Google Play
+  const SUBSCRIPTION_ID = '12345sabino';
 
   const fetchCountries = async () => {
     try {
@@ -56,552 +69,344 @@ export default function CompleteRegistrationScreen() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch countries';
       setCountriesError(errorMessage);
-      console.error('Countries fetch error:', err);
     } finally {
       setLoadingCountries(false);
     }
   };
 
+  const initializeBilling = async () => {
+    try {
+      if (!isMobilePlatform) {
+        setLoadingBilling(false);
+        return;
+      }
+
+      // Dynamic import to prevent Web bundling errors
+      // @ts-ignore
+      const InAppPurchases = await import('expo-in-app-purchases');
+      await InAppPurchases.connectAsync();
+      
+      const { results } = await InAppPurchases.getProductsAsync([SUBSCRIPTION_ID]);
+      if (results && results.length > 0) {
+        setBillingPlan(results[0]);
+      } else {
+        setBillingError('Could not find the subscription product.');
+      }
+    } catch (err) {
+      console.warn('InAppPurchases initialization info:', err);
+    } finally {
+      setLoadingBilling(false);
+    }
+  };
+
+  const endBillingConnection = async () => {
+    try {
+      if (isMobilePlatform) {
+        // @ts-ignore
+        const InAppPurchases = await import('expo-in-app-purchases');
+        await InAppPurchases.disconnectAsync();
+      }
+    } catch (err) {
+      console.warn('Billing disconnect error:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCountries();
+
+    if (isMobilePlatform) {
+      const setupListener = async () => {
+        try {
+          // @ts-ignore
+          const InAppPurchases = await import('expo-in-app-purchases');
+          InAppPurchases.setPurchaseListener(({ responseCode, results, errorCode }: any) => {
+            if (responseCode === InAppPurchases.IAPResponseCode.OK && results && results.length > 0) {
+              if (purchaseResolverRef.current) {
+                purchaseResolverRef.current(results[0]);
+              }
+            } else {
+              if (purchaseResolverRef.current) {
+                const userCancelled = responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED;
+                purchaseResolverRef.current({ responseCode, errorCode, userCancelled });
+              }
+            }
+          });
+        } catch (e) {
+          console.warn('Listener setup failed', e);
+        }
+      };
+      
+      setupListener();
+      initializeBilling();
+    } else {
+      setLoadingBilling(false);
+    }
+
+    return () => {
+      endBillingConnection();
+    };
+  }, []);
+
   const validateForm = () => {
-    if (!formData.country.trim()) {
-      setError('Please select a country');
-      return false;
-    }
-
-    if (!formData.schoolName.trim()) {
-      setError('School name is required');
-      return false;
-    }
-
-    if (!formData.password.trim()) {
-      setError('Password is required');
-      return false;
-    }
-
-    // Validate password strength
+    if (!formData.country.trim()) { setError('Please select a country'); return false; }
+    if (!formData.schoolName.trim()) { setError('School name is required'); return false; }
+    if (!formData.password.trim()) { setError('Password is required'); return false; }
     const passwordValidation = validatePassword(formData.password);
-    if (!passwordValidation.isValid) {
-      setError(passwordValidation.errorMessage);
-      return false;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return false;
-    }
-
-    if (!formData.firstName.trim()) {
-      setError('First name is required');
-      return false;
-    }
-
-    if (!formData.lastName.trim()) {
-      setError('Last name is required');
-      return false;
-    }
-
-    if (formData.phone && !/^\d{10,}$/.test(formData.phone.replace(/\D/g, ''))) {
-      setError('Phone number must be at least 10 digits');
-      return false;
-    }
-
+    if (!passwordValidation.isValid) { setError(passwordValidation.errorMessage); return false; }
+    if (formData.password !== formData.confirmPassword) { setError('Passwords do not match'); return false; }
+    if (!formData.firstName.trim()) { setError('First name is required'); return false; }
+    if (!formData.lastName.trim()) { setError('Last name is required'); return false; }
     return true;
   };
 
   const handleCompleteRegistration = async () => {
-    if (!validateForm()) {
+    if (!validateForm()) return;
+    setRegistrationData({
+      email,
+      password: formData.password,
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      phone: formData.phone || undefined,
+      name: formData.schoolName,
+      school_type: formData.schoolType,
+      country: formData.country,
+      countryId: formData.countryId,
+    });
+    setCurrentStep('payment');
+    setError('');
+  };
+
+  const handlePaymentAndRegistration = async () => {
+    setIsProcessingPayment(true);
+    setBillingError('');
+
+    if (!registrationData) {
+      setBillingError('Missing registration data.');
+      setIsProcessingPayment(false);
       return;
     }
 
-    setLoading(true);
-    setError('');
-
     try {
-      const response = await fetch(`${API_BASE_URL}/api/schools`, {
+      let accountData = null;
+      let schoolId = null;
+      let token = null;
+
+      const createAccountResponse = await fetch(`${API_BASE_URL}/api/schools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          password: formData.password,
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          phone: formData.phone || undefined,
-          name: formData.schoolName,
-          school_type: formData.schoolType,
-          country: formData.country,
+          ...registrationData,
+          paymentStatus: 'pending',
         }),
       });
 
-      const data = await response.json();
+      const createAccountData = await createAccountResponse.json();
 
-      if (response.ok && data.success && data.data?.token) {
-        const token = data.data.token;
-        const user = {
-          schoolId: data.data.user?.schoolId,
-          email: data.data.user?.email,
-          name: data.data.user?.name,
-          type: 'school',
-          countryId: data.data.user?.countryId,
-          country: formData.country,
-        };
+      if (!createAccountResponse.ok) {
+        setBillingError(createAccountData.error || 'Account creation failed');
+        setIsProcessingPayment(false);
+        return;
+      }
 
-        // Store token securely
-        if (Platform.OS !== 'web') {
-          try {
-            await SecureStore.setItemAsync('userToken', token);
-            await SecureStore.setItemAsync('userData', JSON.stringify(user));
-            await SecureStore.setItemAsync('countryId', String(user.countryId || ''));
-          } catch (e) {
-            localStorage.setItem('userToken', token);
-            localStorage.setItem('userData', JSON.stringify(user));
-            localStorage.setItem('countryId', String(user.countryId || ''));
-          }
-        } else {
-          localStorage.setItem('userToken', token);
-          localStorage.setItem('userData', JSON.stringify(user));
-          localStorage.setItem('countryId', String(user.countryId || ''));
+      accountData = createAccountData.data;
+      schoolId = accountData.user?.schoolId;
+      token = createAccountData.token;
+      setIsResumingPayment(!!createAccountData.resumePayment);
+
+      if (!isMobilePlatform) {
+        Alert.alert('Payment Required', 'Please use the mobile app to complete payment.');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      // @ts-ignore
+      const InAppPurchases = await import('expo-in-app-purchases');
+      const purchasePromise = new Promise((resolve) => {
+        purchaseResolverRef.current = resolve;
+      });
+
+      await InAppPurchases.purchaseItemAsync(SUBSCRIPTION_ID);
+      const purchase: any = await purchasePromise;
+      purchaseResolverRef.current = null;
+
+      if (purchase.purchaseToken) {
+        await InAppPurchases.finishTransactionAsync(purchase, false);
+
+        const updateResponse = await fetch(`${API_BASE_URL}/api/schools/${schoolId}/payment-status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            purchaseToken: purchase.purchaseToken,
+            payment_status: 'completed',
+          }),
+        });
+
+        if (!updateResponse.ok) {
+          setBillingError('Failed to sync payment');
+          setIsProcessingPayment(false);
+          return;
         }
 
+        const user = {
+          schoolId,
+          email: accountData.user?.email,
+          name: accountData.user?.name,
+          type: 'school',
+          countryId: accountData.user?.countryId,
+          country: registrationData.country,
+          paymentStatus: 'completed',
+        };
+
+        try {
+          await SecureStore.setItemAsync('userToken', token);
+          await SecureStore.setItemAsync('userData', JSON.stringify(user));
+        } catch (e) {
+          localStorage.setItem('userToken', token);
+          localStorage.setItem('userData', JSON.stringify(user));
+        }
+
+        Alert.alert('Success', 'Account activated!');
         router.replace('/dashboard');
-      } else {
-        // Display actual backend error
-        const errorMsg = data.error || data.message || 'Registration failed';
-        setError(errorMsg);
+        return;
       }
-    } catch (err) {
-      console.error('Registration Error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+
+      setBillingError(purchase?.userCancelled ? 'Payment cancelled.' : 'Purchase failed.');
+    } catch (err: any) {
+      setBillingError(err.message || 'An error occurred');
     } finally {
-      setLoading(false);
+      setIsProcessingPayment(false);
     }
   };
 
+  const handleBackToForm = () => {
+    setCurrentStep('form');
+    setRegistrationData(null);
+    setBillingError('');
+  };
+
   return (
-    <ThemedView style={{ flex: 1 }}>
-      <ScrollView
-        style={{ flex: 1, padding: 20 }}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      >
-        <View style={{ marginBottom: 30 }}>
-          <ThemedText type="title" style={{ marginBottom: 10 }}>
-            Complete Registration
-          </ThemedText>
-          <ThemedText type="subtitle" style={{ opacity: 0.7 }}>
-            Step 3: School & Admin Details
-          </ThemedText>
+    <ThemedView style={{ flex: 1, position: 'relative' }}>
+      {isResumingPayment && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.75)', justifyContent: 'center', alignItems: 'center', zIndex: 999 }}>
+          <ActivityIndicator size="large" color="#1976d2" />
+          <Text style={{ marginTop: 12, fontSize: 16, fontWeight: '600', color: '#1976d2' }}>Resuming account...</Text>
         </View>
+      )}
 
-        {countriesError && (
-          <View
-            style={{
-              backgroundColor: '#ffebee',
-              borderLeftColor: '#d32f2f',
-              borderLeftWidth: 5,
-              padding: 14,
-              borderRadius: 6,
-              marginBottom: 20,
-              borderWidth: 1,
-              borderColor: '#ffcdd2',
-            }}
-          >
-            <ThemedText style={{ color: '#c62828', fontSize: 15, fontWeight: '600', marginBottom: 4 }}>
-              ⚠️ Countries Load Error
-            </ThemedText>
-            <ThemedText style={{ color: '#b71c1c', fontSize: 14, lineHeight: 20 }}>
-              {countriesError}
-            </ThemedText>
-            <TouchableOpacity
-              style={{ marginTop: 8 }}
-              onPress={fetchCountries}
-            >
-              <ThemedText style={{ color: '#d32f2f', fontSize: 14, fontWeight: '600' }}>
-                🔄 Retry
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        )}
+      <ScrollView style={{ flex: 1, padding: 20 }} contentContainerStyle={{ paddingBottom: 40 }}>
+        {currentStep === 'form' && (
+          <>
+            <View style={{ marginBottom: 30 }}>
+              <ThemedText type="title">Complete Registration</ThemedText>
+              <ThemedText type="subtitle" style={{ opacity: 0.7 }}>Step 3: School & Admin Details</ThemedText>
+            </View>
 
-        {loadingCountries && (
-          <View
-            style={{
-              backgroundColor: '#e3f2fd',
-              padding: 16,
-              borderRadius: 8,
-              marginBottom: 20,
-              alignItems: 'center',
-              flexDirection: 'row',
-              justifyContent: 'center',
-            }}
-          >
-            <ActivityIndicator color="#1976d2" size="small" style={{ marginRight: 8 }} />
-            <ThemedText style={{ fontSize: 14, color: '#1976d2', fontWeight: '500' }}>
-              Loading countries...
-            </ThemedText>
-          </View>
-        )}
-
-        {!loadingCountries && countries.length > 0 && (
-          <View style={{ marginBottom: 16 }}>
-            <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-              Select Country *
-            </ThemedText>
-            <TouchableOpacity
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 12,
-                backgroundColor: '#fff',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              onPress={() => setShowCountryDropdown(!showCountryDropdown)}
-              disabled={loading}
-            >
-              <ThemedText
-                style={{
-                  fontSize: 14,
-                  color: formData.country ? '#000' : '#999',
-                }}
-              >
-                {formData.country || 'Choose a country...'}
-              </ThemedText>
-              <ThemedText style={{ fontSize: 16 }}>
-                {showCountryDropdown ? '▲' : '▼'}
-              </ThemedText>
-            </TouchableOpacity>
-
-            {showCountryDropdown && (
-              <View
-                style={{
-                  borderWidth: 1,
-                  borderColor: '#ddd',
-                  borderTopWidth: 0,
-                  borderRadius: 0,
-                  borderBottomLeftRadius: 6,
-                  borderBottomRightRadius: 6,
-                  backgroundColor: '#fff',
-                  maxHeight: 200,
-                  marginTop: -1,
-                }}
-              >
-                <FlatList
-                  data={countries}
-                  keyExtractor={(item) => String(item.id)}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={{
-                        padding: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: '#eee',
-                        backgroundColor: formData.country === item.name ? '#e8f5e9' : '#fff',
-                      }}
-                      onPress={() => {
-                        setFormData({
-                          ...formData,
-                          country: item.name,
-                          countryId: item.id,
-                        });
-                        setShowCountryDropdown(false);
-                        setError('');
-                      }}
-                    >
-                      <ThemedText
-                        style={{
-                          fontSize: 14,
-                          color: formData.country === item.name ? '#2e7d32' : '#333',
-                          fontWeight: formData.country === item.name ? '600' : '400',
-                        }}
-                      >
-                        {item.name}
-                      </ThemedText>
-                      {item.code && (
-                        <ThemedText style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                          {item.code}
-                        </ThemedText>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                />
+            {countriesError && (
+              <View style={{ backgroundColor: '#ffebee', padding: 14, borderRadius: 6, marginBottom: 20 }}>
+                <ThemedText style={{ color: '#c62828' }}>⚠️ Load Error: {countriesError}</ThemedText>
+                <TouchableOpacity onPress={fetchCountries}><ThemedText style={{ color: '#d32f2f', fontWeight: '600', marginTop: 8 }}>🔄 Retry</ThemedText></TouchableOpacity>
               </View>
             )}
-          </View>
+
+            {!loadingCountries && countries.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <ThemedText style={{ marginBottom: 6, fontWeight: '600' }}>Select Country *</ThemedText>
+                <TouchableOpacity
+                  style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 12, backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between' }}
+                  onPress={() => setShowCountryDropdown(!showCountryDropdown)}
+                >
+                  <ThemedText style={{ color: formData.country ? '#000' : '#999' }}>{formData.country || 'Choose a country...'}</ThemedText>
+                  <ThemedText>{showCountryDropdown ? '▲' : '▼'}</ThemedText>
+                </TouchableOpacity>
+
+                {showCountryDropdown && (
+                  <View style={{ borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', maxHeight: 200 }}>
+                    <FlatList
+                      data={countries}
+                      keyExtractor={(item) => String(item.id)}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }} onPress={() => { setFormData({ ...formData, country: item.name, countryId: item.id }); setShowCountryDropdown(false); }}>
+                          <ThemedText>{item.name}</ThemedText>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+
+            <View style={{ marginBottom: 16 }}>
+              <ThemedText style={{ marginBottom: 6, fontWeight: '600' }}>School Name *</ThemedText>
+              <TextInput style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 10, backgroundColor: '#fff' }} value={formData.schoolName} onChangeText={(text) => setFormData({ ...formData, schoolName: text })} />
+            </View>
+
+            <View style={{ marginBottom: 16 }}>
+              <ThemedText style={{ marginBottom: 6, fontWeight: '600' }}>First Name *</ThemedText>
+              <TextInput style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 10, backgroundColor: '#fff' }} value={formData.firstName} onChangeText={(text) => setFormData({ ...formData, firstName: text })} />
+            </View>
+
+            <View style={{ marginBottom: 16 }}>
+              <ThemedText style={{ marginBottom: 6, fontWeight: '600' }}>Last Name *</ThemedText>
+              <TextInput style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 10, backgroundColor: '#fff' }} value={formData.lastName} onChangeText={(text) => setFormData({ ...formData, lastName: text })} />
+            </View>
+
+            <View style={{ marginBottom: 24 }}>
+              <ThemedText style={{ marginBottom: 6, fontWeight: '600' }}>Password *</ThemedText>
+              <TextInput secureTextEntry style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 10, backgroundColor: '#fff' }} value={formData.password} onChangeText={(text) => setFormData({ ...formData, password: text })} />
+            </View>
+
+            <View style={{ marginBottom: 24 }}>
+              <ThemedText style={{ marginBottom: 6, fontWeight: '600' }}>Confirm Password *</ThemedText>
+              <TextInput secureTextEntry style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 10, backgroundColor: '#fff' }} value={formData.confirmPassword} onChangeText={(text) => setFormData({ ...formData, confirmPassword: text })} />
+            </View>
+
+            {error && <ThemedText style={{ color: 'red', marginBottom: 16 }}>{error}</ThemedText>}
+
+            <TouchableOpacity style={{ backgroundColor: '#4CAF50', padding: 16, borderRadius: 8, alignItems: 'center' }} onPress={handleCompleteRegistration}>
+              <ThemedText style={{ color: '#fff', fontWeight: '600' }}>Next: Complete Payment</ThemedText>
+            </TouchableOpacity>
+          </>
         )}
 
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-            School Name *
-          </ThemedText>
-          <TextInput
-            style={{
-              borderWidth: 1,
-              borderColor: '#ddd',
-              borderRadius: 6,
-              padding: 10,
-              fontSize: 14,
-              backgroundColor: '#fff',
-            }}
-            placeholder="Your School Name"
-            placeholderTextColor="#999"
-            value={formData.schoolName}
-            onChangeText={(text) => {
-              setFormData({ ...formData, schoolName: text });
-              setError('');
-            }}
-            editable={!loading}
-          />
-        </View>
-
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 8, fontWeight: '600', fontSize: 14 }}>
-            School Type *
-          </ThemedText>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {['private', 'public'].map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={{
-                  flex: 1,
-                  paddingVertical: 10,
-                  borderRadius: 6,
-                  borderWidth: 2,
-                  borderColor: formData.schoolType === type ? '#4CAF50' : '#ddd',
-                  backgroundColor: formData.schoolType === type ? '#e8f5e9' : '#fff',
-                  alignItems: 'center',
-                }}
-                onPress={() => {
-                  setFormData({ ...formData, schoolType: type });
-                  setError('');
-                }}
-              >
-                <ThemedText
-                  style={{
-                    textTransform: 'capitalize',
-                    fontWeight: '600',
-                    color: formData.schoolType === type ? '#4CAF50' : '#666',
-                  }}
-                >
-                  {type}
-                </ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-            First Name *
-          </ThemedText>
-          <TextInput
-            style={{
-              borderWidth: 1,
-              borderColor: '#ddd',
-              borderRadius: 6,
-              padding: 10,
-              fontSize: 14,
-              backgroundColor: '#fff',
-            }}
-            placeholder="John"
-            placeholderTextColor="#999"
-            value={formData.firstName}
-            onChangeText={(text) => {
-              setFormData({ ...formData, firstName: text });
-              setError('');
-            }}
-            editable={!loading}
-          />
-        </View>
-
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-            Last Name *
-          </ThemedText>
-          <TextInput
-            style={{
-              borderWidth: 1,
-              borderColor: '#ddd',
-              borderRadius: 6,
-              padding: 10,
-              fontSize: 14,
-              backgroundColor: '#fff',
-            }}
-            placeholder="Doe"
-            placeholderTextColor="#999"
-            value={formData.lastName}
-            onChangeText={(text) => {
-              setFormData({ ...formData, lastName: text });
-              setError('');
-            }}
-            editable={!loading}
-          />
-        </View>
-
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-            Phone Number (Optional)
-          </ThemedText>
-          <TextInput
-            style={{
-              borderWidth: 1,
-              borderColor: '#ddd',
-              borderRadius: 6,
-              padding: 10,
-              fontSize: 14,
-              backgroundColor: '#fff',
-            }}
-            placeholder="+234 800 000 0000"
-            placeholderTextColor="#999"
-            value={formData.phone}
-            onChangeText={(text) => {
-              setFormData({ ...formData, phone: text });
-              setError('');
-            }}
-            editable={!loading}
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-            Password *
-          </ThemedText>
-          <View style={{ position: 'relative' }}>
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 10,
-                paddingRight: 45,
-                fontSize: 14,
-                backgroundColor: '#fff',
-              }}
-              placeholder="Must include: A-Z, a-z, 0-9, symbol"
-              placeholderTextColor="#999"
-              value={formData.password}
-              onChangeText={(text) => {
-                setFormData({ ...formData, password: text });
-                setError('');
-              }}
-              editable={!loading}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity
-              style={{
-                position: 'absolute',
-                right: 10,
-                top: 10,
-                padding: 5,
-              }}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <Text style={{ fontSize: 18 }}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={{ marginBottom: 16 }}>
-          <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-            Confirm Password *
-          </ThemedText>
-          <View style={{ position: 'relative' }}>
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 10,
-                paddingRight: 45,
-                fontSize: 14,
-                backgroundColor: '#fff',
-              }}
-              placeholder="Re-enter password"
-              placeholderTextColor="#999"
-              value={formData.confirmPassword}
-              onChangeText={(text) => {
-                setFormData({ ...formData, confirmPassword: text });
-                setError('');
-              }}
-              editable={!loading}
-              secureTextEntry={!showConfirmPassword}
-            />
-            <TouchableOpacity
-              style={{
-                position: 'absolute',
-                right: 10,
-                top: 10,
-                padding: 5,
-              }}
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-            >
-              <Text style={{ fontSize: 18 }}>{showConfirmPassword ? '👁️' : '👁️‍🗨️'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {error ? (
-          <View
-            style={{
-              backgroundColor: '#ffebee',
-              borderLeftColor: '#d32f2f',
-              borderLeftWidth: 5,
-              padding: 14,
-              borderRadius: 6,
-              marginBottom: 20,
-              borderWidth: 1,
-              borderColor: '#ffcdd2',
-            }}
-          >
-            <ThemedText style={{ color: '#c62828', fontSize: 15, fontWeight: '600', marginBottom: 4 }}>
-              ❌ Registration Error
-            </ThemedText>
-            <ThemedText style={{ color: '#b71c1c', fontSize: 14, lineHeight: 20 }}>
-              {error}
-            </ThemedText>
-          </View>
-        ) : null}
-
-        <TouchableOpacity
-          style={{
-            backgroundColor: loading ? '#ccc' : '#4CAF50',
-            padding: 16,
-            borderRadius: 8,
-            alignItems: 'center',
-            opacity: loading ? 0.6 : 1,
-          }}
-          onPress={handleCompleteRegistration}
-          disabled={loading}
-        >
-          {loading ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />
-              <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-                Completing Registration...
-              </ThemedText>
+        {currentStep === 'payment' && (
+          <>
+            <View style={{ marginBottom: 30 }}>
+              <ThemedText type="title">Activate Account</ThemedText>
+              <ThemedText type="subtitle" style={{ opacity: 0.7 }}>{isResumingPayment ? 'Complete pending subscription' : 'Start your subscription'}</ThemedText>
             </View>
-          ) : (
-            <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-              Complete Registration
-            </ThemedText>
-          )}
-        </TouchableOpacity>
 
-        <View
-          style={{
-            backgroundColor: '#e3f2fd',
-            padding: 12,
-            borderRadius: 8,
-            marginTop: 20,
-          }}
-        >
-          <ThemedText style={{ fontSize: 12, color: '#1976d2', lineHeight: 18 }}>
-            ℹ️ After registration, you'll be logged in automatically and can manage students and scores.
-          </ThemedText>
-        </View>
+            {billingError && (
+              <View style={{ backgroundColor: '#ffebee', padding: 14, borderRadius: 6, marginBottom: 20 }}>
+                <ThemedText style={{ color: '#c62828' }}>⚠️ {billingError}</ThemedText>
+              </View>
+            )}
+
+            {billingPlan ? (
+              <View style={{ backgroundColor: '#f5f5f5', padding: 20, borderRadius: 8, marginBottom: 30, borderWidth: 2, borderColor: '#4CAF50' }}>
+                <ThemedText style={{ fontSize: 18, fontWeight: 'bold', color: '#4CAF50' }}>📱 {billingPlan.title}</ThemedText>
+                <ThemedText style={{ fontSize: 24, fontWeight: 'bold' }}>{billingPlan.priceText}</ThemedText>
+                <ThemedText>{billingPlan.description}</ThemedText>
+              </View>
+            ) : (
+              <ActivityIndicator color="#1976d2" size="large" />
+            )}
+
+            <TouchableOpacity
+              style={{ backgroundColor: isProcessingPayment || loadingBilling ? '#ccc' : '#4CAF50', padding: 16, borderRadius: 8, alignItems: 'center' }}
+              onPress={handlePaymentAndRegistration}
+              disabled={isProcessingPayment || loadingBilling || !billingPlan}
+            >
+              <ThemedText style={{ color: '#fff' }}>{isProcessingPayment ? 'Processing...' : 'Subscribe & Activate'}</ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={{ marginTop: 12, alignItems: 'center' }} onPress={handleBackToForm}>
+              <ThemedText style={{ color: '#666' }}>← Back to Form</ThemedText>
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
     </ThemedView>
   );

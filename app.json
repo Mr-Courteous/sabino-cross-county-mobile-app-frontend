@@ -17,7 +17,9 @@
     },
     "android": {
       "package": "com.courteous.sabinomobile",
-      "permissions": ["com.android.vending.BILLING"],
+      "permissions": [
+        "com.android.vending.BILLING"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/sabino.png"
@@ -43,7 +45,8 @@
         {
           "android": {
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "kotlinVersion": "2.1.20"
           }
         }
       ],
