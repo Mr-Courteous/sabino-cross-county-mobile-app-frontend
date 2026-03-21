@@ -6,21 +6,7 @@ import { API_BASE_URL } from '@/utils/api-service';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { validatePassword } from '@/utils/password-validator';
-import { 
-  initConnection, 
-  endConnection, 
-  flushFailedPurchasesCachedAsPendingAndroid, 
-  getSubscriptions, 
-  requestSubscription, 
-  finishTransaction,
-  purchaseUpdatedListener,
-  purchaseErrorListener,
-  ProductPurchase,
-  Purchase,
-  ErrorCode
-} from 'react-native-iap'; // ✅ Direct imports for newer versions
-
-const SUBSCRIPTION_ID = 'sabino_school_product_id1234';
+import { PayWithFlutterwave } from 'flutterwave-react-native';
 
 export default function CompleteRegistrationScreen() {
   const router = useRouter();
@@ -34,11 +20,11 @@ export default function CompleteRegistrationScreen() {
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [countriesError, setCountriesError] = useState('');
 
-  // REGISTRATION & FLOW MGMT
+  // REGISTRATION STEP MANAGEMENT
   const [currentStep, setCurrentStep] = useState<'form' | 'payment'>('form');
-  const [checkingAccount, setCheckingAccount] = useState(true);
-  
-  // Store context for IAP listeners to find
+  const [registrationData, setRegistrationData] = useState<any>(null);
+
+  // Store schoolId and token for the listener to use
   const schoolContext = useRef<{ schoolId: string | null, token: string | null }>({ schoolId: null, token: null });
 
   const [formData, setFormData] = useState({
@@ -62,19 +48,74 @@ export default function CompleteRegistrationScreen() {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [billingError, setBillingError] = useState('');
   const [isResumingPayment, setIsResumingPayment] = useState(false);
-  const [billingPlan, setBillingPlan] = useState<any>(null);
+  const [checkingAccount, setCheckingAccount] = useState(true);
 
   const showError = (title: string, message: any) => {
-    console.log(`[BIILING ERROR] ${title}:`, message);
+    console.log(`[API ERROR] ${title}:`, message);
     Alert.alert(
       title,
-      typeof message === 'string' ? message : (message?.message || JSON.stringify(message))
+      typeof message === 'string'
+        ? message
+        : message?.message || JSON.stringify(message)
     );
+  };
+
+  const checkAccountStatus = async () => {
+    if (!email) return;
+    
+    console.log(`[CHECK] Checking account for: ${email} at ${API_BASE_URL}/api/schools/otp`);
+    try {
+      setCheckingAccount(true);
+      const response = await fetch(`${API_BASE_URL}/api/schools/otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log(`[CHECK] Result:`, result);
+
+      if (result.alreadyRegistered) {
+        if (result.resumePayment) {
+          console.log("[CHECK] Found pending payment, resuming...");
+          setIsResumingPayment(true);
+          // Pre-fill some data if available
+          if (result.data) {
+            setFormData(prev => ({
+              ...prev,
+              schoolName: result.data.name || prev.schoolName,
+            }));
+            schoolContext.current = { 
+              schoolId: result.data.schoolId, 
+              token: null // We'll get a token when they try to "Continue" or login
+            };
+          }
+          // Move to payment step automatically if they are resuming
+          setCurrentStep('payment');
+        } else if (result.data?.paymentStatus === 'completed') {
+          Alert.alert("Already Active", "This school is already active. Please login.", [
+            { text: "Go to Login", onPress: () => router.replace('/(auth)') }
+          ]);
+        }
+      }
+    } catch (err: any) {
+      console.log("[CHECK] Network/CORS Error:", err);
+      // Don't block the UI with an alert on mount check, just log it
+      setBillingError("Could not connect to server. Check your internet or API URL.");
+    } finally {
+      // Add a slight delay for better UX
+      setTimeout(() => setCheckingAccount(false), 800);
+    }
   };
 
   const fetchCountries = async () => {
     try {
       setLoadingCountries(true);
+      console.log(`[FETCH] Loading countries from ${API_BASE_URL}/api/auth/countries`);
       const response = await fetch(`${API_BASE_URL}/api/auth/countries`);
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
@@ -90,150 +131,39 @@ export default function CompleteRegistrationScreen() {
     }
   };
 
-  const checkAccountStatus = async () => {
-    if (!email) return;
-    try {
-      setCheckingAccount(true);
-      const response = await fetch(`${API_BASE_URL}/api/schools/otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const result = await response.json();
-      if (result.alreadyRegistered) {
-        if (result.resumePayment) {
-          setIsResumingPayment(true);
-          if (result.data) {
-            setFormData(prev => ({ ...prev, schoolName: result.data.name || prev.schoolName }));
-            schoolContext.current = { schoolId: result.data.schoolId, token: null };
-          }
-          setCurrentStep('payment');
-        } else if (result.data?.paymentStatus === 'completed') {
-          Alert.alert("Already Active", "This school is already active. Please login.", [
-            { text: "Go to Login", onPress: () => router.replace('/(auth)') }
-          ]);
-        }
-      }
-    } catch (err) {
-      console.log("[CHECK] Network error on mount:", err);
-    } finally {
-      setTimeout(() => setCheckingAccount(false), 800);
-    }
-  };
+  useEffect(() => {
+    fetchCountries();
+    checkAccountStatus();
+  }, []);
 
-  const handleServerPurchaseVerification = async (purchase: ProductPurchase) => {
+  const handleFlutterwaveVerification = async (transactionId: string) => {
     setIsProcessingPayment(true);
     try {
       const { schoolId, token } = schoolContext.current;
-      console.log(`[VERIFY] Syncing purchase ${purchase.transactionId} with server...`);
-
-      const response = await fetch(`${API_BASE_URL}/api/schools/${schoolId}/payment-status`, {
-        method: 'PATCH',
+      console.log(`[VERIFY] Verifying transaction ${transactionId} for school ${schoolId}`);
+      
+      const response = await fetch(`${API_BASE_URL}/api/schools/${schoolId}/verify-flutterwave`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          purchaseToken: purchase.transactionReceipt,
-          payment_status: 'completed',
-          subscriptionDetails: purchase
-        })
+        body: JSON.stringify({ transaction_id: transactionId })
       });
 
       if (response.ok) {
-        await finishTransaction({ purchase, isConsumable: false });
         Alert.alert("Success", "Account Activated! Welcome aboard.");
         router.replace('/dashboard');
       } else {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Backend verification failed");
+        throw new Error(errorData.error || "Backend verification failed");
       }
     } catch (err: any) {
-      showError("Sync Error", "Your purchase was successful, but we couldn't update your account yet. Please contact support.");
+      showError("Sync Error", "Payment received but account update failed. Please contact support.");
     } finally {
       setIsProcessingPayment(false);
     }
   };
-
-  const initializeBilling = async () => {
-    try {
-      setLoading(true);
-      console.log("[IAP] Initializing connection...");
-      const connected = await initConnection(); // Wait for the bridge
-      
-      if (typeof connected === 'boolean' ? connected : true) { // Some versions return boolean, some return result
-        if (Platform.OS === 'android') {
-          await flushFailedPurchasesCachedAsPendingAndroid();
-        }
-
-        console.log("[IAP] Connection successful. Fetching subscriptions...");
-        const products = await getSubscriptions({
-          subscriptions: [{ sku: SUBSCRIPTION_ID }] 
-        });
-        console.log("[IAP] Products found:", products?.length || 0);
-        
-        if (products.length > 0) {
-          setBillingPlan(products[0]);
-        } else {
-          setBillingError(`Product ${SUBSCRIPTION_ID} not found.`);
-        }
-        return true;
-      }
-      return false;
-    } catch (err: any) {
-      setBillingError('Could not connect to Google Play store.');
-      showError('Store Connection Error', err);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchCountries();
-    checkAccountStatus();
-
-    let purchaseUpdateSubscription: any;
-    let purchaseErrorSubscription: any;
-
-    const startIAPFlow = async () => {
-      if (isMobilePlatform) {
-        const isConnected = await initializeBilling();
-        
-        // ONLY add listeners if the connection was successful
-        if (isConnected) {
-          purchaseUpdateSubscription = purchaseUpdatedListener(async (purchases: any) => {
-            const purchase = Array.isArray(purchases) ? purchases[0] : purchases;
-            if (purchase) {
-              console.log('[IAP] Purchase Updated:', purchase.transactionId);
-              const receipt = purchase.transactionReceipt || purchase.purchaseToken;
-              if (receipt) {
-                await handleServerPurchaseVerification(purchase);
-              }
-            }
-          });
-
-          purchaseErrorSubscription = purchaseErrorListener((error: any) => {
-            console.log('[IAP] Purchase Error:', error);
-            setIsProcessingPayment(false);
-            if (error.code !== 'E_USER_CANCELLED') {
-              showError('Purchase Failed', error.message);
-            }
-          });
-        }
-      }
-    };
-
-    startIAPFlow();
-
-    return () => {
-      if (purchaseUpdateSubscription) purchaseUpdateSubscription.remove();
-      if (purchaseErrorSubscription) purchaseErrorSubscription.remove();
-      if (isMobilePlatform) {
-        endConnection();
-      }
-    };
-  }, []);
 
   const validateForm = () => {
     if (!formData.country.trim()) { setError('Please select a country'); return false; }
@@ -249,10 +179,12 @@ export default function CompleteRegistrationScreen() {
 
   const handleCompleteRegistration = async () => {
     if (!validateForm()) return;
+
     setLoading(true);
     setError('');
 
     try {
+      console.log(`[POST] Registering/Updating account at ${API_BASE_URL}/api/schools`);
       const regData = {
         email,
         password: formData.password,
@@ -276,34 +208,21 @@ export default function CompleteRegistrationScreen() {
         throw new Error(responseData.error || responseData.message || 'Account creation failed');
       }
 
-      console.log(`[POST] Registered/Updated:`, responseData.data);
+      console.log(`[POST] Registered successfully:`, responseData.data);
       const accountData = responseData.data;
       const schoolId = accountData.user?.schoolId;
       const token = responseData.token;
 
       schoolContext.current = { schoolId, token };
       setIsResumingPayment(!!responseData.resumePayment);
+      setRegistrationData(regData);
       setCurrentStep('payment');
     } catch (err: any) {
+      console.error("[POST] Error:", err);
+      showError('Registration Error', err.message || 'Check your internet connection');
       setError(err.message || 'Registration failed');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePurchase = async () => {
-    if (!isMobilePlatform) {
-      Alert.alert("Platform Not Supported", "Billing is only supported on Android or iOS devices.");
-      return;
-    }
-    
-    setIsProcessingPayment(true);
-    try {
-      console.log("[IAP] Requesting subscription for:", SUBSCRIPTION_ID);
-      await requestSubscription({ sku: SUBSCRIPTION_ID });
-    } catch (err: any) {
-      setIsProcessingPayment(false);
-      showError('Subscription Error', err);
     }
   };
 
@@ -318,7 +237,7 @@ export default function CompleteRegistrationScreen() {
       {checkingAccount && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.95)', justifyContent: 'center', alignItems: 'center', zIndex: 999 }}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <ThemedText style={{ marginTop: 12, fontWeight: '600', color: '#4CAF50' }}>Preparing registration...</ThemedText>
+          <ThemedText style={{ marginTop: 12, fontWeight: '600', color: '#4CAF50' }}>Resuming your account...</ThemedText>
         </View>
       )}
 
@@ -349,7 +268,7 @@ export default function CompleteRegistrationScreen() {
                 </TouchableOpacity>
 
                 {showCountryDropdown && (
-                  <View style={{ borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', maxHeight: 200, marginTop: -1, zIndex: 1000 }}>
+                  <View style={{ borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', maxHeight: 200, marginTop: -1 }}>
                     <FlatList
                       data={countries}
                       keyExtractor={(item) => String(item.id)}
@@ -400,7 +319,7 @@ export default function CompleteRegistrationScreen() {
               </View>
             </View>
 
-            {error ? <ThemedText style={{ color: '#d32f2f', marginBottom: 16, fontWeight: '600' }}>❌ {error}</ThemedText> : null}
+            {error && <ThemedText style={{ color: '#d32f2f', marginBottom: 16, fontWeight: '600' }}>❌ {error}</ThemedText>}
 
             <TouchableOpacity 
               style={{ backgroundColor: loading ? '#ccc' : '#4CAF50', padding: 16, borderRadius: 8, alignItems: 'center' }} 
@@ -410,7 +329,7 @@ export default function CompleteRegistrationScreen() {
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Continue to Payment</ThemedText>
+                <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Continue to Activation</ThemedText>
               )}
             </TouchableOpacity>
           </>
@@ -420,49 +339,67 @@ export default function CompleteRegistrationScreen() {
           <>
             <View style={{ marginBottom: 30 }}>
               <ThemedText type="title">Activate Subscription</ThemedText>
-              <ThemedText type="subtitle" style={{ opacity: 0.7 }}>Secure access via Google Play</ThemedText>
+              <ThemedText type="subtitle" style={{ opacity: 0.7 }}>Secure access via Flutterwave</ThemedText>
             </View>
 
             {billingError ? (
               <View style={{ backgroundColor: '#ffebee', padding: 20, borderRadius: 8, borderLeftWidth: 5, borderLeftColor: '#d32f2f', marginBottom: 25 }}>
-                <ThemedText style={{ color: '#c62828', fontWeight: 'bold', marginBottom: 5 }}>Store Error</ThemedText>
+                <ThemedText style={{ color: '#c62828', fontWeight: 'bold', marginBottom: 5 }}>Payment Error</ThemedText>
                 <ThemedText style={{ color: '#b71c1c' }}>{billingError}</ThemedText>
-                <TouchableOpacity onPress={initializeBilling} style={{ marginTop: 10 }}><ThemedText style={{ color: '#007AFF' }}>Retry connecting to store</ThemedText></TouchableOpacity>
               </View>
             ) : null}
 
             <View style={{ backgroundColor: '#f9f9f9', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#ddd', marginBottom: 30 }}>
-              <ThemedText style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>📱 Sabino School Portal</ThemedText>
-              <ThemedText style={{ fontSize: 24, fontWeight: 'bold', color: '#4CAF50', marginBottom: 10 }}>
-                {billingPlan ? billingPlan.localizedPrice : '₦5,000'} / month
-              </ThemedText>
-              <ThemedText style={{ fontSize: 14, color: '#666', lineHeight: 20 }}>
-                {billingPlan?.description || 'Get full access to school management features, student registries, and report generation.'}
-              </ThemedText>
+              <ThemedText style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>📱 Sabino School Subscription</ThemedText>
+              <ThemedText style={{ fontSize: 24, fontWeight: 'bold', color: '#4CAF50', marginBottom: 10 }}>₦5,000 / month</ThemedText>
+              <ThemedText style={{ fontSize: 14, color: '#666', lineHeight: 20 }}>Comprehensive school management features, student registries, and report generation.</ThemedText>
             </View>
 
-            <TouchableOpacity
-              style={{ padding: 18, borderRadius: 8, alignItems: 'center', backgroundColor: isProcessingPayment || !isMobilePlatform ? '#ccc' : '#4CAF50' }}
-              onPress={handlePurchase}
-              disabled={isProcessingPayment || !isMobilePlatform}
-            >
-              {isProcessingPayment ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>
-                  Subscribe via Google Play
-                </ThemedText>
+            <PayWithFlutterwave
+              onRedirect={async (data) => {
+                if (data.status === 'successful') {
+                  // CALL BACKEND VERIFY ROUTE
+                  await handleFlutterwaveVerification(data.transaction_id);
+                } else {
+                  setBillingError("Payment was not successful. Please try again.");
+                }
+              }}
+              options={{
+                tx_ref: `sabino_tx_${Date.now()}_${schoolContext.current.schoolId}`,
+                authorization: 'FLWPUBK_TEST-006eb849fc05b0c57df79050a1478936-X', // Update with your actual public key
+                amount: 5000,
+                currency: 'NGN',
+                payment_options: 'card,ussd,banktransfer',
+                customer: {
+                  email: email,
+                  phonenumber: formData.phone,
+                  name: `${formData.firstName} ${formData.lastName}`,
+                },
+                customizations: {
+                  title: 'Sabino School Subscription',
+                  description: 'Payment for school management platform',
+                  logo: 'https://sabino-cross-county-mobile-app-back.vercel.app/logo.png', // Corrected placeholder
+                },
+              }}
+              customButton={(props) => (
+                <TouchableOpacity
+                  style={{ backgroundColor: props.disabled || isProcessingPayment ? '#ccc' : '#4CAF50', padding: 18, borderRadius: 8, alignItems: 'center' }}
+                  onPress={props.onPress}
+                  disabled={props.disabled || isProcessingPayment}
+                >
+                  {isProcessingPayment ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>
+                      Pay Now with Flutterwave
+                    </ThemedText>
+                  )}
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+            />
 
-            {!isMobilePlatform && (
-              <ThemedText style={{ color: '#D32F2F', textAlign: 'center', marginTop: 12, fontSize: 13 }}>
-                💳 Billing is only available on physical mobile devices.
-              </ThemedText>
-            )}
-
-            <TouchableOpacity style={{ marginTop: 25, alignItems: 'center' }} onPress={handleBackToForm}>
-              <ThemedText style={{ color: '#666' }}>← Edit school details</ThemedText>
+            <TouchableOpacity style={{ marginTop: 20, alignItems: 'center' }} onPress={handleBackToForm}>
+              <ThemedText style={{ color: '#666' }}>← Change school details</ThemedText>
             </TouchableOpacity>
           </>
         )}
