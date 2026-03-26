@@ -6,7 +6,7 @@ import { API_BASE_URL } from '@/utils/api-service';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { validatePassword } from '@/utils/password-validator';
-import * as RNIap from 'react-native-iap'; // ✅ Namespace import for maximum reliability
+import * as IAP from 'react-native-iap'; // ✅ Namespace import for maximum reliability
 
 const SUBSCRIPTION_ID = 'sabino_school_product_id1234';
 
@@ -107,7 +107,7 @@ export default function CompleteRegistrationScreen() {
     }
   };
 
-  const handleServerPurchaseVerification = async (purchase: RNIap.ProductPurchase) => {
+  const handleServerPurchaseVerification = async (purchase: IAP.ProductPurchase) => {
     setIsProcessingPayment(true);
     try {
       const { schoolId, token } = schoolContext.current;
@@ -130,7 +130,7 @@ export default function CompleteRegistrationScreen() {
       });
 
       if (response.ok) {
-        await RNIap.finishTransaction({ purchase, isConsumable: false });
+        await IAP.finishTransaction({ purchase, isConsumable: false });
         Alert.alert("Success", "Account Activated! Welcome aboard.");
         router.replace('/dashboard');
       } else {
@@ -147,25 +147,19 @@ export default function CompleteRegistrationScreen() {
   const initializeBilling = async () => {
     try {
       setLoading(true);
-      console.log("[RNIap] module:", RNIap);
-      console.log("[RNIap] requestSubscription function:", RNIap.requestSubscription);
-      console.log("[RNIap] Initializing connection...");
-
-      const connected = await RNIap.initConnection(); // Wait for the bridge
+      console.log("[IAP] Initializing connection...");
+      const connected = await IAP.initConnection(); // Wait for the bridge
 
       if (typeof connected === 'boolean' ? connected : true) { // Some versions return boolean, some return result
         if (Platform.OS === 'android') {
-          await RNIap.flushFailedPurchasesCachedAsPendingAndroid();
+          await IAP.flushFailedPurchasesCachedAsPendingAndroid();
         }
 
-        console.log("[RNIap] Connection successful. Fetching subscriptions...");
-        const productIds = [SUBSCRIPTION_ID];
-        const products = await RNIap.getSubscriptions({
-          skus: productIds
+        console.log("[IAP] Connection successful. Fetching subscriptions...");
+        const products = await IAP.getSubscriptions({
+          subscriptions: [{ sku: SUBSCRIPTION_ID }] 
         });
-
-        console.log("[RNIap] getSubscriptions call: skus=", productIds);
-        console.log("[RNIap] Products found:", products?.length || 0);
+        console.log("[IAP] Products found:", products?.length || 0);
 
         if (products.length > 0) {
           setBillingPlan(products[0]);
@@ -188,20 +182,20 @@ export default function CompleteRegistrationScreen() {
     fetchCountries();
     checkAccountStatus();
 
-    let purchaseUpdateSubscription: RNIap.PurchaseUpdatedEvent | undefined;
-    let purchaseErrorSubscription: RNIap.PurchaseErrorEvent | undefined;
+    let purchaseUpdateSubscription: IAP.PurchaseUpdatedEvent | undefined;
+    let purchaseErrorSubscription: IAP.PurchaseErrorEvent | undefined;
 
     const startIAPFlow = async () => {
-      console.log("[RNIap] Available Methods:", Object.keys(RNIap));
+      console.log("[IAP] Available Methods:", Object.keys(IAP));
       if (isMobilePlatform) {
         const isConnected = await initializeBilling();
 
         // ONLY add listeners if the connection was successful
         if (isConnected) {
-          purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchases: any) => {
+          purchaseUpdateSubscription = IAP.purchaseUpdatedListener(async (purchases: any) => {
             const purchase = Array.isArray(purchases) ? purchases[0] : purchases;
             if (purchase) {
-              console.log('[RNIap] Purchase Updated:', purchase.transactionId);
+              console.log('[IAP] Purchase Updated:', purchase.transactionId);
               const receipt = purchase.transactionReceipt || purchase.purchaseToken;
               if (receipt) {
                 await handleServerPurchaseVerification(purchase);
@@ -209,8 +203,8 @@ export default function CompleteRegistrationScreen() {
             }
           });
 
-          purchaseErrorSubscription = RNIap.purchaseErrorListener((error: any) => {
-            console.log('[RNIap] Purchase Error:', error);
+          purchaseErrorSubscription = IAP.purchaseErrorListener((error: any) => {
+            console.log('[IAP] Purchase Error:', error);
             setIsProcessingPayment(false);
             if (error.code !== 'E_USER_CANCELLED') {
               showError('Purchase Failed', error.message);
@@ -290,10 +284,10 @@ export default function CompleteRegistrationScreen() {
       Alert.alert("Platform Not Supported", "Billing is only supported on Android or iOS devices.");
       return;
     }
-
+    
     // 1. Bulletproof check for native module existence
-    if (typeof RNIap.requestSubscription !== 'function') {
-      console.error("[RNIap] CRITICAL: requestSubscription is undefined. Native module not correctly linked in this build.");
+    if (typeof IAP.requestSubscription !== 'function') {
+      console.error("[IAP] CRITICAL: requestSubscription is undefined. Native module not correctly linked in this build.");
       Alert.alert("Store Module Error", "The in-app billing module is not correctly loaded in this app build. Please rebuild the app.");
       return;
     }
@@ -306,18 +300,18 @@ export default function CompleteRegistrationScreen() {
 
     setIsProcessingPayment(true);
     try {
-      console.log("[RNIap] Requesting subscription for:", SUBSCRIPTION_ID);
-
+      console.log("[IAP] Requesting subscription for:", SUBSCRIPTION_ID);
+      
       // For Android Subscriptions (v12+ / Billing Library 5+), we MUST use subscriptionOffers
       if (Platform.OS === 'android') {
         const offerToken = billingPlan.subscriptionOfferDetails?.[0]?.offerToken;
-
+        
         if (!offerToken) {
           throw new Error("No offer token found for this subscription. Check if the product is 'Active' in Google Play Console.");
         }
 
-        console.log("[RNIap] Requesting with token:", offerToken);
-        await RNIap.requestSubscription({
+        console.log("[IAP] Requesting with token:", offerToken);
+        await IAP.requestSubscription({
           subscriptionOffers: [{
             sku: SUBSCRIPTION_ID,
             offerToken: offerToken
@@ -325,7 +319,7 @@ export default function CompleteRegistrationScreen() {
         });
       } else {
         // iOS still uses the simple sku
-        await RNIap.requestSubscription({ sku: SUBSCRIPTION_ID });
+        await IAP.requestSubscription({ sku: SUBSCRIPTION_ID });
       }
     } catch (err: any) {
       setIsProcessingPayment(false);
