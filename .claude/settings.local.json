@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(grep -r \"flutterwave\\\\|payment\\\\|iap\\\\|subscription\\\\|plan\" /d/wamp64/www/sabino-cross-county-mobile-app-frontend/components --include=*.ts --include=*.tsx --include=*.js --include=*.jsx)",
+      "Bash(grep -r \"iap\\\\|subscription\\\\|plan.*id\\\\|product.*id\\\\|sku\" /d/wamp64/www/sabino-cross-county-mobile-app-frontend --include=*.ts --include=*.tsx --include=*.js --include=*.jsx --include=*.json)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"flutterwave\\\\|Flutterwave\" /d/wamp64/www/sabino-cross-county-mobile-app-frontend --include=*.ts --include=*.tsx --include=*.json --include=*.md)",
+      "Bash(grep:*)",
+      "Bash(ls -lah /d/wamp64/www/sabino-cross-county-mobile-app-frontend/app/\\\\\\(payments\\\\\\)/)",
+      "Bash(ls -lah /d/wamp64/www/sabino-cross-county-mobile-app-frontend/app/\\\\\\(auth\\\\\\)/)"
+    ]
+  }
+}
