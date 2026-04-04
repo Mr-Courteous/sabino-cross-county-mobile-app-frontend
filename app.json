@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "com.courteous.sabinomobile",
+      "newArchEnabled": true,
       "versionCode": 24,
       "permissions": [
         "com.android.vending.BILLING"

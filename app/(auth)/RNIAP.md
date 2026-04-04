@@ -1,14 +1,28 @@
 import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, ScrollView, Alert, Platform, FlatList } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { validatePassword } from '@/utils/password-validator';
-import Purchases from 'react-native-purchases';
+import * as RNIap from 'react-native-iap';
+import type { Subscription } from 'react-native-iap';
 
-const REVENUECAT_GOOGLE_API_KEY = 'goog_DoercEbvtNXRhqfTjOYMkzCJKlX';
-const REVENUECAT_APPLE_API_KEY = 'YOUR_REVENUECAT_APPLE_API_KEY';
+const SUBSCRIPTION_ID = 'sabino_school_product_id1234';
+
+/** Extract display price from a v13 Subscription object */
+function getSubscriptionPrice(sub: Subscription): string {
+  // Android Billing Library 5+: price is in subscriptionOfferDetails
+  if (Platform.OS === 'android') {
+    const phase = sub.subscriptionOfferDetails?.[0]
+      ?.pricingPhases?.pricingPhaseList?.[0];
+    if (phase?.formattedPrice) return phase.formattedPrice;
+  }
+  // iOS or fallback: localizedPrice may still exist on some builds
+  if ((sub as any).localizedPrice) return (sub as any).localizedPrice;
+  return '';
+}
 
 export default function CompleteRegistrationScreen() {
   const router = useRouter();
@@ -25,8 +39,9 @@ export default function CompleteRegistrationScreen() {
   // REGISTRATION & FLOW MGMT
   const [currentStep, setCurrentStep] = useState<'form' | 'payment'>('form');
   const [checkingAccount, setCheckingAccount] = useState(true);
-  const [schoolId, setSchoolId] = useState<string | null>(null);
-  const [authToken, setAuthToken] = useState<string | null>(null);
+
+  // Store context for IAP listeners to find
+  const schoolContext = useRef<{ schoolId: string | null, token: string | null }>({ schoolId: null, token: null });
 
   const [formData, setFormData] = useState({
     password: '',
@@ -49,6 +64,7 @@ export default function CompleteRegistrationScreen() {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [billingError, setBillingError] = useState('');
   const [isResumingPayment, setIsResumingPayment] = useState(false);
+  const [billingPlan, setBillingPlan] = useState<any>(null);
 
   const showError = (title: string, message: any) => {
     console.log(`[BIILING ERROR] ${title}:`, message);
@@ -89,7 +105,7 @@ export default function CompleteRegistrationScreen() {
           setIsResumingPayment(true);
           if (result.data) {
             setFormData(prev => ({ ...prev, schoolName: result.data.name || prev.schoolName }));
-            setSchoolId(result.data.schoolId);
+            schoolContext.current = { schoolId: result.data.schoolId, token: null };
           }
           setCurrentStep('payment');
         } else if (result.data?.paymentStatus === 'completed') {
@@ -105,28 +121,130 @@ export default function CompleteRegistrationScreen() {
     }
   };
 
-  const setupRevenueCat = async () => {
+  const handleServerPurchaseVerification = async (purchase: RNIap.ProductPurchase) => {
+    setIsProcessingPayment(true);
     try {
-      Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
-      if (Platform.OS === 'ios') {
-        await Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
-      } else {
-        await Purchases.configure({ apiKey: REVENUECAT_GOOGLE_API_KEY });
+      const { schoolId, token } = schoolContext.current;
+      if (!schoolId) {
+        throw new Error("School ID is missing for purchase verification.");
       }
-      console.log('[RevenueCat] SDK configured successfully.');
-    } catch (e: any) {
-      console.error('[RevenueCat] Configuration error:', e);
-      setBillingError('Failed to connect to billing service.');
+      console.log(`[VERIFY] Syncing purchase ${purchase.transactionId} with server...`);
+
+      const response = await fetch(`${API_BASE_URL}/api/schools/${schoolId}/payment-status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          purchaseToken: purchase.transactionReceipt || purchase.purchaseToken,
+          payment_status: 'completed',
+          subscriptionDetails: purchase
+        })
+      });
+
+      if (response.ok) {
+        await RNIap.finishTransaction({ purchase, isConsumable: false });
+        Alert.alert("Success", "Account Activated! Welcome aboard.");
+        router.replace('/dashboard');
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Backend verification failed");
+      }
+    } catch (err: any) {
+      showError("Sync Error", "Your purchase was successful, but we couldn't update your account yet. Please contact support.");
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
 
+  const initializeBilling = async () => {
+    try {
+      setLoading(true);
+      setBillingError('');
+      console.log("[RNIap] Initializing connection...");
+
+      // v13: call setup() if available (no-op on older builds)
+      if (typeof (RNIap as any).setup === 'function') {
+        await (RNIap as any).setup({ storekitMode: 'STOREKIT2_MODE' });
+      }
+
+      const connected = await RNIap.initConnection();
+      console.log("[RNIap] initConnection result:", connected);
+
+      if (Platform.OS === 'android') {
+        await RNIap.flushFailedPurchasesCachedAsPendingAndroid();
+      }
+
+      console.log("[RNIap] Connection successful. Fetching subscriptions...");
+      const productIds = [SUBSCRIPTION_ID];
+      const products = await RNIap.getSubscriptions({ skus: productIds });
+
+      console.log("[RNIap] getSubscriptions skus=", productIds);
+      console.log("[RNIap] Products found:", products?.length || 0);
+      if (products.length > 0) {
+        console.log("[RNIap] First product keys:", Object.keys(products[0]));
+        console.log("[RNIap] subscriptionOfferDetails:", JSON.stringify(products[0].subscriptionOfferDetails, null, 2));
+      }
+
+      if (products.length > 0) {
+        setBillingPlan(products[0]);
+        const price = getSubscriptionPrice(products[0]);
+        console.log("[RNIap] Extracted price:", price);
+      } else {
+        setBillingError(`Product "${SUBSCRIPTION_ID}" not found in store. Ensure it is active in Play Console / App Store Connect.`);
+      }
+      return true;
+    } catch (err: any) {
+      console.error("[RNIap] initializeBilling error:", err);
+      setBillingError(`Could not connect to ${Platform.OS === 'ios' ? 'App Store' : 'Google Play'}: ${err.message || err}`);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCountries();
     checkAccountStatus();
-    if (isMobilePlatform) {
-      setupRevenueCat();
-    }
+
+    let purchaseUpdateSub: { remove: () => void } | undefined;
+    let purchaseErrorSub: { remove: () => void } | undefined;
+
+    const startIAPFlow = async () => {
+      console.log("[RNIap] Available Methods:", Object.keys(RNIap));
+      if (isMobilePlatform) {
+        // Register listeners BEFORE initConnection so we don't miss events
+        purchaseUpdateSub = RNIap.purchaseUpdatedListener(async (purchase: any) => {
+          const item = Array.isArray(purchase) ? purchase[0] : purchase;
+          if (item) {
+            console.log('[RNIap] Purchase Updated:', item.transactionId);
+            const receipt = item.transactionReceipt || item.purchaseToken;
+            if (receipt) {
+              await handleServerPurchaseVerification(item);
+            }
+          }
+        });
+
+        purchaseErrorSub = RNIap.purchaseErrorListener((error: any) => {
+          console.log('[RNIap] Purchase Error:', error);
+          setIsProcessingPayment(false);
+          if (error.code !== 'E_USER_CANCELLED') {
+            showError('Purchase Failed', error.message);
+          }
+        });
+
+        await initializeBilling();
+      }
+    };
+
+    startIAPFlow();
+
+    return () => {
+      purchaseUpdateSub?.remove();
+      purchaseErrorSub?.remove();
+      RNIap.endConnection();
+    };
   }, []);
 
   const validateForm = () => {
@@ -172,16 +290,10 @@ export default function CompleteRegistrationScreen() {
 
       console.log(`[POST] Registered/Updated:`, responseData.data);
       const accountData = responseData.data;
-      const sId = accountData.user?.schoolId;
+      const schoolId = accountData.user?.schoolId;
+      const token = responseData.token;
 
-      // Tell RevenueCat who this user is so the webhook knows which DB row to update
-      if (isMobilePlatform && sId) {
-        await Purchases.logIn(sId.toString());
-        console.log(`[RevenueCat] Logged in with school ID: ${sId}`);
-      }
-
-      setSchoolId(sId);
-      setAuthToken(responseData.token);
+      schoolContext.current = { schoolId, token };
       setIsResumingPayment(!!responseData.resumePayment);
       setCurrentStep('payment');
     } catch (err: any) {
@@ -197,66 +309,45 @@ export default function CompleteRegistrationScreen() {
       return;
     }
 
+    // 1. Bulletproof check for native module existence
+    if (typeof RNIap.requestSubscription !== 'function') {
+      console.error("[RNIap] CRITICAL: requestSubscription is undefined. Native module not correctly linked in this build.");
+      Alert.alert("Store Module Error", "The in-app billing module is not correctly loaded in this app build. Please rebuild the app.");
+      return;
+    }
+
+    if (!billingPlan) {
+      Alert.alert("Store Message", "Subscription plan not loaded from store. Please wait a moment while we re-connect.");
+      await initializeBilling();
+      return;
+    }
+
     setIsProcessingPayment(true);
     try {
-      console.log('[RevenueCat] Fetching available offerings...');
-      const offerings = await Purchases.getOfferings();
+      console.log("[RNIap] Requesting subscription for:", SUBSCRIPTION_ID);
 
-      const currentOffering = offerings.current;
-      if (!currentOffering) {
-        throw new Error('No offerings available. Ensure a Current Offering is configured in the RevenueCat dashboard.');
-      }
+      // For Android Subscriptions (v12+ / Billing Library 5+), we MUST use subscriptionOffers
+      if (Platform.OS === 'android') {
+        const offerToken = billingPlan.subscriptionOfferDetails?.[0]?.offerToken;
 
-      const packageToPurchase = currentOffering.monthly ?? currentOffering.availablePackages[0];
-      if (!packageToPurchase) {
-        throw new Error('No purchasable package found in the current offering.');
-      }
+        if (!offerToken) {
+          throw new Error("No offer token found for this subscription. Check if the product is 'Active' in Google Play Console.");
+        }
 
-      console.log('[RevenueCat] Purchasing package:', packageToPurchase.identifier);
-      const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
-
-      // Check if the entitlement is now active
-      if (customerInfo.entitlements.active['premium'] !== undefined ||
-        Object.keys(customerInfo.entitlements.active).length > 0) {
-        console.log('[RevenueCat] Purchase successful. Entitlements active.');
-        Alert.alert('Success', 'Account Activated! Welcome aboard.', [
-          { text: 'Continue', onPress: () => router.replace('/dashboard') }
-        ]);
+        console.log("[RNIap] Requesting with token:", offerToken);
+        await RNIap.requestSubscription({
+          subscriptionOffers: [{
+            sku: SUBSCRIPTION_ID,
+            offerToken: offerToken
+          }]
+        });
       } else {
-        throw new Error('Purchase completed but no entitlement was granted. Please contact support.');
+        // iOS still uses the simple sku
+        await RNIap.requestSubscription({ sku: SUBSCRIPTION_ID });
       }
     } catch (err: any) {
-      // RevenueCat throws a specific error code for user cancellations
-      if (!err.userCancelled) {
-        showError('Subscription Error', err.message || err);
-      }
-    } finally {
       setIsProcessingPayment(false);
-    }
-  };
-
-  const handleRestore = async () => {
-    try {
-      setIsProcessingPayment(true);
-      console.log('[RevenueCat] Restoring purchases...');
-      const customerInfo = await Purchases.restorePurchases();
-      const hasActiveEntitlement =
-        customerInfo.entitlements.active['Sabinoschool'] !== undefined ||
-        Object.keys(customerInfo.entitlements.active).length > 0;
-
-      if (hasActiveEntitlement) {
-        Alert.alert('Restored!', 'Your subscription has been restored.', [
-          { text: 'Continue', onPress: () => router.replace('/dashboard') }
-        ]);
-      } else {
-        Alert.alert('Notice', 'No active subscriptions found to restore.');
-      }
-    } catch (e: any) {
-      if (!e.userCancelled) {
-        showError('Restore Failed', e.message || e);
-      }
-    } finally {
-      setIsProcessingPayment(false);
+      showError('Subscription Error', err);
     }
   };
 
@@ -380,17 +471,17 @@ export default function CompleteRegistrationScreen() {
               <View style={{ backgroundColor: '#ffebee', padding: 20, borderRadius: 8, borderLeftWidth: 5, borderLeftColor: '#d32f2f', marginBottom: 25 }}>
                 <ThemedText style={{ color: '#c62828', fontWeight: 'bold', marginBottom: 5 }}>Store Error</ThemedText>
                 <ThemedText style={{ color: '#b71c1c' }}>{billingError}</ThemedText>
-                <TouchableOpacity onPress={setupRevenueCat} style={{ marginTop: 10 }}><ThemedText style={{ color: '#007AFF' }}>Retry connecting to store</ThemedText></TouchableOpacity>
+                <TouchableOpacity onPress={initializeBilling} style={{ marginTop: 10 }}><ThemedText style={{ color: '#007AFF' }}>Retry connecting to store</ThemedText></TouchableOpacity>
               </View>
             ) : null}
 
             <View style={{ backgroundColor: '#f9f9f9', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#ddd', marginBottom: 30 }}>
               <ThemedText style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>📱 Sabino School Portal</ThemedText>
               <ThemedText style={{ fontSize: 24, fontWeight: 'bold', color: '#4CAF50', marginBottom: 10 }}>
-                ₦5,000 / month
+                {billingPlan ? (getSubscriptionPrice(billingPlan) || '₦5,000') : '₦5,000'} / month
               </ThemedText>
               <ThemedText style={{ fontSize: 14, color: '#666', lineHeight: 20 }}>
-                Get full access to school management features, student registries, and report generation.
+                {billingPlan?.description || 'Get full access to school management features, student registries, and report generation.'}
               </ThemedText>
             </View>
 
@@ -414,19 +505,7 @@ export default function CompleteRegistrationScreen() {
               </ThemedText>
             )}
 
-            {isMobilePlatform && (
-              <TouchableOpacity
-                onPress={handleRestore}
-                disabled={isProcessingPayment}
-                style={{ marginTop: 15, alignItems: 'center' }}
-              >
-                <ThemedText style={{ color: '#007AFF', textAlign: 'center', fontSize: 14 }}>
-                  🔄 Restore Previous Purchase
-                </ThemedText>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={{ marginTop: 20, alignItems: 'center' }} onPress={handleBackToForm}>
+            <TouchableOpacity style={{ marginTop: 25, alignItems: 'center' }} onPress={handleBackToForm}>
               <ThemedText style={{ color: '#666' }}>← Edit school details</ThemedText>
             </TouchableOpacity>
           </>
