@@ -109,6 +109,8 @@ export default function CompleteRegistrationScreen() {
     try {
       Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
       if (Platform.OS === 'ios') {
+        // No usesStoreKit2IfAvailable flag set — RevenueCat uses its default SK1 path
+        // which ensures transactions are finished/acknowledged reliably.
         await Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
       } else {
         await Purchases.configure({ apiKey: REVENUECAT_GOOGLE_API_KEY });
@@ -202,6 +204,8 @@ export default function CompleteRegistrationScreen() {
       console.log('[RevenueCat] Fetching available offerings...');
       const offerings = await Purchases.getOfferings();
 
+      console.log('[RevenueCat] All offerings:', JSON.stringify(offerings, null, 2));
+
       const currentOffering = offerings.current;
       if (!currentOffering) {
         throw new Error('No offerings available. Ensure a Current Offering is configured in the RevenueCat dashboard.');
@@ -215,19 +219,26 @@ export default function CompleteRegistrationScreen() {
       console.log('[RevenueCat] Purchasing package:', packageToPurchase.identifier);
       const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
 
-      // Check if the entitlement is now active
-      if (customerInfo.entitlements.active['premium'] !== undefined ||
-        Object.keys(customerInfo.entitlements.active).length > 0) {
-        console.log('[RevenueCat] Purchase successful. Entitlements active.');
+      // ⚡ Check entitlement immediately — avoid any heavy/blocking work here so the
+      // SDK can finalize the transaction acknowledgement back to Google/Apple.
+      // The entitlement name is case-sensitive — must match your RevenueCat dashboard exactly.
+      if (customerInfo.entitlements.active['Sabinoschool'] !== undefined) {
+        // Access granted — log details after the check, not before
+        console.log('[RevenueCat] Purchase successful. Active entitlements:', Object.keys(customerInfo.entitlements.active));
+        console.log('[RevenueCat] Full customerInfo:', JSON.stringify(customerInfo, null, 2));
         Alert.alert('Success', 'Account Activated! Welcome aboard.', [
           { text: 'Continue', onPress: () => router.replace('/dashboard') }
         ]);
       } else {
+        // Log what was actually returned to help diagnose entitlement name mismatches
+        console.warn('[RevenueCat] No matching entitlement. Active keys:', Object.keys(customerInfo.entitlements.active));
+        console.warn('[RevenueCat] Full customerInfo:', JSON.stringify(customerInfo, null, 2));
         throw new Error('Purchase completed but no entitlement was granted. Please contact support.');
       }
     } catch (err: any) {
       // RevenueCat throws a specific error code for user cancellations
       if (!err.userCancelled) {
+        console.error('[RevenueCat] Purchase error:', err);
         showError('Subscription Error', err.message || err);
       }
     } finally {
@@ -240,9 +251,12 @@ export default function CompleteRegistrationScreen() {
       setIsProcessingPayment(true);
       console.log('[RevenueCat] Restoring purchases...');
       const customerInfo = await Purchases.restorePurchases();
-      const hasActiveEntitlement =
-        customerInfo.entitlements.active['Sabinoschool'] !== undefined ||
-        Object.keys(customerInfo.entitlements.active).length > 0;
+
+      // Log all active entitlements so we can verify the exact name if needed
+      console.log('[RevenueCat] Restored entitlements:', Object.keys(customerInfo.entitlements.active));
+
+      // Check for the specific entitlement — name is case-sensitive, must match RevenueCat dashboard exactly
+      const hasActiveEntitlement = customerInfo.entitlements.active['Sabinoschool'] !== undefined;
 
       if (hasActiveEntitlement) {
         Alert.alert('Restored!', 'Your subscription has been restored.', [
