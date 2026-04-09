@@ -20,7 +20,8 @@
       "newArchEnabled": true,
       "versionCode": 24,
       "permissions": [
-        "com.android.vending.BILLING"
+        "com.android.vending.BILLING",
+        "com.google.android.gms.permission.AD_ID"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
