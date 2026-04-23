@@ -386,7 +386,8 @@ export default function ScoreEntryScreen() {
     }
 
     try {
-      setLoadingSheet(true);
+      setSavingScores(false); // Reset saving state whenever we start loading a new sheet
+    setLoadingSheet(true);
       setSheetError('');
 
       console.log(`📥 Loading scoring sheet with classId=${classId}, subjectId=${selectedSubject.id}, sessionId=${selectedSessionId}, termId=${selectedTermId}`);
@@ -408,22 +409,28 @@ export default function ScoreEntryScreen() {
         console.log(`✓ Scoring sheet loaded successfully: ${data.data.length} students`);
 
         // Pre-populate score entries with existing scores from server
-        const entries: ScoreEntry[] = data.data.map((item: any) => {
+        const entries: ScoreEntry[] = data.data.map((item: any, index: number) => {
           // Check if this student has existing scores
           const hasScores = item.ca1_score !== null || item.ca2_score !== null ||
             item.ca3_score !== null || item.ca4_score !== null ||
             item.exam_score !== null;
 
+          console.log(`\n📋 STUDENT ${index + 1}: ${item.first_name} ${item.last_name}`);
+          console.log(`   Raw score_id from backend: ${item.score_id} (type: ${typeof item.score_id})`);
+          console.log(`   Has scores: ${hasScores}`);
           if (hasScores) {
-            console.log(`  ✓ Student ${item.first_name} ${item.last_name}: CA1=${item.ca1_score}, CA2=${item.ca2_score}, CA3=${item.ca3_score}, CA4=${item.ca4_score}, Exam=${item.exam_score}`);
+            console.log(`   ✓ CA1=${item.ca1_score}, CA2=${item.ca2_score}, CA3=${item.ca3_score}, CA4=${item.ca4_score}, Exam=${item.exam_score}`);
           }
+
+          const parsedScoreId = item.score_id && item.score_id > 0 ? parseInt(item.score_id) : null;
+          console.log(`   Parsed score_id: ${parsedScoreId}`);
 
           return {
             enrollment_id: item.enrollment_id,
             student_id: item.student_id,
             first_name: item.first_name,
             last_name: item.last_name,
-            score_id: item.score_id || null,
+            score_id: parsedScoreId,
             ca1_score: item.ca1_score || null,
             ca2_score: item.ca2_score || null,
             ca3_score: item.ca3_score || null,
@@ -469,12 +476,12 @@ export default function ScoreEntryScreen() {
 
     if (numValue !== '') {
       if (field === 'exam') {
-        if ((numValue as number) > 40 || (numValue as number) < 0) {
-          error = 'Exam max 40';
+        if ((numValue as number) > 60 || (numValue as number) < 0) {
+          error = 'Exam max 60';
         }
       } else {
-        if ((numValue as number) > 20 || (numValue as number) < 0) {
-          error = `${field.toUpperCase()} max 20`;
+        if ((numValue as number) > 10 || (numValue as number) < 0) {
+          error = `${field.toUpperCase()} max 10`;
         }
       }
     }
@@ -517,8 +524,8 @@ export default function ScoreEntryScreen() {
         const val = entry[field as keyof ScoreEntry];
         const numVal = typeof val === 'string' ? parseFloat(val) : (val as number);
         if (!isNaN(numVal) && numVal !== null) {
-          if (numVal > 20 || numVal < 0) {
-            errors[`${entry.enrollment_id}-${field}`] = `${field.toUpperCase()} max 20`;
+          if (numVal > 10 || numVal < 0) {
+            errors[`${entry.enrollment_id}-${field}`] = `${field.toUpperCase()} max 10`;
             isValid = false;
           }
         }
@@ -527,8 +534,8 @@ export default function ScoreEntryScreen() {
       const examVal = entry.exam;
       const numExam = typeof examVal === 'string' ? parseFloat(examVal) : (examVal as number);
       if (!isNaN(numExam) && numExam !== null) {
-        if (numExam > 40 || numExam < 0) {
-          errors[`${entry.enrollment_id}-exam`] = 'Exam max 40';
+        if (numExam > 60 || numExam < 0) {
+          errors[`${entry.enrollment_id}-exam`] = 'Exam max 60';
           isValid = false;
         }
       }
@@ -592,17 +599,33 @@ export default function ScoreEntryScreen() {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        console.log(`✅ Successfully saved ${data.count} score(s)`);
-        const successMsg = `${data.count} score(s) saved successfully! Reloading sheet...`;
+        const successMsg = `${data.count} score(s) saved successfully!`;
         setSaveSuccess(successMsg);
         setSaveError('');
 
-        // Auto-reload the scoring sheet after a brief delay
+        // Update local state with new score IDs from the response
+        if (data.data && Array.isArray(data.data)) {
+          console.log(`🔄 Updating local state with ${data.data.length} saved score IDs`);
+          const savedScores = data.data;
+          const updatedEntriesAfterSave = scoreEntries.map(entry => {
+            const savedItem = savedScores.find((s: any) => 
+              parseInt(s.enrollment_id) === parseInt(entry.enrollment_id as any)
+            );
+            if (savedItem) {
+              console.log(`   ✓ Found ID ${savedItem.id} for enrollment ${entry.enrollment_id}`);
+              return { ...entry, score_id: savedItem.id };
+            }
+            return entry;
+          });
+          setScoreEntries(updatedEntriesAfterSave);
+        }
+
+        // Auto-reload the scoring sheet after a brief delay to ensure everything is in sync
         setTimeout(() => {
           if (selectedClass) {
             loadScoringSheet(selectedClass.id);
           }
-        }, 1500);
+        }, 500);
 
         // Auto-dismiss success message after 4 seconds
         setTimeout(() => {
@@ -623,6 +646,145 @@ export default function ScoreEntryScreen() {
       setSavingScores(false);
     }
   };
+
+  const handleDeleteScore = async (scoreId: number | null, enrollmentId: number) => {
+    try {
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`🗑️  DELETE SCORE HANDLER TRIGGERED`);
+      console.log(`${'='.repeat(60)}`);
+      console.log(`scoreId: ${scoreId}`);
+      console.log(`enrollmentId: ${enrollmentId}`);
+      console.log(`token: ${token ? '✓ Present' : '✗ Missing'}`);
+      console.log(`savingScores: ${savingScores}`);
+      console.log(`API_BASE_URL: ${API_BASE_URL}`);
+      
+      if (!token) {
+        Alert.alert('Error', 'Authentication token missing. Please log in again.');
+        return;
+      }
+      
+      console.log(`${'='.repeat(60)}\n`);
+
+      const executeDelete = async () => {
+        console.log(`\n${'−'.repeat(60)}`);
+        console.log(`🗑️  DELETE CONFIRMED - EXECUTING DELETE`);
+        console.log(`${'−'.repeat(60)}`);
+
+        try {
+          setSavingScores(true);
+          setSaveError('');
+          setSaveSuccess('');
+
+          // IMPORTANT: Check if scoreId exists and is > 0
+          const hasValidScoreId = scoreId !== null && scoreId !== undefined && Number(scoreId) > 0;
+          console.log(`📊 Checking: scoreId=${scoreId}, hasValidScoreId=${hasValidScoreId}`);
+
+          if (hasValidScoreId) {
+            const effectiveId = Number(scoreId);
+            const deleteUrl = `${API_BASE_URL}/api/scores/${effectiveId}`;
+            
+            console.log(`📤 [DEBUG] DELETE URL: ${deleteUrl}`);
+            console.log(`📤 SAVED SCORE - Making DELETE request to backend`);
+            console.log(`📋 Headers: Authorization: Bearer ${token?.substring(0, 20)}...`);
+
+            const response = await fetch(deleteUrl, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (response.status === 401) {
+              throw new Error('Unauthorized: Session expired or invalid token');
+            }
+
+            console.log(`📥 RESPONSE STATUS: ${response.status} ${response.statusText}`);
+            
+            const data = await response.json();
+            console.log(`📥 RESPONSE DATA:`, data);
+
+            if (!response.ok || !data.success) {
+              const errorMessage = data.message || data.error || 'Failed to delete score from server';
+              console.error(`❌ Backend delete failed: ${errorMessage}`);
+              setSaveError(errorMessage);
+              setSavingScores(false);
+              return;
+            }
+
+            console.log(`✅ Score successfully deleted from backend`);
+          } else {
+            console.log(`ℹ️ UNSAVED SCORE - Clearing local data only, NO backend call needed for scoreId=${scoreId}`);
+          }
+
+          // Update the score entry to clear all score values
+          console.log(`🔄 Updating local state to clear scores for enrollment ${enrollmentId}`);
+          const updatedEntries = scoreEntries.map(entry =>
+            Number(entry.enrollment_id) === Number(enrollmentId)
+              ? {
+                  ...entry,
+                  score_id: null,
+                  ca1_score: null,
+                  ca2_score: null,
+                  ca3_score: null,
+                  ca4_score: null,
+                  exam_score: null,
+                  ca1: '',
+                  ca2: '',
+                  ca3: '',
+                  ca4: '',
+                  exam: '',
+                }
+              : entry
+          );
+
+          setScoreEntries(updatedEntries);
+          console.log(`✅ Local state updated`);
+          
+          if (Platform.OS === 'web') {
+            alert(hasValidScoreId ? 'Score record deleted from server.' : 'Local scores cleared.');
+          } else {
+            Alert.alert('Success', hasValidScoreId ? 'Score record deleted from server.' : 'Local scores cleared.');
+          }
+          
+          setSaveSuccess('Score cleared successfully!');
+          console.log(`✅ Success message set`);
+
+          setTimeout(() => {
+            setSaveSuccess('');
+          }, 3000);
+
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+          setSaveError(errorMessage);
+          console.error(`❌ Delete error: ${errorMessage}`, err);
+          setSavingScores(false);
+        } finally {
+          setSavingScores(false);
+          console.log(`${'−'.repeat(60)}\n`);
+        }
+      };
+
+      // PLATFORM-SPECIFIC CONFIRMATION
+      if (Platform.OS === 'web') {
+        if (window.confirm(`Are you sure you want to clear score ID ${scoreId || 'unsaved'}? This cannot be undone.`)) {
+          executeDelete();
+        }
+      } else {
+        Alert.alert(
+          'Clear Score',
+          `Are you sure you want to clear score ID ${scoreId}? This cannot be undone.`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => console.log('ℹ️ User cancelled') },
+            { text: 'Delete', style: 'destructive', onPress: executeDelete },
+          ]
+        );
+      }
+    } catch (err) {
+      console.error(`❌ Critical error in handleDeleteScore:`, err);
+    }
+  };
+
 
   if (loadingInitial) {
     return (
@@ -1331,6 +1493,17 @@ export default function ScoreEntryScreen() {
                 >
                   Total
                 </ThemedText>
+                <ThemedText
+                  style={{
+                    flex: 0.6,
+                    fontWeight: '600',
+                    fontSize: 11,
+                    color: '#333',
+                    textAlign: 'center',
+                  }}
+                >
+                  Actions
+                </ThemedText>
               </View>
 
               {/* Students Rows */}
@@ -1574,6 +1747,38 @@ export default function ScoreEntryScreen() {
                         {calculateTotal(entry).toFixed(1)}
                       </ThemedText>
                     </View>
+
+                    {/* Actions */}
+                    <View style={{ flex: 0.8, marginHorizontal: 2, alignItems: 'center', justifyContent: 'center' }}>
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#d32f2f',
+                          borderRadius: 6,
+                          paddingVertical: 6,
+                          paddingHorizontal: 12,
+                          minWidth: 60,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                        onPress={() => {
+                          console.log(`👆 DELETE BUTTON PRESSED - calling handleDeleteScore(${entry.score_id}, ${entry.enrollment_id})`);
+                          handleDeleteScore(entry.score_id, entry.enrollment_id);
+                        }}
+                        disabled={savingScores}
+                        activeOpacity={0.7}
+                      >
+                        <ThemedText
+                          style={{
+                            fontSize: 11,
+                            color: '#fff',
+                            fontWeight: '700',
+                            textAlign: 'center',
+                          }}
+                        >
+                          🗑️ Delete
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               ))}
@@ -1593,10 +1798,13 @@ export default function ScoreEntryScreen() {
                   📋 Scoring Guide:
                 </ThemedText>
                 <ThemedText style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                  • CA1, CA2, CA3, CA4: Max 20 each
+                  • CA1, CA2, CA3, CA4: Max 10 each
                 </ThemedText>
                 <ThemedText style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                  • Exam: Max 40
+                  • Exam: Max 60
+                </ThemedText>
+                <ThemedText style={{ fontSize: 11, color: '#666' }}>
+                  • Use the Delete button to remove saved scores if needed
                 </ThemedText>
                 <ThemedText style={{ fontSize: 11, color: '#666' }}>
                   • Total: Max 100 (sum of all scores)

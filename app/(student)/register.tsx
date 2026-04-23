@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
-    TextInput,
     TouchableOpacity,
     StyleSheet,
     ActivityIndicator,
-    KeyboardAvoidingView,
     Platform,
     ScrollView,
     Alert,
+    ImageBackground,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { validatePassword } from '@/utils/password-validator';
+import { CustomButton } from '@/components/custom-button';
+import { CustomInput } from '@/components/custom-input';
+import { CustomAlert } from '@/components/custom-alert';
+import { ThemedView } from '@/components/themed-view';
+import { Colors } from '@/constants/design-system';
 
 export default function StudentRegisterProfile() {
     const router = useRouter();
@@ -36,12 +40,9 @@ export default function StudentRegisterProfile() {
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     useEffect(() => {
         if (!email) {
-            // If someone navigates here directly without email, send them back to the start
             router.replace('/(student)/verify-email');
         }
     }, [email]);
@@ -107,16 +108,14 @@ export default function StudentRegisterProfile() {
 
             if (data.success) {
                 const { student, token } = data.data;
-                if (Platform.OS === 'web') {
-                    localStorage.setItem('studentToken', token);
-                    localStorage.setItem('studentData', JSON.stringify(student));
-                } else {
-                    await SecureStore.setItemAsync('studentToken', token);
-                    await SecureStore.setItemAsync('studentData', JSON.stringify(student));
-                }
+                const storage = Platform.OS === 'web' ? localStorage : SecureStore;
+                const setItem = Platform.OS === 'web' ? (k: string, v: string) => storage.setItem(k, v) : (k: string, v: string) => SecureStore.setItemAsync(k, v);
 
-                Alert.alert('Success!', 'Your student account has been created.', [
-                    { text: 'OK', onPress: () => router.replace('/(student)/dashboard' as any) },
+                await setItem('studentToken', token);
+                await setItem('studentData', JSON.stringify(student));
+
+                Alert.alert('Activation Successful!', 'Your student account is now active.', [
+                    { text: 'ENTER DASHBOARD', onPress: () => router.replace('/(student)/dashboard' as any) },
                 ]);
             }
         } catch (error: any) {
@@ -127,207 +126,179 @@ export default function StudentRegisterProfile() {
     };
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.container}
-        >
-            <LinearGradient
-                colors={['#0F172A', '#1E293B', '#334155']}
-                style={styles.gradient}
+        <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
+            <ImageBackground
+                source={{ uri: 'https://images.unsplash.com/photo-1541339907198-e08756ebafe3?q=80&w=2070' }}
+                style={styles.hero}
             >
-                <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    keyboardShouldPersistTaps="handled"
+                <LinearGradient
+                    colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']}
+                    style={styles.overlay}
                 >
-                    <View style={styles.header}>
-                        <View style={styles.iconContainer}>
-                            <Ionicons name="person-add" size={48} color="#FACC15" />
-                        </View>
-                        <Text style={styles.title}>Setup Profile</Text>
-                        <Text style={styles.subtitle}>Final Step: Complete your account details</Text>
-                    </View>
-
-                    <View style={styles.formContainer}>
-                        {error ? (
-                            <View style={styles.errorContainer}>
-                                <Ionicons name="alert-circle" size={20} color="#EF4444" />
-                                <Text style={styles.errorText}>{error}</Text>
+                    <ScrollView
+                        contentContainerStyle={styles.scrollContainer}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        <View style={styles.header}>
+                            <View style={styles.logoBadge}>
+                                <Ionicons name="ribbon" size={24} color="#FACC15" />
+                                <Text style={styles.logoText}>PROFILE SETUP</Text>
                             </View>
-                        ) : null}
-
-                        <View style={styles.verifiedBadge}>
-                            <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                            <Text style={styles.verifiedText}>{email}</Text>
+                            <Text style={styles.title}>Complete Account</Text>
+                            <View style={styles.goldBar} />
+                            <Text style={styles.subtitle}>FINAL STEP TO ACTIVATE PORTAL</Text>
                         </View>
 
-                        <View style={styles.row}>
-                            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                                <Text style={styles.label}>First Name *</Text>
-                                <View style={styles.inputWrapper}>
-                                    <TextInput
-                                        style={styles.input}
+                        <View style={styles.card}>
+                            <View style={styles.iconCircle}>
+                                <Ionicons name="person-circle" size={40} color="#FACC15" />
+                            </View>
+
+                            <View style={styles.verifiedBox}>
+                                <Ionicons name="shield-checkmark" size={18} color="#FACC15" />
+                                <Text style={styles.verifiedText}>{email}</Text>
+                            </View>
+
+                            {error && (
+                                <CustomAlert
+                                    type="error"
+                                    title="Information Error"
+                                    message={error}
+                                    onClose={() => setError('')}
+                                    style={{ marginBottom: 20 }}
+                                />
+                            )}
+
+                            <View style={styles.row}>
+                                <View style={{ flex: 1, marginRight: 10 }}>
+                                    <CustomInput
+                                        label="First Name *"
                                         placeholder="John"
-                                        placeholderTextColor="#64748B"
                                         value={formData.firstName}
                                         onChangeText={(v) => updateField('firstName', v)}
+                                        containerStyle={styles.inputContainer}
                                     />
                                 </View>
-                            </View>
-                            <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                                <Text style={styles.label}>Last Name *</Text>
-                                <View style={styles.inputWrapper}>
-                                    <TextInput
-                                        style={styles.input}
+                                <View style={{ flex: 1 }}>
+                                    <CustomInput
+                                        label="Last Name *"
                                         placeholder="Doe"
-                                        placeholderTextColor="#64748B"
                                         value={formData.lastName}
                                         onChangeText={(v) => updateField('lastName', v)}
+                                        containerStyle={styles.inputContainer}
                                     />
                                 </View>
                             </View>
+
+                            <CustomInput
+                                label="School Reg. Code *"
+                                placeholder="ASK ADMIN FOR CODE"
+                                value={formData.registrationCode}
+                                onChangeText={(v) => updateField('registrationCode', v)}
+                                autoCapitalize="characters"
+                                containerStyle={styles.inputContainer}
+                            />
+
+                            <CustomInput
+                                label="Secure Password *"
+                                placeholder="Min. 8 characters"
+                                isPassword
+                                value={formData.password}
+                                onChangeText={(v) => updateField('password', v)}
+                                containerStyle={styles.inputContainer}
+                            />
+
+                            <CustomInput
+                                label="Confirm Password *"
+                                placeholder="Must match above"
+                                isPassword
+                                value={formData.confirmPassword}
+                                onChangeText={(v) => updateField('confirmPassword', v)}
+                                containerStyle={styles.inputContainer}
+                            />
+
+                            <CustomButton
+                                title={loading ? "ACTIVATING..." : "FINISH & ACTIVATE ACCOUNT"}
+                                onPress={handleRegister}
+                                loading={loading}
+                                variant="premium"
+                                style={styles.ctaButton}
+                            />
                         </View>
 
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>School Registration Code *</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="business-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="Enter school code"
-                                    placeholderTextColor="#64748B"
-                                    value={formData.registrationCode}
-                                    onChangeText={(v) => updateField('registrationCode', v)}
-                                    autoCapitalize="characters"
-                                />
-                            </View>
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>SABINO ENCRYPTED HANDSHAKE ACTIVE</Text>
                         </View>
-
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Password *</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
-                                <TextInput
-                                    style={[styles.input, { flex: 1 }]}
-                                    placeholder="Password"
-                                    placeholderTextColor="#64748B"
-                                    value={formData.password}
-                                    onChangeText={(v) => updateField('password', v)}
-                                    secureTextEntry={!showPassword}
-                                />
-                                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 8 }}>
-                                    <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#94A3B8" />
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Confirm Password *</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
-                                <TextInput
-                                    style={[styles.input, { flex: 1 }]}
-                                    placeholder="Confirm Password"
-                                    placeholderTextColor="#64748B"
-                                    value={formData.confirmPassword}
-                                    onChangeText={(v) => updateField('confirmPassword', v)}
-                                    secureTextEntry={!showConfirmPassword}
-                                />
-                                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 8 }}>
-                                    <Ionicons name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#94A3B8" />
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-
-                        <TouchableOpacity
-                            style={[styles.actionButton, loading && styles.buttonDisabled]}
-                            onPress={handleRegister}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="#0F172A" />
-                            ) : (
-                                <>
-                                    <Text style={styles.actionButtonText}>FINISH REGISTRATION</Text>
-                                    <Ionicons name="checkmark-done-circle" size={20} color="#0F172A" />
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </ScrollView>
-            </LinearGradient>
-        </KeyboardAvoidingView>
+                    </ScrollView>
+                </LinearGradient>
+            </ImageBackground>
+        </ThemedView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    gradient: { flex: 1 },
-    scrollContent: { flexGrow: 1, padding: 24, paddingTop: 60 },
-    header: { alignItems: 'center', marginBottom: 32 },
-    iconContainer: {
+    hero: { flex: 1, width: '100%' },
+    overlay: { flex: 1, paddingHorizontal: 24 },
+    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+
+    header: { alignItems: 'center', marginBottom: 40 },
+    logoBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+    title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+    goldBar: { width: 60, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
+    subtitle: { fontSize: 12, color: '#94A3B8', fontWeight: '800', letterSpacing: 1 },
+
+    card: {
+        backgroundColor: 'rgba(30, 41, 59, 0.7)',
+        borderRadius: 35,
+        padding: 30,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        marginBottom: 20
+    },
+    iconCircle: {
         width: 80,
         height: 80,
         borderRadius: 40,
         backgroundColor: 'rgba(250, 204, 21, 0.1)',
-        alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 20
-    },
-    title: { fontSize: 32, fontWeight: '900', color: '#FFFFFF', marginBottom: 8 },
-    subtitle: { fontSize: 16, color: '#94A3B8', textAlign: 'center' },
-    formContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 24,
-        padding: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        marginBottom: 24
-    },
-    errorContainer: {
-        flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-        padding: 12,
-        borderRadius: 12,
-        marginBottom: 20,
+        alignSelf: 'center',
+        marginBottom: 25,
         borderWidth: 1,
-        borderColor: 'rgba(239, 68, 68, 0.3)'
+        borderColor: 'rgba(250, 204, 21, 0.2)'
     },
-    errorText: { color: '#EF4444', marginLeft: 8, flex: 1, fontSize: 14 },
-    verifiedBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-        padding: 12,
-        borderRadius: 12,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(16, 185, 129, 0.2)'
-    },
-    verifiedText: { color: '#10B981', fontWeight: 'bold', marginLeft: 10 },
-    row: { flexDirection: 'row', marginBottom: 0 },
-    inputGroup: { marginBottom: 20 },
-    label: { fontSize: 14, fontWeight: '600', color: '#E2E8F0', marginBottom: 8 },
-    inputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        paddingHorizontal: 16
-    },
-    inputIcon: { marginRight: 12 },
-    input: { flex: 1, color: '#FFFFFF', fontSize: 16, paddingVertical: 16 },
-    actionButton: {
-        backgroundColor: '#FACC15',
-        borderRadius: 12,
-        paddingVertical: 18,
+    verifiedBox: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 20
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        padding: 12,
+        borderRadius: 15,
+        marginBottom: 25,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
     },
-    buttonDisabled: { opacity: 0.6 },
-    actionButtonText: { color: '#0F172A', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginRight: 8 }
+    verifiedText: { color: '#FACC15', fontWeight: '800', marginLeft: 10, fontSize: 13 },
+
+    row: { flexDirection: 'row' },
+    inputContainer: {
+        backgroundColor: 'rgba(15, 23, 42, 0.5)',
+        borderColor: 'rgba(255,255,255,0.1)',
+        marginBottom: 15
+    },
+    ctaButton: { height: 60, borderRadius: 15, marginTop: 15 },
+
+    footer: { marginTop: 40, alignItems: 'center' },
+    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
 });

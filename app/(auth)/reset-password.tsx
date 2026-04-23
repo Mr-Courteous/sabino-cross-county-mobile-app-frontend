@@ -1,12 +1,19 @@
-import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
+import { View, ActivityIndicator, Alert, ScrollView, Platform, ImageBackground, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { useState, useEffect } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { API_BASE_URL } from '@/utils/api-service';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { API_BASE_URL } from '@/utils/api-service';
 import { validatePassword } from '@/utils/password-validator';
+import { CustomButton } from '@/components/custom-button';
+import { CustomInput } from '@/components/custom-input';
+import { CustomAlert } from '@/components/custom-alert';
+import { ThemedView } from '@/components/themed-view';
+import {
+    Colors,
+    Spacing,
+} from '@/constants/design-system';
 
 export default function SchoolResetPasswordScreen() {
     const router = useRouter();
@@ -17,7 +24,6 @@ export default function SchoolResetPasswordScreen() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
 
     useEffect(() => {
         if (!email) {
@@ -57,11 +63,10 @@ export default function SchoolResetPasswordScreen() {
                 throw new Error(data.error || data.message || 'Failed to reset password');
             }
 
-            Alert.alert('Success', 'School administrator password reset successfully.', [
+            Alert.alert('Success', 'Administrator password reset successfully.', [
                 {
                     text: 'OK',
                     onPress: async () => {
-                        // Clear old session tokens if any to ensure clean landing
                         if (Platform.OS === 'web') {
                             localStorage.removeItem('userToken');
                             localStorage.removeItem('studentToken');
@@ -81,66 +86,130 @@ export default function SchoolResetPasswordScreen() {
     };
 
     return (
-        <ThemedView style={{ flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#0F172A' }}>
-            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
-                <View style={{ marginBottom: 40, alignItems: 'center' }}>
-                    <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(26, 115, 232, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
-                        <Ionicons name="lock-closed" size={40} color="#1a73e8" />
-                    </View>
-                    <ThemedText type="title" style={{ color: '#fff', marginBottom: 8 }}>New Password</ThemedText>
-                    <Text style={{ fontSize: 16, color: '#94A3B8', textAlign: 'center' }}>Set a new administrator password</Text>
-                </View>
+        <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
+            <ImageBackground
+                source={{ uri: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070' }}
+                style={styles.hero}
+            >
+                <LinearGradient
+                    colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']}
+                    style={styles.overlay}
+                >
+                    <ScrollView
+                        contentContainerStyle={styles.scrollContainer}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        <View style={styles.header}>
+                            <View style={styles.logoBadge}>
+                                <Ionicons name="ribbon" size={24} color="#FACC15" />
+                                <Text style={styles.logoText}>SABINO PORTAL</Text>
+                            </View>
+                            <Text style={styles.title}>New Password</Text>
+                            <View style={styles.goldBar} />
+                            <Text style={styles.subtitle}>SECURE ADMINISTRATOR ACCESS</Text>
+                        </View>
 
-                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' }}>
-                    <View style={{ marginBottom: 20 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#E2E8F0', marginBottom: 8 }}>New Password *</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 16 }}>
-                            <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={{ marginRight: 12 }} />
-                            <TextInput
-                                style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 16 }}
-                                placeholder="Enter new password"
-                                placeholderTextColor="#64748B"
+                        <View style={styles.card}>
+                            <View style={styles.iconCircle}>
+                                <Ionicons name="lock-closed" size={32} color="#FACC15" />
+                            </View>
+
+                            {error && (
+                                <CustomAlert
+                                    type="error"
+                                    title="Security Error"
+                                    message={error}
+                                    onClose={() => setError('')}
+                                    style={{ marginBottom: 20 }}
+                                />
+                            )}
+
+                            <CustomInput
+                                label="New Password *"
+                                placeholder="Min. 8 characters"
+                                isPassword
                                 value={password}
                                 onChangeText={(v) => { setPassword(v); setError(''); }}
-                                secureTextEntry={!showPassword}
+                                containerStyle={styles.inputContainer}
                             />
-                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                                <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#94A3B8" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
 
-                    <View style={{ marginBottom: 20 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#E2E8F0', marginBottom: 8 }}>Confirm Password *</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 16 }}>
-                            <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={{ marginRight: 12 }} />
-                            <TextInput
-                                style={{ flex: 1, color: '#fff', fontSize: 16, paddingVertical: 16 }}
-                                placeholder="Confirm new password"
-                                placeholderTextColor="#64748B"
+                            <CustomInput
+                                label="Confirm New Password *"
+                                placeholder="Match password above"
+                                isPassword
                                 value={confirmPassword}
                                 onChangeText={(v) => { setConfirmPassword(v); setError(''); }}
-                                secureTextEntry={!showPassword}
+                                containerStyle={styles.inputContainer}
+                            />
+
+                            <CustomButton
+                                title={loading ? "RESETTING..." : "CONFIRM NEW PASSWORD"}
+                                onPress={handleResetPassword}
+                                disabled={loading}
+                                loading={loading}
+                                variant="premium"
+                                style={styles.ctaButton}
                             />
                         </View>
-                    </View>
 
-                    {error ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                            <Ionicons name="alert-circle" size={20} color="#EF4444" />
-                            <Text style={{ color: '#EF4444', marginLeft: 8, flex: 1, fontSize: 14 }}>{error}</Text>
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>ENCRYPTED SECURITY LAYER ACTIVE</Text>
                         </View>
-                    ) : null}
-
-                    <TouchableOpacity
-                        style={{ backgroundColor: '#1a73e8', borderRadius: 12, paddingVertical: 16, alignItems: 'center', opacity: loading ? 0.6 : 1 }}
-                        onPress={handleResetPassword}
-                        disabled={loading}
-                    >
-                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>RESET PASSWORD</Text>}
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
+                    </ScrollView>
+                </LinearGradient>
+            </ImageBackground>
         </ThemedView>
     );
 }
+
+const styles = StyleSheet.create({
+    hero: { flex: 1, width: '100%' },
+    overlay: { flex: 1, paddingHorizontal: 24 },
+    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+    
+    header: { alignItems: 'center', marginBottom: 40 },
+    logoBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+    title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+    goldBar: { width: 50, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
+    subtitle: { fontSize: 14, color: '#94A3B8', fontWeight: '500' },
+
+    card: {
+        backgroundColor: 'rgba(30, 41, 59, 0.7)',
+        borderRadius: 35,
+        padding: 30,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    iconCircle: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: 'rgba(250, 204, 21, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        alignSelf: 'center',
+        marginBottom: 25,
+        borderWidth: 1,
+        borderColor: 'rgba(250, 204, 21, 0.2)'
+    },
+    inputContainer: {
+        backgroundColor: 'rgba(15, 23, 42, 0.5)',
+        borderColor: 'rgba(255,255,255,0.1)',
+        marginBottom: 20,
+    },
+    ctaButton: { height: 60, borderRadius: 15, marginTop: 10 },
+    
+    footer: { marginTop: 40, alignItems: 'center' },
+    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+});

@@ -2,18 +2,22 @@ import React, { useState } from 'react';
 import {
     View,
     Text,
-    TextInput,
     TouchableOpacity,
     StyleSheet,
     ActivityIndicator,
-    KeyboardAvoidingView,
     Platform,
     ScrollView,
+    ImageBackground,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '@/utils/api-service';
+import { CustomButton } from '@/components/custom-button';
+import { CustomInput } from '@/components/custom-input';
+import { CustomAlert } from '@/components/custom-alert';
+import { ThemedView } from '@/components/themed-view';
+import { Colors } from '@/constants/design-system';
 
 export default function StudentForgotPassword() {
     const router = useRouter();
@@ -42,13 +46,11 @@ export default function StudentForgotPassword() {
                 throw new Error(data.error || data.message || 'Failed to send reset code');
             }
 
-            // Navigate to OTP verification page for password reset
             router.push({
                 pathname: '/(student)/verify-reset-otp',
                 params: { email: email.trim().toLowerCase() }
             });
         } catch (error: any) {
-            console.error('Student Forgot Password Error:', error);
             setError(error.message || 'Failed to send reset code');
         } finally {
             setLoading(false);
@@ -56,142 +58,143 @@ export default function StudentForgotPassword() {
     };
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.container}
-        >
-            <LinearGradient
-                colors={['#0F172A', '#1E293B', '#334155']}
-                style={styles.gradient}
+        <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
+            <ImageBackground
+                source={{ uri: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=80&w=2071' }}
+                style={styles.hero}
             >
-                <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    keyboardShouldPersistTaps="handled"
+                <LinearGradient
+                    colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']}
+                    style={styles.overlay}
                 >
-                    <View style={styles.header}>
-                        <TouchableOpacity
-                            style={styles.backButton}
-                            onPress={() => router.back()}
-                        >
-                            <Ionicons name="arrow-back" size={24} color="#FACC15" />
-                        </TouchableOpacity>
+                    <ScrollView
+                        contentContainerStyle={styles.scrollContainer}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        <View style={styles.header}>
+                            <TouchableOpacity style={styles.backFab} onPress={() => router.back()}>
+                                <Ionicons name="arrow-back" size={24} color="#FACC15" />
+                            </TouchableOpacity>
 
-                        <View style={styles.iconContainer}>
-                            <Ionicons name="lock-open-outline" size={48} color="#FACC15" />
+                            <View style={styles.logoBadge}>
+                                <Ionicons name="ribbon" size={24} color="#FACC15" />
+                                <Text style={styles.logoText}>SECURITY CENTER</Text>
+                            </View>
+                            <Text style={styles.title}>Reset Access</Text>
+                            <View style={styles.goldBar} />
+                            <Text style={styles.subtitle}>RECOVER YOUR STUDENT ACCOUNT</Text>
                         </View>
 
-                        <Text style={styles.title}>Forgot Password</Text>
-                        <Text style={styles.subtitle}>Enter your email to receive a reset code</Text>
-                    </View>
-
-                    <View style={styles.formContainer}>
-                        {error ? (
-                            <View style={styles.errorContainer}>
-                                <Ionicons name="alert-circle" size={20} color="#EF4444" />
-                                <Text style={styles.errorText}>{error}</Text>
+                        <View style={styles.card}>
+                            <View style={styles.iconCircle}>
+                                <Ionicons name="lock-open" size={40} color="#FACC15" />
                             </View>
-                        ) : null}
 
-                        <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Email Address *</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="Enter your registered email"
-                                    placeholderTextColor="#64748B"
-                                    value={email}
-                                    onChangeText={(text) => { setEmail(text); setError(''); }}
-                                    autoCapitalize="none"
-                                    keyboardType="email-address"
-                                    editable={!loading}
+                            {error && (
+                                <CustomAlert
+                                    type="error"
+                                    title="Information Error"
+                                    message={error}
+                                    onClose={() => setError('')}
+                                    style={{ marginBottom: 20 }}
                                 />
-                            </View>
+                            )}
+
+                            <CustomInput
+                                label="Registered Email Address"
+                                placeholder="name@school.com"
+                                value={email}
+                                onChangeText={(text) => { setEmail(text); setError(''); }}
+                                autoCapitalize="none"
+                                keyboardType="email-address"
+                                editable={!loading}
+                                containerStyle={styles.inputContainer}
+                            />
+
+                            <Text style={styles.infoText}>
+                                We will send a secure verification code to this address.
+                            </Text>
+
+                            <CustomButton
+                                title={loading ? "SENDING CODE..." : "GENERATE RESET CODE"}
+                                onPress={handleSendOtp}
+                                loading={loading}
+                                variant="premium"
+                                style={styles.ctaButton}
+                            />
                         </View>
 
-                        <TouchableOpacity
-                            style={[styles.actionButton, loading && styles.buttonDisabled]}
-                            onPress={handleSendOtp}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="#0F172A" />
-                            ) : (
-                                <>
-                                    <Text style={styles.actionButtonText}>SEND RESET CODE</Text>
-                                    <Ionicons name="send-outline" size={20} color="#0F172A" />
-                                </>
-                            )}
-                        </TouchableOpacity>
-
-                        <Text style={styles.infoText}>
-                            We'll send a 6-digit code to your email to verify your identity.
-                        </Text>
-                    </View>
-                </ScrollView>
-            </LinearGradient>
-        </KeyboardAvoidingView>
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>PASSPHRASE RECOVERY MECHANISM ACTIVE</Text>
+                        </View>
+                    </ScrollView>
+                </LinearGradient>
+            </ImageBackground>
+        </ThemedView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    gradient: { flex: 1 },
-    scrollContent: { flexGrow: 1, padding: 24, justifyContent: 'center' },
+    hero: { flex: 1, width: '100%' },
+    overlay: { flex: 1, paddingHorizontal: 24 },
+    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+
     header: { alignItems: 'center', marginBottom: 40 },
-    backButton: { position: 'absolute', top: 0, left: 0, padding: 8 },
-    iconContainer: {
+    backFab: {
+        position: 'absolute',
+        top: -20,
+        left: 0,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    logoBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+    title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+    goldBar: { width: 60, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
+    subtitle: { fontSize: 12, color: '#94A3B8', fontWeight: '800', letterSpacing: 1 },
+
+    card: {
+        backgroundColor: 'rgba(30, 41, 59, 0.7)',
+        borderRadius: 35,
+        padding: 30,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    iconCircle: {
         width: 80,
         height: 80,
         borderRadius: 40,
         backgroundColor: 'rgba(250, 204, 21, 0.1)',
-        alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 20
-    },
-    title: { fontSize: 32, fontWeight: '900', color: '#FFFFFF', marginBottom: 8 },
-    subtitle: { fontSize: 16, color: '#94A3B8', textAlign: 'center' },
-    formContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 24,
-        padding: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)'
-    },
-    errorContainer: {
-        flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-        padding: 12,
-        borderRadius: 12,
-        marginBottom: 20,
+        alignSelf: 'center',
+        marginBottom: 25,
         borderWidth: 1,
-        borderColor: 'rgba(239, 68, 68, 0.3)'
+        borderColor: 'rgba(250, 204, 21, 0.2)'
     },
-    errorText: { color: '#EF4444', marginLeft: 8, flex: 1, fontSize: 14 },
-    inputGroup: { marginBottom: 20 },
-    label: { fontSize: 14, fontWeight: '600', color: '#E2E8F0', marginBottom: 8 },
-    inputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        paddingHorizontal: 16
+    inputContainer: {
+        backgroundColor: 'rgba(15, 23, 42, 0.5)',
+        borderColor: 'rgba(255,255,255,0.1)',
     },
-    inputIcon: { marginRight: 12 },
-    input: { flex: 1, color: '#FFFFFF', fontSize: 16, paddingVertical: 16 },
-    actionButton: {
-        backgroundColor: '#FACC15',
-        borderRadius: 12,
-        paddingVertical: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 8
-    },
-    buttonDisabled: { opacity: 0.6 },
-    actionButtonText: { color: '#0F172A', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginRight: 8 },
-    infoText: { color: '#64748B', fontSize: 12, textAlign: 'center', marginTop: 16, fontStyle: 'italic' }
+    infoText: { color: '#64748B', fontSize: 11, textAlign: 'center', marginTop: 10, marginBottom: 25, fontWeight: '600' },
+    ctaButton: { height: 60, borderRadius: 15 },
+
+    footer: { marginTop: 40, alignItems: 'center' },
+    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
 });

@@ -8,6 +8,7 @@ import {
   Platform,
   FlatList,
   Modal,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -55,16 +56,21 @@ interface ClassOption {
   display_name: string;
 }
 
+interface AcademicSession {
+  id: number;
+  session_name: string;
+}
+
 export default function ReportViewScreen() {
   const router = useRouter();
   const { id: initialId, mode: initialMode, name: initialName } = useLocalSearchParams();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [studentData, setStudentData] = useState<ScoreData[]>([]);
   const [classData, setClassData] = useState<ClassStudent[]>([]);
   const [selectedTerm, setSelectedTerm] = useState('1');
   const [selectedSession, setSelectedSession] = useState('1');
-  const [sessions, setSessions] = useState([]);
+  const [sessions, setSessions] = useState<AcademicSession[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [showSessionDropdown, setShowSessionDropdown] = useState(false);
@@ -72,16 +78,26 @@ export default function ReportViewScreen() {
   const [mode, setMode] = useState<'student' | 'class'>(initialMode as 'student' | 'class' || 'student');
   const [reportId, setReportId] = useState<string | null>(initialId as string || null);
   const [reportName, setReportName] = useState<string>(initialName as string || '');
+  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
+  const [downloadError, setDownloadError] = useState('');
+  const [downloadingStudentId, setDownloadingStudentId] = useState<number | null>(null);
+  const [studentDownloadError, setStudentDownloadError] = useState<{ [key: number]: string }>({});
+
+  // Email modal state
+  const [emailModalVisible, setEmailModalVisible] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [currentEmailRequest, setCurrentEmailRequest] = useState<{
+    enrollmentId: number;
+    studentName: string;
+  } | null>(null);
 
   // Fetch data based on mode
   useEffect(() => {
     if (reportId && mode === 'student') {
       fetchReportData();
-    } else if (reportId && mode === 'class') {
-      setSelectedClass({ id: Number(reportId), display_name: reportName });
-      fetchReportData();
-    } else if (mode === 'class' && !reportId) {
-      // Mode is class but no ID provided, let user select
+    } else if (mode === 'class') {
+      // Always require manual class selection, don't auto-select
       setLoading(false);
     }
   }, [reportId, mode, selectedTerm, selectedSession]);
@@ -186,6 +202,200 @@ export default function ReportViewScreen() {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const emailStudentPDF = async (enrollmentId: number, studentName: string) => {
+    setDownloadingStudentId(enrollmentId);
+    setStudentDownloadError(prev => ({ ...prev, [enrollmentId]: '' }));
+
+    try {
+      const token = await getToken();
+
+      if (Platform.OS === 'ios') {
+        // iOS: Use Alert.prompt
+        Alert.prompt(
+          'Email Report Card',
+          `Enter email address to send the report card for ${studentName}:`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Send',
+              onPress: async (email) => {
+                if (!email || !email.includes('@')) {
+                  Alert.alert('Invalid Email', 'Please enter a valid email address.');
+                  return;
+                }
+                await sendEmailReport(enrollmentId, selectedTerm, selectedSession, email.trim(), token);
+                setStudentDownloadError(prev => ({ ...prev, [enrollmentId]: '✓ Emailed' }));
+              }
+            }
+          ],
+          'plain-text',
+          '', // default value
+          'email-address' // keyboard type
+        );
+      } else {
+        // Android/Web: Use modal
+        setCurrentEmailRequest({ enrollmentId, studentName });
+        setEmailInput('');
+        setEmailModalVisible(true);
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Email setup failed';
+      console.error(`Error setting up email for ${studentName}:`, err);
+      setStudentDownloadError(prev => ({ ...prev, [enrollmentId]: errorMsg }));
+    } finally {
+      setDownloadingStudentId(null);
+    }
+  };
+
+  // Helper function to send email report
+  const sendEmailReport = async (enrollmentId: number, term: string, sessionId: string, email: string, token: string) => {
+    const emailUrl = `${API_BASE_URL}/api/reports/email/official-report/${enrollmentId}`;
+    const response = await fetch(emailUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        term: parseInt(term),
+        sessionId: parseInt(sessionId),
+        email: email
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Failed to send email');
+    }
+  };
+
+  // Handle email modal submission
+  const handleEmailModalSubmit = async () => {
+    if (!currentEmailRequest || !emailInput.trim()) {
+      Alert.alert('Error', 'Please enter a valid email address.');
+      return;
+    }
+
+    if (!emailInput.includes('@')) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    setEmailModalVisible(false);
+
+    const token = await getToken();
+    if (!token) {
+      Alert.alert('Error', 'Authentication required. Please login again.');
+      return;
+    }
+
+    setDownloadingStudentId(currentEmailRequest.enrollmentId);
+
+    try {
+      await sendEmailReport(
+        currentEmailRequest.enrollmentId,
+        selectedTerm,
+        selectedSession,
+        emailInput.trim(),
+        token
+      );
+      setStudentDownloadError(prev => ({ ...prev, [currentEmailRequest.enrollmentId]: '✓ Emailed' }));
+    } catch (emailError) {
+      console.error('Email error:', emailError);
+      setStudentDownloadError(prev => ({ ...prev, [currentEmailRequest.enrollmentId]: 'Email failed' }));
+    } finally {
+      setDownloadingStudentId(null);
+      setCurrentEmailRequest(null);
+    }
+  };
+
+  const emailAllPDFs = async () => {
+    if (classData.length === 0) {
+      setDownloadError('No students in this class');
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      // iOS: Use Alert.prompt
+      Alert.prompt(
+        'Email All Report Cards',
+        `Enter email address to send all ${classData.length} report cards:`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Send All',
+            onPress: async (email) => {
+              if (!email || !email.includes('@')) {
+                Alert.alert('Invalid Email', 'Please enter a valid email address.');
+                return;
+              }
+              await sendBulkEmailReports(email.trim());
+            }
+          }
+        ],
+        'plain-text',
+        '', // default value
+        'email-address' // keyboard type
+      );
+    } else {
+      // Android/Web: Use modal - but for bulk, we'll use a simpler approach
+      // For now, just show an alert asking for email
+      Alert.prompt(
+        'Email All Report Cards',
+        `Enter email address to send all ${classData.length} report cards:`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Send All',
+            onPress: async (email) => {
+              if (!email || !email.includes('@')) {
+                Alert.alert('Invalid Email', 'Please enter a valid email address.');
+                return;
+              }
+              await sendBulkEmailReports(email.trim());
+            }
+          }
+        ]
+      );
+    }
+  };
+
+  const sendBulkEmailReports = async (email: string) => {
+    setDownloadingAll(true);
+    setDownloadError('');
+    setDownloadProgress({ current: 0, total: classData.length });
+
+    try {
+      const token = await getToken();
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (let i = 0; i < classData.length; i++) {
+        const student = classData[i];
+        try {
+          await sendEmailReport(student.enrollment_id, selectedTerm, selectedSession, email, token);
+          successCount++;
+        } catch (err) {
+          console.error(`Error emailing PDF for ${student.name}:`, err);
+          failedCount++;
+        }
+        setDownloadProgress({ current: i + 1, total: classData.length });
+      }
+
+      if (failedCount === 0) {
+        setDownloadError(`✓ Successfully emailed ${successCount} PDF(s)`);
+      } else {
+        setDownloadError(`Emailed ${successCount} PDF(s). Failed: ${failedCount}`);
+      }
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Failed to email PDFs');
+    } finally {
+      setDownloadingAll(false);
+      setDownloadProgress({ current: 0, total: 0 });
     }
   };
 
@@ -370,6 +580,32 @@ export default function ReportViewScreen() {
                 </View>
               ))}
             </View>
+
+            {/* Individual Download Button */}
+            <TouchableOpacity
+              style={[styles.individualDownloadButton, downloadingStudentId === student.enrollment_id && styles.downloadButtonDisabledIndividual]}
+              onPress={() => emailStudentPDF(student.enrollment_id, student.name)}
+              disabled={downloadingStudentId === student.enrollment_id}
+            >
+              {downloadingStudentId === student.enrollment_id ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                  <ThemedText style={styles.individualDownloadButtonText}>Downloading...</ThemedText>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="download" size={16} color="#fff" style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.individualDownloadButtonText}>Download</ThemedText>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Individual Download Status */}
+            {studentDownloadError[student.enrollment_id] && (
+              <ThemedText style={[styles.studentDownloadStatus, studentDownloadError[student.enrollment_id].startsWith('✓') && styles.downloadStatusSuccess]}>
+                {studentDownloadError[student.enrollment_id]}
+              </ThemedText>
+            )}
           </View>
         ))}
       </View>
@@ -392,6 +628,85 @@ export default function ReportViewScreen() {
           </View>
         </View>
       </LinearGradient>
+
+      {/* Class/Session/Term Selector for Student Mode - Allow selection before loading report */}
+      {mode === 'student' && !reportId && (
+        <View style={styles.studentSelectorContainer}>
+          <ThemedText style={styles.selectorTitle}>Select Student Report Filters</ThemedText>
+          
+          {/* Class Selector */}
+          <View style={styles.filterGroup}>
+            <ThemedText style={styles.filterLabel}>📚 Class:</ThemedText>
+            <TouchableOpacity
+              style={styles.classSelectorButton}
+              onPress={() => {
+                console.log('🔽 Opening class dropdown, classes:', classes);
+                setShowClassDropdown(true);
+              }}
+            >
+              <ThemedText style={styles.classSelectorButtonText}>
+                {selectedClass ? selectedClass.display_name : '📋 Choose a class...'}
+              </ThemedText>
+              <Ionicons name="chevron-down" size={20} color="#2196F3" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Term Selector */}
+          <View style={styles.filterGroup}>
+            <ThemedText style={styles.filterLabel}>📝 Term:</ThemedText>
+            <View style={styles.filterOptions}>
+              {['1', '2'].map((term) => (
+                <TouchableOpacity
+                  key={term}
+                  style={[styles.filterButton, selectedTerm === term && styles.activeFilter]}
+                  onPress={() => setSelectedTerm(term)}
+                >
+                  <ThemedText
+                    style={[
+                      styles.filterButtonText,
+                      selectedTerm === term && styles.activeFilterText,
+                    ]}
+                  >
+                    T{term}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Session/Academic Year Selector */}
+          {sessions.length > 0 && (
+            <View style={styles.filterGroup}>
+              <ThemedText style={styles.filterLabel}>📅 Academic Year:</ThemedText>
+              <TouchableOpacity
+                style={styles.sessionDropdownButton}
+                onPress={() => setShowSessionDropdown(true)}
+              >
+                <ThemedText style={styles.sessionDropdownButtonText}>
+                  {sessions.find((s: any) => String(s.id) === selectedSession)?.session_name || 'Select year...'}
+                </ThemedText>
+                <Ionicons name="chevron-down" size={20} color="#2196F3" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Load Student Report Button */}
+          {selectedClass && (
+            <TouchableOpacity
+              style={styles.loadStudentReportButton}
+              onPress={() => {
+                console.log('📊 Loading student report with class:', selectedClass);
+                setReportId(String(selectedClass.id));
+                setReportName(selectedClass.display_name);
+                fetchReportData();
+              }}
+            >
+              <Ionicons name="document-text" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <ThemedText style={styles.loadStudentReportButtonText}>Load My Report</ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Class Selector for Class Mode without ID */}
       {mode === 'class' && !reportId && (
@@ -465,7 +780,7 @@ export default function ReportViewScreen() {
         <View style={styles.filterGroup}>
           <ThemedText style={styles.filterLabel}>Term:</ThemedText>
           <View style={styles.filterOptions}>
-            {['1', '2', '3'].map((term) => (
+            {['1', '2'].map((term) => (
               <TouchableOpacity
                 key={term}
                 style={[styles.filterButton, selectedTerm === term && styles.activeFilter]}
@@ -491,8 +806,9 @@ export default function ReportViewScreen() {
               style={styles.sessionDropdownButton}
               onPress={() => setShowSessionDropdown(true)}
             >
-              <ThemedText style={styles.sessionDropdownButtonText}>
-                {sessions.find((s: any) => String(s.id) === selectedSession)?.session_name || 'Select year...'}
+              <ThemedText
+                style={styles.sessionDropdownButtonText}>
+                {sessions.find((s) => String(s.id) === selectedSession)?.session_name || 'Select year...'}
               </ThemedText>
               <Ionicons name="chevron-down" size={20} color="#2196F3" />
             </TouchableOpacity>
@@ -603,12 +919,92 @@ export default function ReportViewScreen() {
         </View>
       )}
 
+      {/* Email All PDFs Button - Class Mode Only */}
+      {mode === 'class' && reportId && !loading && !error && classData.length > 0 && (
+        <View style={styles.downloadAllContainer}>
+          <TouchableOpacity
+            style={[styles.downloadAllButton, downloadingAll && styles.downloadAllButtonDisabled]}
+            onPress={emailAllPDFs}
+            disabled={downloadingAll}
+          >
+            {downloadingAll ? (
+              <View style={styles.downloadProgressView}>
+                <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                <ThemedText style={styles.downloadAllButtonText}>
+                  Downloading {downloadProgress.current}/{downloadProgress.total}...
+                </ThemedText>
+              </View>
+            ) : (
+              <View style={styles.downloadButtonContent}>
+                <Ionicons name="download" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <ThemedText style={styles.downloadAllButtonText}>
+                  Email All PDFs ({classData.length})
+                </ThemedText>
+              </View>
+            )}
+          </TouchableOpacity>
+          {downloadError && (
+            <ThemedText
+              style={[
+                styles.downloadStatusText,
+                downloadError.startsWith('✓') ? styles.downloadSuccess : styles.downloadWarning,
+              ]}
+            >
+              {downloadError}
+            </ThemedText>
+          )}
+        </View>
+      )}
+
       {/* Report Content */}
       {!loading && !error && (
         <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 30 }}>
           {mode === 'student' ? renderStudentReport() : renderClassReport()}
         </ScrollView>
       )}
+
+      {/* Email Modal for Android/Web */}
+      <Modal
+        visible={emailModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setEmailModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <ThemedText style={styles.modalTitle}>Email Report Card</ThemedText>
+            <ThemedText style={styles.modalSubtitle}>
+              Enter email address to send the report card for {currentEmailRequest?.studentName}
+            </ThemedText>
+
+            <TextInput
+              style={styles.emailInput}
+              placeholder="Enter email address"
+              value={emailInput}
+              onChangeText={setEmailInput}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setEmailModalVisible(false)}
+              >
+                <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.sendButton]}
+                onPress={handleEmailModalSubmit}
+              >
+                <ThemedText style={styles.sendButtonText}>Send</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -894,4 +1290,116 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     fontWeight: '700',
   },
+
+  // Download All PDFs Styles
+  downloadAllContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  downloadAllButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  downloadAllButtonDisabled: {
+    backgroundColor: '#9CCC65',
+    opacity: 0.8,
+  },
+  downloadButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downloadProgressView: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downloadAllButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  downloadStatusText: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  downloadSuccess: {
+    color: '#4CAF50',
+  },
+  downloadWarning: {
+    color: '#F44336',
+  },
+
+  // Individual Student Download Styles
+  individualDownloadButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#2196F3',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downloadButtonDisabledIndividual: {
+    backgroundColor: '#90CAF9',
+    opacity: 0.8,
+  },
+  individualDownloadButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  studentDownloadStatus: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    color: '#F44336',
+  },
+  downloadStatusSuccess: {
+    color: '#4CAF50',
+  },
+
+  // Student Selector Styles (for student mode filter selection)
+  studentSelectorContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#f0f7ff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#BBE5FF',
+  },
+  selectorTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 14,
+    color: '#1976D2',
+  },
+  loadStudentReportButton: {
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#2196F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  loadStudentReportButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
 });
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -11,15 +11,19 @@ import {
     RefreshControl,
     Linking,
     Dimensions,
-    Share
+    Modal,
+    TextInput,
+    ImageBackground,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '@/utils/api-service';
+import { Colors } from '@/constants/design-system';
+import { CustomButton } from '@/components/custom-button';
+import { CustomAlert } from '@/components/custom-alert';
+import { ThemedView } from '@/components/themed-view';
 
 const { width } = Dimensions.get('window');
 
@@ -30,8 +34,8 @@ interface Grade {
     ca3_score: number | string | null;
     ca4_score: number | string | null;
     exam_score: number | string | null;
-    student_total?: number | string | null; // some endpoints return `student_total`
-    total_score?: number | string | null; // others return `total_score`
+    student_total?: number | string | null;
+    total_score?: number | string | null;
     class_average?: number | string | null;
 }
 
@@ -60,17 +64,12 @@ interface Summary {
     subjects_failed?: number | string | null;
 }
 
-const getToken = async () => {
-    if (Platform.OS !== 'web') return await SecureStore.getItemAsync('studentToken');
-    return localStorage.getItem('studentToken');
-};
-
 const getLetterGrade = (score: number) => {
-    if (score >= 75) return { label: 'A', color: '#10B981' };
-    if (score >= 65) return { label: 'B', color: '#3B82F6' };
-    if (score >= 55) return { label: 'C', color: '#FACC15' };
-    if (score >= 45) return { label: 'D', color: '#FB923C' };
-    return { label: 'F', color: '#EF4444' };
+    if (score >= 75) return { label: 'A', color: '#10B981', desc: 'EXCELLENT' };
+    if (score >= 65) return { label: 'B', color: '#3B82F6', desc: 'VERY GOOD' };
+    if (score >= 55) return { label: 'C', color: '#FACC15', desc: 'GOOD' };
+    if (score >= 45) return { label: 'D', color: '#FB923C', desc: 'PASS' };
+    return { label: 'F', color: '#EF4444', desc: 'FAIL' };
 };
 
 export default function StudentGrades() {
@@ -90,14 +89,32 @@ export default function StudentGrades() {
     const [summary, setSummary] = useState<Summary | null>(null);
     const [fetchingMetadata, setFetchingMetadata] = useState(false);
     const [fetchingGrades, setFetchingGrades] = useState(false);
+    
+    // Status states
     const [downloading, setDownloading] = useState(false);
+    const [sentSuccess, setSentSuccess] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+    // Error Display
+    const [error, setError] = useState<{title: string, message: string} | null>(null);
+
+    // Email modal state
+    const [emailModalVisible, setEmailModalVisible] = useState(false);
+    const [emailInput, setEmailInput] = useState('');
 
     useEffect(() => {
         fetchInitialData();
     }, []);
 
+    const getToken = async () => {
+        return Platform.OS === 'web' 
+            ? localStorage.getItem('studentToken') 
+            : await SecureStore.getItemAsync('studentToken');
+    };
+
     const fetchInitialData = async () => {
         setLoading(true);
+        setError(null);
         try {
             const token = await getToken();
             if (!token) {
@@ -105,12 +122,11 @@ export default function StudentGrades() {
                 return;
             }
 
-            // Fetch Academic Years
             const sessRes = await fetch(`${API_BASE_URL}/api/academic-years`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const sessData = await sessRes.json();
 
+            const sessData = await sessRes.json();
             if (sessData.success) {
                 setSessions(sessData.data);
                 if (sessData.data.length > 0) {
@@ -118,10 +134,11 @@ export default function StudentGrades() {
                     setSelectedSessionId(latest.id);
                     await fetchSessionEnrollments(latest.id);
                 }
+            } else {
+                throw new Error(sessData.error || 'Failed to load academic sessions');
             }
-        } catch (error) {
-            console.error('Initial fetch error:', error);
-            Alert.alert('Error', 'Failed to initialize academic portal');
+        } catch (err: any) {
+            setError({ title: 'System Offline', message: err.message || 'Failed to initialize academic portal' });
         } finally {
             setLoading(false);
         }
@@ -144,45 +161,44 @@ export default function StudentGrades() {
                 }
             }
         } catch (error) {
-            console.error('Enrollment fetch error:', error);
+            console.error('Metadata fetch error:', error);
         } finally {
             setFetchingMetadata(false);
         }
     };
 
     const fetchGrades = async () => {
-        if (!selectedEnrollment || !selectedSessionId) {
-            Alert.alert('Missing Selection', 'Please select a session and class enrollment.');
+        if (!selectedEnrollment) {
+            Alert.alert('Selection Required', 'Select a class enrollment to view records.');
             return;
         }
 
         setFetchingGrades(true);
+        setError(null);
         try {
             const token = await getToken();
-
-            // Fetch detailed scores and summary stats from my-grades endpoint
-            // prefer the enrollment's session_id when available (ensures accuracy)
             const sessionIdToUse = selectedEnrollment?.session_id || selectedSessionId;
-            const res = await fetch(`${API_BASE_URL}/api/scores/my-grades?term=${selectedTerm}&sessionId=${sessionIdToUse}`, {
+            const endpoint = `${API_BASE_URL}/api/scores/my-grades?term=${selectedTerm}&sessionId=${sessionIdToUse}`;
+
+            const res = await fetch(endpoint, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
             const data = await res.json();
 
-            // Debugging logs
-            console.log('🟣 fetchGrades: my-grades data =>', data);
-
-            if (data.success) {
+            if (data.success && data.data.length > 0) {
                 setGrades(data.data);
                 setSummary(data.summary);
             } else {
                 setGrades([]);
                 setSummary(null);
-                Alert.alert('No Records', 'No scores found for the selected period.');
+                setError({ 
+                    title: 'No Data Records', 
+                    message: data.message || data.error || 'No scores recorded for this academic term.' 
+                });
             }
-
-        } catch (error) {
-            console.error('Grades fetch error:', error);
-            Alert.alert('Error', 'Could not retrieve academic records');
+        } catch (err: any) {
+            setError({ title: 'Connection Fault', message: 'Unable to synchronize with the academic database.' });
         } finally {
             setFetchingGrades(false);
         }
@@ -199,10 +215,7 @@ export default function StudentGrades() {
 
     const handleEnrollmentChange = (enr: Enrollment) => {
         setSelectedEnrollment(enr);
-        // Keep selected session in sync with chosen enrollment to avoid mismatches
-        if (enr?.session_id) {
-            setSelectedSessionId(enr.session_id);
-        }
+        if (enr?.session_id) setSelectedSessionId(enr.session_id);
         setGrades([]);
         setSummary(null);
     };
@@ -213,197 +226,74 @@ export default function StudentGrades() {
         setSummary(null);
     };
 
-    const handleDownloadReport = async () => {
-        if (!selectedEnrollment) {
-            Alert.alert('Error', 'Please select an enrollment first');
-            return;
-        }
-
-        setDownloading(true);
+    const sendEmailReport = useCallback(async (email: string) => {
         try {
             const token = await getToken();
-            if (!token) {
-                Alert.alert('Error', 'Authentication required. Please login again.');
-                return;
-            }
-
             const sessionIdToUse = selectedEnrollment?.session_id || selectedSessionId;
-            const downloadUrl = `${API_BASE_URL}/api/reports/download/official-report/${selectedEnrollment.enrollment_id}?term=${selectedTerm}&sessionId=${sessionIdToUse}`;
-            const fileName = `Official_Report_${selectedEnrollment.class_name}_T${selectedTerm}.pdf`;
+            const emailUrl = `${API_BASE_URL}/api/reports/email/official-report/${selectedEnrollment?.enrollment_id}`;
+            const response = await fetch(emailUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    term: selectedTerm,
+                    sessionId: sessionIdToUse,
+                    email: email.trim()
+                }),
+            });
 
-            if (Platform.OS === 'web') {
-                // For web, fetch the PDF and download as blob
-                try {
-                    const response = await fetch(downloadUrl, {
-                        method: 'GET',
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const blob = await response.blob();
-                    
-                    // Create blob URL and trigger download
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = blobUrl;
-                    link.download = fileName;
-                    document.body.appendChild(link);
-                    link.click();
-                    
-                    // Cleanup
-                    setTimeout(() => {
-                        document.body.removeChild(link);
-                        window.URL.revokeObjectURL(blobUrl);
-                    }, 100);
-
-                    Alert.alert('Success', 'Report downloaded successfully');
-                } catch (fetchError) {
-                    console.error('Fetch error:', fetchError);
-                    throw fetchError;
-                }
-            } else if (Platform.OS === 'android') {
-                // Android: Save to system Downloads folder and open with system viewer
-                try {
-                    const filename = `${fileName}`;
-                    console.log('🤖 Android: Fetching PDF from:', downloadUrl);
-
-                    const response = await fetch(downloadUrl, {
-                        method: 'GET',
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Download failed with status: ${response.status}`);
-                    }
-
-                    // Convert blob to base64
-                    const blob = await response.blob();
-                    const base64Data = await new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            const result = reader.result as string;
-                            const base64 = result.includes(',') ? result.split(',')[1] : result;
-                            resolve(base64);
-                        };
-                        reader.onerror = () => reject(new Error('Failed to read blob'));
-                        reader.readAsDataURL(blob);
-                    });
-
-                    // Write to app's cache directory first
-                    const cacheDir = FileSystem.cacheDirectory;
-                    if (!cacheDir) {
-                        throw new Error('Cannot access cache directory');
-                    }
-
-                    const fileUri = `${cacheDir}${filename}`;
-                    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-                        encoding: FileSystem.EncodingType.Base64,
-                    });
-
-                    console.log('✅ PDF written to cache:', fileUri);
-
-                    // Open with system PDF viewer using Linking
-                    try {
-                        const canOpen = await Linking.canOpenURL(`file://${fileUri}`);
-                        if (canOpen) {
-                            await Linking.openURL(`file://${fileUri}`);
-                            console.log('✅ Opened PDF with system viewer');
-                        } else {
-                            throw new Error('Cannot open PDF on this device');
-                        }
-                    } catch (openError) {
-                        console.warn('Could not open PDF directly, using share instead:', openError);
-                        // Fallback to sharing if direct open fails
-                        if (await Sharing.isAvailableAsync()) {
-                            await Sharing.shareAsync(fileUri, {
-                                mimeType: 'application/pdf',
-                                dialogTitle: 'View Report Card',
-                            });
-                        }
-                    }
-
-                    Alert.alert('Success', 'Report downloaded and opened');
-                } catch (androidError) {
-                    console.error('❌ Android download error:', androidError);
-                    Alert.alert('Download Failed', androidError instanceof Error ? androidError.message : 'Failed to download report');
-                }
-            } else if (Platform.OS === 'ios') {
-                // iOS: Save to app Documents and present system "Open in / Save to Files" dialog
-                try {
-                    const filename = `${fileName}`;
-                    console.log('🍎 iOS: Fetching PDF from:', downloadUrl);
-
-                    const response = await fetch(downloadUrl, {
-                        method: 'GET',
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Download failed with status: ${response.status}`);
-                    }
-
-                    // Convert blob to base64
-                    const blob = await response.blob();
-                    const base64Data = await new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            const result = reader.result as string;
-                            const base64 = result.includes(',') ? result.split(',')[1] : result;
-                            resolve(base64);
-                        };
-                        reader.onerror = () => reject(new Error('Failed to read blob'));
-                        reader.readAsDataURL(blob);
-                    });
-
-                    // Get document directory
-                    const docDir = FileSystem.documentDirectory;
-                    if (!docDir) {
-                        throw new Error('Cannot access documents directory');
-                    }
-
-                    // Create PDFs subdirectory
-                    const pdfDir = `${docDir}PDFs/`;
-                    await FileSystem.makeDirectoryAsync(pdfDir, { intermediates: true });
-
-                    const fileUri = `${pdfDir}${filename}`;
-                    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-                        encoding: FileSystem.EncodingType.Base64,
-                    });
-
-                    console.log('✅ PDF saved to documents:', fileUri);
-
-                    // Present system "Open in / Save to Files" dialog
-                    if (await Sharing.isAvailableAsync()) {
-                        await Sharing.shareAsync(fileUri, {
-                            mimeType: 'application/pdf',
-                            UTI: 'com.adobe.pdf',
-                            dialogTitle: 'Save Report Card',
-                        });
-                        console.log('✅ Presented system share dialog');
-                    } else {
-                        throw new Error('Sharing not available on this device');
-                    }
-
-                    Alert.alert('Success', 'Report ready to save or open');
-                } catch (iosError) {
-                    console.error('❌ iOS download error:', iosError);
-                    Alert.alert('Download Failed', iosError instanceof Error ? iosError.message : 'Failed to download report');
-                }
+            const result = await response.json();
+            if (response.ok && result.success) {
+                setShowSuccessModal(true);
+                setSentSuccess(true);
+                setTimeout(() => setSentSuccess(false), 5000);
+            } else {
+                throw new Error(result.error || 'Dispatch failure');
             }
-        } catch (error) {
-            console.error('Download Error:', error);
-            Alert.alert('Download Failed', error instanceof Error ? error.message : 'Failed to download report card');
-        } finally {
-            setDownloading(false);
+        } catch (err: any) {
+            Alert.alert('Dispatch Error', err.message || 'Failed to transmit report via secure channel');
+        }
+    }, [selectedEnrollment, selectedSessionId, selectedTerm]);
+
+    const handleEmailModalSubmit = async () => {
+        if (!emailInput.trim() || !emailInput.includes('@')) {
+            Alert.alert('Validation Error', 'Enter a valid digital address.');
+            return;
+        }
+        setEmailModalVisible(false);
+        setDownloading(true);
+        await sendEmailReport(emailInput.trim());
+        setDownloading(false);
+        setEmailInput('');
+    };
+
+    const handleEmailReport = async () => {
+        if (!selectedEnrollment) return;
+        if (Platform.OS === 'ios') {
+            Alert.prompt(
+                'Digital Delivery',
+                'Enter recipient email for official report:',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Transmit',
+                        onPress: async (email) => {
+                            if (!email || !email.includes('@')) return;
+                            setDownloading(true);
+                            await sendEmailReport(email.trim());
+                            setDownloading(false);
+                        }
+                    }
+                ],
+                'plain-text',
+                '',
+                'email-address'
+            );
+        } else {
+            setEmailInput('');
+            setEmailModalVisible(true);
         }
     };
 
@@ -415,187 +305,242 @@ export default function StudentGrades() {
 
     if (loading) {
         return (
-            <View style={styles.loadingContainer}>
+            <ThemedView style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#FACC15" />
-                <Text style={styles.loadingText}>Loading Academic Portal...</Text>
-            </View>
+                <Text style={styles.loadingText}>SYNCHRONIZING ACADEMIC REEDS...</Text>
+            </ThemedView>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.gradient}>
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Academic Results</Text>
-                    <View style={{ width: 40 }} />
-                </View>
-
-                <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FACC15" />}
+        <ThemedView style={styles.container}>
+            <ImageBackground
+                source={{ uri: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=80&w=2071&auto=format&fit=crop' }}
+                style={styles.hero}
+            >
+                <LinearGradient
+                    colors={['rgba(15, 23, 42, 0.7)', Colors.navy.dark]}
+                    style={styles.heroOverlay}
                 >
-                    {/* Drill-down Selectors */}
-                    <View style={styles.filterCard}>
-                        {/* 1. Academic Session */}
-                        <Text style={styles.filterLabel}>Academic Session</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll}>
-                            {sessions.map((sess) => (
+                    <View style={styles.header}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Academic Performance</Text>
+                        <View style={{ width: 44 }} />
+                    </View>
+
+                    <View style={styles.heroContent}>
+                        <Text style={styles.heroSubtitle}>PROXIMITY TO EXCELLENCE</Text>
+                        <Text style={styles.heroMainTitle}>Academic Records</Text>
+                    </View>
+                </LinearGradient>
+            </ImageBackground>
+
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FACC15" />}
+            >
+                {/* Custom Alert for errors */}
+                {error && (
+                    <CustomAlert
+                        type="error"
+                        title={error.title}
+                        message={error.message}
+                        onClose={() => setError(null)}
+                        style={styles.alert}
+                    />
+                )}
+
+                {/* Filter Section */}
+                <View style={styles.card}>
+                    <Text style={styles.cardLabel}>ACADEMIC PARAMETERS</Text>
+                    
+                    <Text style={styles.filterTitle}>Session</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+                        {sessions.map((sess) => (
+                            <TouchableOpacity
+                                key={sess.id}
+                                style={[styles.pill, selectedSessionId === sess.id && styles.pillActive]}
+                                onPress={() => handleSessionChange(sess.id)}
+                            >
+                                <Text style={[styles.pillText, selectedSessionId === sess.id && styles.pillTextActive]}>
+                                    {sess.year_label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+
+                    <Text style={styles.filterTitle}>Enrollment</Text>
+                    {fetchingMetadata ? (
+                        <ActivityIndicator size="small" color="#FACC15" style={styles.inlineLoader} />
+                    ) : enrollments.length > 0 ? (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+                            {enrollments.map((enr) => (
                                 <TouchableOpacity
-                                    key={sess.id}
-                                    style={[styles.pill, selectedSessionId === sess.id && styles.pillActive]}
-                                    onPress={() => handleSessionChange(sess.id)}
+                                    key={enr.enrollment_id}
+                                    style={[styles.classPill, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.classPillActive]}
+                                    onPress={() => handleEnrollmentChange(enr)}
                                 >
-                                    <Text style={[styles.pillText, selectedSessionId === sess.id && styles.pillTextActive]}>
-                                        {sess.year_label}
+                                    <Ionicons
+                                        name="school-outline"
+                                        size={14}
+                                        color={selectedEnrollment?.enrollment_id === enr.enrollment_id ? "#0F172A" : "#FACC15"}
+                                    />
+                                    <Text style={[styles.classPillText, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.classPillTextActive]}>
+                                        {enr.class_name}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
+                    ) : (
+                        <Text style={styles.emptyFilterText}>No active enrollments for this session</Text>
+                    )}
 
-                        {/* 2. Enrollment / Class */}
-                        <Text style={[styles.filterLabel, { marginTop: 20 }]}>Available Enrollments</Text>
-                        {fetchingMetadata ? (
-                            <ActivityIndicator size="small" color="#FACC15" style={{ alignSelf: 'flex-start', marginVertical: 10 }} />
-                        ) : enrollments.length > 0 ? (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll}>
-                                {enrollments.map((enr) => (
-                                    <TouchableOpacity
-                                        key={enr.enrollment_id}
-                                        style={[styles.classPill, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.classPillActive]}
-                                        onPress={() => handleEnrollmentChange(enr)}
-                                    >
-                                        <Ionicons
-                                            name="school-outline"
-                                            size={16}
-                                            color={selectedEnrollment?.enrollment_id === enr.enrollment_id ? "#0F172A" : "#FACC15"}
-                                        />
-                                        <Text style={[styles.classPillText, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.classPillTextActive]}>
-                                            {enr.class_name}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                        ) : (
-                            <Text style={styles.emptyFilterText}>No classes found for this session</Text>
-                        )}
-
-                        {/* 3. Term Selection */}
-                        <Text style={[styles.filterLabel, { marginTop: 20 }]}>Academic Term</Text>
-                        <View style={styles.termGrid}>
-                            {[1, 2, 3].map((t) => (
-                                <TouchableOpacity
-                                    key={t}
-                                    style={[styles.termOption, selectedTerm === t && styles.termActive]}
-                                    onPress={() => handleTermChange(t)}
-                                >
-                                    <Text style={[styles.termText, selectedTerm === t && styles.termTextActive]}>Term {t}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-
-                        {/* Search Action */}
-                        <TouchableOpacity
-                            style={[styles.searchBtn, (!selectedEnrollment || fetchingGrades) && styles.searchBtnDisabled]}
-                            onPress={fetchGrades}
-                            disabled={!selectedEnrollment || fetchingGrades}
-                        >
-                            <LinearGradient colors={['#FACC15', '#EAB308']} style={styles.searchGradient}>
-                                {fetchingGrades ? (
-                                    <ActivityIndicator color="#0F172A" />
-                                ) : (
-                                    <>
-                                        <Ionicons name="analytics" size={20} color="#0F172A" />
-                                        <Text style={styles.searchBtnText}>View My Performance</Text>
-                                    </>
-                                )}
-                            </LinearGradient>
-                        </TouchableOpacity>
+                    <Text style={styles.filterTitle}>Terminal Period</Text>
+                    <View style={styles.termGrid}>
+                        {[1, 2, 3].map((t) => (
+                            <TouchableOpacity
+                                key={t}
+                                style={[styles.termOption, selectedTerm === t && styles.termActive]}
+                                onPress={() => handleTermChange(t)}
+                            >
+                                <Text style={[styles.termText, selectedTerm === t && styles.termTextActive]}>TERM {t}</Text>
+                            </TouchableOpacity>
+                        ))}
                     </View>
 
-                    {/* Results Display */}
-                    {grades.length > 0 ? (
-                        <>
-                            {summary && (
-                                <View style={styles.summaryContainer}>
-                                    <MetricCard label="Class Rank" value={`${summary.position ?? '-'} / ${summary.total_students ?? '-'}`} icon="trophy" color="#FACC15" />
-                                    <MetricCard label="Average" value={summary.average_score ? `${parseFloat(summary.average_score as any).toFixed(1)}%` : 'N/A'} icon="trending-up" color="#3B82F6" />
-                                    <MetricCard label="Standing" value={`${summary.subjects_passed ?? 0} / ${((Number(summary.subjects_passed) || 0) + (Number(summary.subjects_failed) || 0))}`} icon="ribbon" color="#10B981" />
-                                </View>
-                            )}
+                    <CustomButton
+                        title={fetchingGrades ? "SYNCHRONIZING..." : "RETRIEVE RECORDS"}
+                        onPress={fetchGrades}
+                        variant="premium"
+                        loading={fetchingGrades}
+                        disabled={!selectedEnrollment}
+                        style={styles.searchBtn}
+                    />
+                </View>
 
-                            <View style={styles.gradesList}>
-                                {grades.map((grade, idx) => {
-                                    // Normalize numeric fields (they may come as strings or null)
-                                    const ca1 = Number(grade.ca1_score) || 0;
-                                    const ca2 = Number(grade.ca2_score) || 0;
-                                    const ca3 = Number(grade.ca3_score) || 0;
-                                    const ca4 = Number(grade.ca4_score) || 0;
-                                    const exam = Number(grade.exam_score) || 0;
-                                    const total = Number(grade.student_total ?? grade.total_score) || 0;
-                                    const classAvg = grade.class_average !== undefined && grade.class_average !== null ? Number(grade.class_average) : null;
+                {/* Results Section */}
+                {grades.length > 0 ? (
+                    <>
+                        {summary && (
+                            <View style={styles.summaryGrid}>
+                                <MetricCard label="RANK" value={summary.position ? `${summary.position}/${summary.total_students}` : '--'} icon="trophy-outline" color="#FACC15" />
+                                <MetricCard label="AVERAGE" value={summary.average_score ? `${parseFloat(summary.average_score as any).toFixed(1)}%` : '--'} icon="analytics-outline" color="#3B82F6" />
+                                <MetricCard label="STATUS" value={`${summary.subjects_passed ?? 0} PASS`} icon="shield-checkmark-outline" color="#10B981" />
+                            </View>
+                        )}
 
-                                    const letterGrade = getLetterGrade(total);
-                                    const diff = classAvg !== null ? (total - classAvg).toFixed(1) : '—';
-                                    const isAbove = diff !== '—' ? parseFloat(diff) >= 0 : false;
+                        <Text style={styles.sectionLabel}>SUBJECT BREAKDOWN</Text>
+                        <View style={styles.gradesList}>
+                            {grades.map((grade, idx) => {
+                                const total = Number(grade.student_total ?? grade.total_score) || 0;
+                                const classAvg = grade.class_average != null ? Number(grade.class_average) : null;
+                                const letterGrade = getLetterGrade(total);
+                                const isAbove = classAvg != null ? total >= classAvg : true;
 
-                                    return (
-                                        <View key={idx} style={styles.gradeCard}>
-                                            <View style={styles.gradeHeader}>
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={styles.subjectTitle}>{grade.subject_name || 'Subject'}</Text>
-                                                    <View style={styles.compRow}>
-                                                        <Text style={styles.avgText}>Avg: {classAvg !== null ? `${classAvg.toFixed(1)}%` : 'N/A'}</Text>
-                                                        <View style={[styles.diffBadge, { backgroundColor: isAbove ? '#10B98120' : '#EF444420' }]}>
-                                                            <Text style={[styles.diffValue, { color: isAbove ? '#10B981' : '#EF4444' }]}>
-                                                                {diff === '—' ? '—' : `${isAbove ? '+' : ''}${diff}%`}
+                                return (
+                                    <View key={idx} style={styles.gradeCard}>
+                                        <View style={styles.gradeHeader}>
+                                            <View style={styles.subjectInfo}>
+                                                <Text style={styles.subjectName}>{grade.subject_name || 'Generic Subject'}</Text>
+                                                <View style={styles.comparisonRow}>
+                                                    <Text style={styles.avgText}>Class Avg: {classAvg != null ? `${classAvg.toFixed(1)}%` : 'N/A'}</Text>
+                                                    {classAvg != null && (
+                                                        <View style={[styles.statusBadge, { backgroundColor: isAbove ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
+                                                            <Ionicons name={isAbove ? 'trending-up' : 'trending-down'} size={12} color={isAbove ? '#10B981' : '#EF4444'} />
+                                                            <Text style={[styles.statusText, { color: isAbove ? '#10B981' : '#EF4444' }]}>
+                                                                {Math.abs(total - classAvg).toFixed(1)}%
                                                             </Text>
                                                         </View>
-                                                    </View>
-                                                </View>
-                                                <View style={[styles.letterBox, { backgroundColor: letterGrade.color + '15' }]}>
-                                                    <Text style={[styles.letterChar, { color: letterGrade.color }]}>{letterGrade.label}</Text>
+                                                    )}
                                                 </View>
                                             </View>
-
-                                            <View style={styles.breakdown}>
-                                                <ScorePart label="CA" val={ca1 + ca2 + ca3 + ca4} max={40} />
-                                                <ScorePart label="Exam" val={exam} max={60} />
-                                                <View style={styles.totalBlock}>
-                                                    <Text style={styles.totalLabel}>Grand Total</Text>
-                                                    <Text style={styles.totalNum}>{total || '—'}</Text>
-                                                </View>
-                                            </View>
-
-                                            <View style={styles.barContainer}>
-                                                <View style={[styles.barFill, { width: `${Math.min(total, 100)}%`, backgroundColor: letterGrade.color }]} />
+                                            <View style={[styles.gradeCircle, { borderColor: letterGrade.color }]}>
+                                                <Text style={[styles.gradeLetter, { color: letterGrade.color }]}>{letterGrade.label}</Text>
+                                                <Text style={[styles.gradeDesc, { color: letterGrade.color }]}>{letterGrade.desc}</Text>
                                             </View>
                                         </View>
-                                    );
-                                })}
-                            </View>
 
-                            <TouchableOpacity style={styles.downloadAction} onPress={handleDownloadReport} disabled={downloading}>
-                                <LinearGradient colors={['#FACC15', '#EAB308']} style={styles.downloadGradientOuter}>
-                                    <Ionicons name="cloud-download" size={24} color="#0F172A" />
-                                    <Text style={styles.downloadActionText}>{downloading ? 'Processing File...' : 'Download Official Report'}</Text>
-                                </LinearGradient>
-                            </TouchableOpacity>
-                        </>
-                    ) : (
-                        !fetchingGrades && (
-                            <View style={styles.emptyState}>
-                                <Ionicons name="search-outline" size={80} color="#334155" />
-                                <Text style={styles.emptyTitle}>Ready to Check?</Text>
-                                <Text style={styles.emptyDesc}>Select your academic details above and tap "View My Performance" to see your grades.</Text>
+                                        <View style={styles.scoreBars}>
+                                            <ScoreBar label="Continuous Assessment" value={Number(grade.ca1_score || 0) + Number(grade.ca2_score || 0) + Number(grade.ca3_score || 0) + Number(grade.ca4_score || 0)} max={40} />
+                                            <ScoreBar label="Terminal Examination" value={Number(grade.exam_score || 0)} max={60} />
+                                        </View>
+
+                                        <View style={styles.totalRow}>
+                                            <Text style={styles.totalLabel}>CUMULATIVE SCORE</Text>
+                                            <Text style={[styles.totalValue, { color: letterGrade.color }]}>{total}%</Text>
+                                        </View>
+                                    </View>
+                                );
+                            })}
+                        </View>
+
+                        <CustomButton
+                            title={downloading ? "TRANSMITTING..." : "EMAIL OFFICIAL REPORT"}
+                            onPress={handleEmailReport}
+                            variant="outline"
+                            icon="mail-outline"
+                            disabled={downloading}
+                            style={styles.dispatchBtn}
+                        />
+                    </>
+                ) : (
+                    !fetchingGrades && (
+                        <View style={styles.emptyState}>
+                            <View style={styles.emptyIconContainer}>
+                                <Ionicons name="document-text-outline" size={48} color="#475569" />
                             </View>
-                        )
-                    )}
-                </ScrollView>
-            </LinearGradient>
-        </View>
+                            <Text style={styles.emptyTitle}>Secure Records Portal</Text>
+                            <Text style={styles.emptyDesc}>Select academic parameters above to decrypt and view performance analytics.</Text>
+                        </View>
+                    )
+                )}
+            </ScrollView>
+
+            {/* Email Input Modal */}
+            <Modal visible={emailModalVisible} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Secure Dispatch</Text>
+                        <Text style={styles.modalSubtitle}>Enter destination address for academic credentials</Text>
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="recipient@institution.edu"
+                            placeholderTextColor="#64748B"
+                            value={emailInput}
+                            onChangeText={setEmailInput}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                        />
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.modalCancel} onPress={() => setEmailModalVisible(false)}>
+                                <Text style={styles.modalCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.modalSubmit} onPress={handleEmailModalSubmit}>
+                                <Text style={styles.modalSubmitText}>Transmit</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Success Modal */}
+            <Modal visible={showSuccessModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.successIcon}>
+                            <Ionicons name="checkmark-circle" size={64} color="#10B981" />
+                        </View>
+                        <Text style={styles.modalTitle}>Transmission Success</Text>
+                        <Text style={styles.modalSubtitle}>Official records have been verified and transmitted to the requested destination.</Text>
+                        <CustomButton title="ACKNOWLEDGE" onPress={() => setShowSuccessModal(false)} variant="premium" />
+                    </View>
+                </View>
+            </Modal>
+        </ThemedView>
     );
 }
 
@@ -603,7 +548,7 @@ function MetricCard({ label, value, icon, color }: any) {
     return (
         <View style={styles.metricCard}>
             <View style={[styles.metricIcon, { backgroundColor: color + '15' }]}>
-                <Ionicons name={icon as any} size={20} color={color} />
+                <Ionicons name={icon as any} size={18} color={color} />
             </View>
             <Text style={styles.metricValue}>{value}</Text>
             <Text style={styles.metricLabel}>{label}</Text>
@@ -611,84 +556,114 @@ function MetricCard({ label, value, icon, color }: any) {
     );
 }
 
-function ScorePart({ label, val, max }: any) {
+function ScoreBar({ label, value, max }: any) {
+    const percentage = Math.min((value / max) * 100, 100);
     return (
-        <View style={styles.scorePart}>
-            <Text style={styles.scorePartLabel}>{label}</Text>
-            <Text style={styles.scorePartVal}>{val}<Text style={styles.scorePartMax}>/{max}</Text></Text>
+        <View style={styles.scoreBarContainer}>
+            <View style={styles.scoreBarHeader}>
+                <Text style={styles.scoreBarLabel}>{label}</Text>
+                <Text style={styles.scoreBarValue}>{value}/{max}</Text>
+            </View>
+            <View style={styles.progressBar}>
+                <LinearGradient
+                    colors={['#FACC15', '#EAB308']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.progressFill, { width: `${percentage}%` }]}
+                />
+            </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    gradient: { flex: 1 },
-    loadingContainer: { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' },
-    loadingText: { color: '#94A3B8', marginTop: 20, fontSize: 16, fontWeight: '600' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 25, paddingTop: 60, paddingBottom: 25 },
-    backButton: { width: 44, height: 44, borderRadius: 15, backgroundColor: 'rgba(255, 255, 255, 0.08)', justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: -1 },
-    scrollContent: { padding: 20, paddingBottom: 50 },
+    container: { flex: 1, backgroundColor: Colors.navy.dark },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.navy.dark },
+    loadingText: { color: Colors.gold.main, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+    
+    hero: { height: 280, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
+    backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+    heroContent: { marginTop: 'auto', marginBottom: 30 },
+    heroSubtitle: { color: Colors.gold.main, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
+    heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
-    // Filters
-    filterCard: { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 32, padding: 24, marginBottom: 30, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-    filterLabel: { color: '#64748B', fontSize: 12, fontWeight: '800', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1.5 },
-    hScroll: { flexDirection: 'row', marginBottom: 5 },
-    pill: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-    pillActive: { backgroundColor: 'rgba(250, 204, 21, 0.12)', borderColor: '#FACC15' },
-    pillText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-    pillTextActive: { color: '#FACC15', fontWeight: '800' },
-    classPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, backgroundColor: 'rgba(250, 204, 21, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(250, 204, 21, 0.2)' },
-    classPillActive: { backgroundColor: '#FACC15', borderColor: '#FACC15' },
-    classPillText: { color: '#FACC15', fontSize: 14, fontWeight: '700' },
-    classPillTextActive: { color: '#0F172A', fontWeight: '800' },
-    emptyFilterText: { color: '#475569', fontSize: 13, fontStyle: 'italic', marginVertical: 10 },
-    termGrid: { flexDirection: 'row', gap: 10 },
-    termOption: { flex: 1, paddingVertical: 14, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-    termActive: { backgroundColor: 'rgba(250, 204, 21, 0.12)', borderColor: '#FACC15' },
-    termText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-    termTextActive: { color: '#FACC15', fontWeight: '800' },
-    searchBtn: { marginTop: 25, borderRadius: 20, overflow: 'hidden' },
-    searchBtnDisabled: { opacity: 0.5 },
-    searchGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: 12 },
-    searchBtnText: { color: '#0F172A', fontSize: 16, fontWeight: '900' },
+    scrollView: { flex: 1, marginTop: -30 },
+    scrollContent: { padding: 20, paddingBottom: 60 },
+    alert: { marginBottom: 20 },
 
-    // Summary
-    summaryContainer: { flexDirection: 'row', gap: 12, marginBottom: 35 },
-    metricCard: { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 24, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-    metricIcon: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-    metricValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
-    metricLabel: { color: '#64748B', fontSize: 11, fontWeight: '700', marginTop: 4 },
+    card: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: 24 },
+    cardLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 20 },
+    filterTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', marginBottom: 12, marginTop: 16 },
+    pillScroll: { flexDirection: 'row', marginBottom: 4 },
+    pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+    pillActive: { backgroundColor: Colors.gold.main + '20', borderColor: Colors.gold.main },
+    pillText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
+    pillTextActive: { color: Colors.gold.main, fontWeight: '800' },
+    
+    classPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+    classPillActive: { backgroundColor: Colors.gold.main, borderColor: Colors.gold.main },
+    classPillText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
+    classPillTextActive: { color: Colors.navy.dark, fontWeight: '800' },
+    emptyFilterText: { color: '#475569', fontSize: 12, fontStyle: 'italic', marginVertical: 8 },
 
-    // Results
-    gradesList: { gap: 20 },
-    gradeCard: { backgroundColor: 'rgba(255, 255, 255, 0.04)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
-    gradeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-    subjectTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
-    compRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
-    avgText: { color: '#64748B', fontSize: 12, fontWeight: '600' },
-    diffBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-    diffValue: { fontSize: 11, fontWeight: '800' },
-    letterBox: { width: 56, height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-    letterChar: { fontSize: 28, fontWeight: '900' },
-    breakdown: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(255, 255, 255, 0.03)', padding: 20, borderRadius: 24, marginBottom: 20 },
-    scorePart: { gap: 4 },
-    scorePartLabel: { color: '#64748B', fontSize: 11, fontWeight: '800' },
-    scorePartVal: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-    scorePartMax: { color: '#334155', fontSize: 12 },
-    totalBlock: { alignItems: 'flex-end', gap: 4 },
-    totalLabel: { color: '#FACC15', fontSize: 11, fontWeight: '800' },
-    totalNum: { color: '#FACC15', fontSize: 24, fontWeight: '950' },
-    barContainer: { height: 10, backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 5, overflow: 'hidden' },
-    barFill: { height: '100%', borderRadius: 5 },
+    termGrid: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+    termOption: { flex: 1, paddingVertical: 14, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+    termActive: { backgroundColor: Colors.gold.main + '20', borderColor: Colors.gold.main },
+    termText: { color: '#94A3B8', fontSize: 12, fontWeight: '800' },
+    termTextActive: { color: Colors.gold.main },
+    searchBtn: { height: 56 },
 
-    // Footer Action
-    downloadAction: { marginTop: 40, marginBottom: 20, borderRadius: 24, overflow: 'hidden', elevation: 10, shadowColor: '#FACC15', shadowOpacity: 0.3, shadowRadius: 20, shadowOffset: { width: 0, height: 10 } },
-    downloadGradientOuter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 22, gap: 15 },
-    downloadActionText: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+    summaryGrid: { flexDirection: 'row', gap: 12, marginBottom: 32 },
+    metricCard: { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+    metricIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+    metricValue: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+    metricLabel: { color: '#64748B', fontSize: 10, fontWeight: '700', marginTop: 2 },
 
-    // Empty
-    emptyState: { alignItems: 'center', marginTop: 100, paddingHorizontal: 40 },
-    emptyTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', marginTop: 25 },
-    emptyDesc: { color: '#64748B', fontSize: 16, textAlign: 'center', marginTop: 12, lineHeight: 24 },
+    sectionLabel: { color: Colors.gold.main, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 20, textAlign: 'center' },
+    gradesList: { gap: 16, marginBottom: 30 },
+    gradeCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
+    gradeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    subjectInfo: { flex: 1 },
+    subjectName: { color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginBottom: 6 },
+    comparisonRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    avgText: { color: '#64748B', fontSize: 11, fontWeight: '600' },
+    statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+    statusText: { fontSize: 10, fontWeight: '800' },
+    gradeCircle: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+    gradeLetter: { fontSize: 24, fontWeight: '900', marginBottom: -4 },
+    gradeDesc: { fontSize: 8, fontWeight: '800', opacity: 0.8 },
+
+    scoreBars: { gap: 16, marginBottom: 20 },
+    scoreBarContainer: { gap: 6 },
+    scoreBarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    scoreBarLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '700' },
+    scoreBarValue: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+    progressBar: { height: 6, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 3, overflow: 'hidden' },
+    progressFill: { height: '100%', borderRadius: 3 },
+
+    totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.05)' },
+    totalLabel: { color: '#64748B', fontSize: 11, fontWeight: '800' },
+    totalValue: { fontSize: 24, fontWeight: '900' },
+
+    dispatchBtn: { height: 60, borderRadius: 20 },
+
+    emptyState: { alignItems: 'center', marginTop: 60, gap: 16 },
+    emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255, 255, 255, 0.03)', justifyContent: 'center', alignItems: 'center' },
+    emptyTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+    emptyDesc: { color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 22, paddingHorizontal: 40 },
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+    modalContent: { width: '100%', backgroundColor: '#1E293B', borderRadius: 32, padding: 32, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
+    modalTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
+    modalSubtitle: { color: '#94A3B8', fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+    modalInput: { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 16, padding: 16, color: '#FFFFFF', fontSize: 16, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
+    modalActions: { flexDirection: 'row', gap: 12 },
+    modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)' },
+    modalCancelText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+    modalSubmit: { flex: 2, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.gold.main },
+    modalSubmitText: { color: Colors.navy.dark, fontSize: 14, fontWeight: '900' },
+    successIcon: { alignItems: 'center', marginBottom: 20 },
 });

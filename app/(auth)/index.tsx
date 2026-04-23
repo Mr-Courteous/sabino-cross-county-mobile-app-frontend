@@ -1,17 +1,34 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
     View,
     ActivityIndicator,
-    Platform
+    Platform,
+    ScrollView,
+    Text,
+    ImageBackground,
+    StyleSheet,
+    Dimensions,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '@/utils/api-service';
 import { getUserTypeFromToken, decodeToken } from '@/utils/jwt-decoder';
+import { CustomButton } from '@/components/custom-button';
+import { CustomInput } from '@/components/custom-input';
+import { CustomAlert } from '@/components/custom-alert';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import {
+    Colors,
+    Typography,
+    Spacing,
+    BorderRadius,
+    Shadows,
+} from '@/constants/design-system';
+
+const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
     const router = useRouter();
@@ -19,7 +36,6 @@ export default function LoginScreen() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -39,240 +55,203 @@ export default function LoginScreen() {
 
             const data = await response.json();
 
-            console.log('📥 School Login Response:', {
-                status: response.status,
-                success: data.success,
-                hasToken: !!data.data?.token,
-                user: data.data?.user,
-            });
-
             if (response.ok && data.success && data.data?.token) {
                 const { token, user } = data.data;
-
-                // Decode and verify token
                 const userType = getUserTypeFromToken(token);
-                const decodedToken = decodeToken(token);
-
-                console.log('🔐 School Login Successful:');
-                console.log('  School:', user.name);
-                console.log('  Token Type:', userType);
-                console.log('  Token Decoded:', decodedToken);
 
                 if (userType !== 'school') {
-                    console.error('❌ Token type is not "school":', userType);
                     setError('Invalid credentials. Please try again.');
                     setIsLoading(false);
                     return;
                 }
 
                 const countryId = user?.countryId;
-
-                console.log('✅ Login validated:');
-                console.log('  Token: ✓ Present');
-                console.log('  CountryId:', countryId || '⚠️ UNDEFINED');
-                console.log('  SchoolId:', user.schoolId || user.id);
-
                 if (!countryId) {
-                    console.error('❌ CountryId missing from login response!');
-                    setError('Server error: Country information missing. Please contact support.');
+                    setError('Server error: Country information missing.');
                     setIsLoading(false);
                     return;
                 }
 
-                try {
-                    if (Platform.OS === 'web') {
-                        console.log('💾 Saving to localStorage (Web)...');
-                        localStorage.setItem('userToken', token);
-                        localStorage.setItem('userData', JSON.stringify(user));
-                        localStorage.setItem('countryId', countryId.toString());
-
-                        console.log('✅ Web storage saved:');
-                        console.log('  userToken:', localStorage.getItem('userToken') ? '✓' : '✗');
-                        console.log('  userData:', localStorage.getItem('userData') ? '✓' : '✗');
-                        console.log('  countryId:', localStorage.getItem('countryId'));
-                    } else {
-                        console.log('💾 Saving to SecureStore (Mobile)...');
-                        await SecureStore.setItemAsync('userToken', token);
-                        await SecureStore.setItemAsync('userData', JSON.stringify(user));
-                        await SecureStore.setItemAsync('countryId', countryId.toString());
-
-                        const verifyToken = await SecureStore.getItemAsync('userToken');
-                        const verifyCountryId = await SecureStore.getItemAsync('countryId');
-
-                        console.log('✅ Mobile storage saved:');
-                        console.log('  userToken:', verifyToken ? '✓' : '✗');
-                        console.log('  userData: ✓');
-                        console.log('  countryId:', verifyCountryId);
-                    }
-
-                    console.log('🚀 Navigating to dashboard...');
-                    // Root layout will automatically route based on decoded token type
-                    router.replace('/dashboard');
-
-                } catch (e) {
-                    console.error('❌ Storage Error:', e);
-                    setError('Could not save login session.');
-                    setIsLoading(false);
+                if (Platform.OS === 'web') {
+                    localStorage.setItem('userToken', token);
+                    localStorage.setItem('userData', JSON.stringify(user));
+                    localStorage.setItem('countryId', countryId.toString());
+                } else {
+                    await SecureStore.setItemAsync('userToken', token);
+                    await SecureStore.setItemAsync('userData', JSON.stringify(user));
+                    await SecureStore.setItemAsync('countryId', countryId.toString());
                 }
+
+                router.replace('/dashboard');
             } else {
-                console.error('❌ Login failed:', data);
-                // Display actual backend error message
-                const errorMsg = data.error || data.message || 'Invalid email or password';
-                setError(errorMsg);
+                setError(data.error || data.message || 'Invalid email or password');
                 setIsLoading(false);
             }
         } catch (err) {
-            console.error('❌ Login error:', err);
-            const errorMsg = err instanceof Error ? err.message : 'Login failed. Please try again.';
-            setError(errorMsg);
+            setError('Login failed. Please try again.');
             setIsLoading(false);
         }
     };
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.header}>School Portal</Text>
-
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Admin Login</Text>
-
-                <TextInput
-                    placeholder="School Email"
-                    style={styles.input}
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                    editable={!isLoading}
-                    placeholderTextColor="#999"
-                />
-
-                <View style={{ position: 'relative' }}>
-                    <TextInput
-                        placeholder="Password"
-                        secureTextEntry={!showPassword}
-                        style={styles.input}
-                        value={password}
-                        onChangeText={setPassword}
-                        editable={!isLoading}
-                        placeholderTextColor="#999"
-                    />
-                    <TouchableOpacity
-                        style={{
-                            position: 'absolute',
-                            right: 15,
-                            top: 15,
-                            padding: 5,
-                        }}
-                        onPress={() => setShowPassword(!showPassword)}
+        <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
+            <ImageBackground
+                source={{ uri: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=80&w=2071' }}
+                style={styles.hero}
+            >
+                <LinearGradient
+                    colors={['rgba(10, 15, 30, 0.7)', 'rgba(15, 23, 42, 0.95)']}
+                    style={styles.overlay}
+                >
+                    <ScrollView
+                        contentContainerStyle={styles.scrollContainer}
+                        showsVerticalScrollIndicator={false}
                     >
-                        <Text style={{ fontSize: 20 }}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-                    </TouchableOpacity>
-                </View>
+                        <View style={styles.header}>
+                            <View style={styles.logoBadge}>
+                                <Ionicons name="ribbon" size={24} color="#FACC15" />
+                                <Text style={styles.logoText}>SABINO PORTAL</Text>
+                            </View>
+                            <Text style={styles.title}>School Login</Text>
+                            <View style={styles.goldBar} />
+                            <Text style={styles.subtitle}>Secure Access to Academic Management</Text>
+                        </View>
 
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                        <View style={styles.card}>
+                            {/* Error Alert */}
+                            {error && (
+                                <CustomAlert
+                                    type="error"
+                                    title="Access Denied"
+                                    message={error}
+                                    onClose={() => setError('')}
+                                    style={{ marginBottom: Spacing.xl }}
+                                />
+                            )}
 
-                <TouchableOpacity
-                    style={[styles.button, isLoading && styles.buttonDisabled]}
-                    onPress={handleLogin}
-                    disabled={isLoading}
-                >
-                    {isLoading ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.buttonText}>Login to Dashboard</Text>
-                    )}
-                </TouchableOpacity>
+                            <CustomInput
+                                label="School Email"
+                                placeholder="Enter your email"
+                                keyboardType="email-address"
+                                value={email}
+                                onChangeText={setEmail}
+                                editable={!isLoading}
+                                containerStyle={styles.inputContainer}
+                            />
 
-                <TouchableOpacity
-                    onPress={() => router.push('/(auth)/forgot-password')}
-                    disabled={isLoading}
-                    style={{ marginTop: 15, alignItems: 'center' }}
-                >
-                    <Text style={styles.link}>Forgot or Change Password?</Text>
-                </TouchableOpacity>
+                            <CustomInput
+                                label="Password"
+                                placeholder="Enter your password"
+                                isPassword
+                                value={password}
+                                onChangeText={setPassword}
+                                editable={!isLoading}
+                                containerStyle={styles.inputContainer}
+                            />
 
-                <TouchableOpacity
-                    onPress={() => router.push('/(auth)/register')}
-                    disabled={isLoading}
-                >
-                    <Text style={styles.footer}>
-                        Don't have an account?{' '}
-                        <Text style={styles.link}>Register School</Text>
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </View>
+                            <CustomButton
+                                title={isLoading ? "AUTHENTICATING..." : "LOGIN TO DASHBOARD"}
+                                onPress={handleLogin}
+                                disabled={isLoading}
+                                loading={isLoading}
+                                variant="premium"
+                                style={styles.loginButton}
+                            />
+
+                            <CustomButton
+                                title="FORGOT PASSWORD?"
+                                onPress={() => router.push('/(auth)/forgot-password')}
+                                disabled={isLoading}
+                                variant="ghost"
+                                textStyle={styles.forgotText}
+                            />
+
+                            <View style={styles.divider} />
+
+                            <View style={styles.registerSection}>
+                                <Text style={styles.registerLabel}>Don't have an account?</Text>
+                                <CustomButton
+                                    title="REGISTER YOUR SCHOOL"
+                                    onPress={() => router.push('/(auth)/register')}
+                                    disabled={isLoading}
+                                    variant="outline"
+                                    style={styles.registerButton}
+                                    textStyle={{ color: '#fff', fontWeight: '800' }}
+                                />
+                            </View>
+                        </View>
+
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>© 2026 SABINO SYSTEMS GLOBAL</Text>
+                            <Text style={styles.footerSubtext}>THE GOLD STANDARD FOR ACADEMIC REPORTING</Text>
+                        </View>
+                    </ScrollView>
+                </LinearGradient>
+            </ImageBackground>
+        </ThemedView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        justifyContent: 'center',
-        padding: 20,
-        backgroundColor: '#f5f5f5',
-    },
-    header: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        marginBottom: 40,
-        textAlign: 'center',
-        color: '#1a73e8',
-    },
-    card: {
-        backgroundColor: '#fff',
-        padding: 25,
-        borderRadius: 20,
-        elevation: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-    },
-    cardTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        marginBottom: 20,
-        textAlign: 'center',
-        color: '#333',
-    },
-    input: {
-        backgroundColor: '#f9f9f9',
-        padding: 15,
-        borderRadius: 10,
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: '#ddd',
-        fontSize: 16,
-    },
-    button: {
-        backgroundColor: '#1a73e8',
-        padding: 18,
-        borderRadius: 10,
+    hero: { flex: 1, width: '100%' },
+    overlay: { flex: 1, paddingHorizontal: 24 },
+    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+    
+    header: { alignItems: 'center', marginBottom: 40 },
+    logoBadge: {
+        flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+    title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+    goldBar: { width: 50, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
+    subtitle: { fontSize: 14, color: '#94A3B8', fontWeight: '500' },
+
+    card: {
+        backgroundColor: 'rgba(30, 41, 59, 0.7)',
+        borderRadius: 35,
+        padding: 30,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    inputContainer: {
+        backgroundColor: 'rgba(15, 23, 42, 0.5)',
+        borderColor: 'rgba(255,255,255,0.1)',
+        marginBottom: 15,
+    },
+    loginButton: {
         marginTop: 10,
+        backgroundColor: '#2563EB',
+        borderRadius: 15,
+        height: 60,
     },
-    buttonDisabled: {
-        opacity: 0.6,
+    forgotText: {
+        color: '#94A3B8',
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 1,
     },
-    buttonText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: 16,
+    divider: {
+        height: 1,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        marginVertical: 25,
     },
-    errorText: {
-        color: '#d32f2f',
-        marginBottom: 10,
-        fontSize: 14,
+    registerSection: { alignItems: 'center' },
+    registerLabel: { color: '#64748B', fontSize: 13, marginBottom: 15, fontWeight: '600' },
+    registerButton: {
+        borderColor: '#2563EB',
+        borderWidth: 2,
+        borderRadius: 15,
+        width: '100%',
     },
-    footer: {
-        marginTop: 20,
-        textAlign: 'center',
-        color: '#666',
-        fontSize: 14,
-    },
-    link: {
-        color: '#1a73e8',
-        fontWeight: 'bold',
-    },
+    footer: { marginTop: 40, alignItems: 'center' },
+    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+    footerSubtext: { color: '#1E293B', fontSize: 9, fontWeight: '900', marginTop: 5 }
 });

@@ -68,12 +68,11 @@ export default function StudentsManager() {
     classId: null,
     studentNumber: ''
   });
+  const [dobParts, setDobParts] = useState({ year: '', month: '', day: '' });
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [academicSession, setAcademicSession] = useState<string>('');
   const [showSessionDropdown, setShowSessionDropdown] = useState(false);
   const [searchText, setSearchText] = useState<string>('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedDateForPicker, setSelectedDateForPicker] = useState<Date>(new Date());
 
   useEffect(() => {
     fetchStudents();
@@ -150,28 +149,27 @@ export default function StudentsManager() {
 
   async function pickAndUploadFile() {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: 'text/comma-separated-values' });
-      if (res.canceled) return;
-
-      if (!academicSession) {
-        Alert.alert('Required', 'Please select an academic session first');
-        return;
-      }
-
-      if (!form.classId) {
-        Alert.alert('Required', 'Please select a class first');
-        return;
-      }
-
-      setLoading(true);
-      const content = await FileSystem.readAsStringAsync(res.assets[0].uri);
-      const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
-      const header = lines[0].split(',').map(h => h.trim());
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/comma-separated-values', 'text/csv'],
+      });
+      console.log(result);
+      if (result.canceled) return;
+      const file = result.assets[0];
       
-      const studentsPayload = lines.slice(1).map(line => {
-        const cols = line.split(',').map(c => c.trim());
-        let obj: any = {};
-        header.forEach((h, i) => obj[h] = cols[i] || null);
+      setLoading(true);
+      let content = '';
+      if (Platform.OS === 'web') {
+        content = await (file as any).file.text();
+      } else {
+        content = await FileSystem.readAsStringAsync(file.uri);
+      }
+
+      const rows = content.split('\n');
+      const headers = rows[0].split(',').map(h => h.trim());
+      const studentsPayload = rows.slice(1).filter(r => r.trim()).map(r => {
+        const values = r.split(',').map(v => v.trim());
+        const obj: any = {};
+        headers.forEach((h, i) => obj[h] = values[i]);
         return {
           firstName: obj.firstName || obj.first_name,
           lastName: obj.lastName || obj.last_name,
@@ -224,11 +222,17 @@ export default function StudentsManager() {
       return;
     }
 
+    // Construct Date of Birth from parts
+    const { year, month, day } = dobParts;
+    let finalDob = form.dateOfBirth;
+    if (year && month && day) {
+      finalDob = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+
     setSaving(true);
     try {
       const token = await getToken();
 
-      // Use bulk endpoint for adding new students (bulk endpoint requires classId and academicSession)
       if (!editingId) {
         const resp = await fetch(`${API_BASE_URL}/api/students/bulk`, {
           method: 'POST',
@@ -239,7 +243,7 @@ export default function StudentsManager() {
               lastName: form.lastName,
               email: form.email || null,
               phone: form.phone || null,
-              dateOfBirth: form.dateOfBirth || null,
+              dateOfBirth: finalDob || null,
               studentNumber: form.studentNumber || null,
               classId: form.classId,
               gender: form.gender || null
@@ -251,17 +255,17 @@ export default function StudentsManager() {
         if (json.success) {
           setModalVisible(false);
           setForm({ firstName: '', lastName: '', email: '', phone: '', registrationNumber: '', gender: 'Male', dateOfBirth: '', classId: null, studentNumber: '' });
+          setDobParts({ year: '', month: '', day: '' });
           fetchStudents();
           Alert.alert('Success', 'Student created and enrolled successfully');
         } else {
           Alert.alert('Error', json.error || 'Failed to save student');
         }
       } else {
-        // Edit endpoint (if you have one for updating students)
         const res = await fetch(`${API_BASE_URL}/api/students/${editingId}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(form)
+          body: JSON.stringify({ ...form, dateOfBirth: finalDob })
         });
         const json = await res.json();
         if (json.success) {
@@ -281,6 +285,18 @@ export default function StudentsManager() {
   }
 
   const openEdit = (s: Student) => {
+    let year = '', month = '', day = '';
+    if (s.date_of_birth) {
+        const dateOnly = s.date_of_birth.split('T')[0];
+        const parts = dateOnly.split('-');
+        year = parts[0] || '';
+        month = parts[1] || '';
+        day = parts[2] || '';
+        if (month.length === 1) month = '0' + month;
+        if (day.length === 1) day = '0' + day;
+    }
+    setDobParts({ year, month, day });
+
     setForm({
       firstName: s.first_name,
       lastName: s.last_name,
@@ -302,6 +318,14 @@ export default function StudentsManager() {
         <Text style={styles.studentName}>{item.first_name} {item.last_name}</Text>
         <Text style={styles.studentSub}>{item.registration_number || 'No Reg'}</Text>
         <Text style={styles.studentMeta}>{item.email || 'No Email'}</Text>
+        {item.date_of_birth && (
+          <Text style={styles.studentMeta}>
+            DOB: {(() => {
+              const d = new Date(item.date_of_birth);
+              return isNaN(d.getTime()) ? item.date_of_birth : d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+            })()}
+          </Text>
+        )}
       </View>
       <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(item)}>
         <Ionicons name="pencil" size={16} color="#0F172A" />
@@ -314,23 +338,18 @@ export default function StudentsManager() {
       'Logout',
       'Are you sure you want to logout?',
       [
-        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-        { text: 'Logout', onPress: async () => { await clearAllStorage(); router.replace('/'); }, style: 'destructive' }
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Logout', style: 'destructive', onPress: async () => {
+          await clearAllStorage();
+          router.replace('/');
+        }}
       ]
     );
   };
 
-  const generateCalendarDays = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
-    const days = [];
-    for (let i = 0; i < firstDay; i++) days.push(0);
-    for (let i = 1; i <= daysInMonth; i++) days.push(i);
-    return days;
-  };
+  const years = Array.from({ length: 100 }, (_, i) => String(new Date().getFullYear() - 2 - i));
+  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+  const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
@@ -344,7 +363,7 @@ export default function StudentsManager() {
           <TouchableOpacity style={[styles.smallBtn, { backgroundColor: '#0F172A', marginLeft: 6 }]} onPress={pickAndUploadFile}>
             <Ionicons name="cloud-upload-outline" size={14} color="#FACC15" />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.addButton, { marginLeft: 6 }]} onPress={() => { setForm({gender: 'Male'}); setEditingId(null); setModalVisible(true); }}>
+          <TouchableOpacity style={[styles.addButton, { marginLeft: 6 }]} onPress={() => { setForm({gender: 'Male'}); setDobParts({year:'', month:'', day:''}); setEditingId(null); setModalVisible(true); }}>
             <Ionicons name="add" size={20} color="#0F172A" />
           </TouchableOpacity>
         </View>
@@ -372,74 +391,48 @@ export default function StudentsManager() {
         }
       />
 
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal animationType="slide" transparent={true} visible={modalVisible}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{editingId ? 'Edit Student' : 'Add New Student'}</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>{editingId ? 'Edit Student' : 'New Student'}</Text>
               
-              <Text style={styles.label}>ACADEMIC SESSION *</Text>
-              <TouchableOpacity
-                style={styles.dropdown}
-                onPress={() => setShowSessionDropdown(!showSessionDropdown)}
-              >
-                <Text style={styles.dropdownText}>{academicSession || 'Select session...'}</Text>
-                <Ionicons name={showSessionDropdown ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
-              </TouchableOpacity>
-              {showSessionDropdown && (
-                <FlatList
-                  data={academicSessions}
-                  keyExtractor={(item) => item}
-                  style={styles.dropdownMenu}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
-                  renderItem={({item: session}) => (
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, academicSession === session && styles.dropdownItemActive]}
-                      onPress={() => {
-                        setAcademicSession(session);
-                        setShowSessionDropdown(false);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, academicSession === session && styles.dropdownItemTextActive]}>
-                        {session}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                />
-              )}
-
-              <Text style={styles.label}>CLASS *</Text>
               <View style={styles.selectContainer}>
-                <Text style={styles.selectText}>{classes.find(c => c.id === form.classId)?.display_name || 'Select class...'}</Text>
-                {classes.length > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-                    {classes.map((cls) => (
-                      <TouchableOpacity
-                        key={cls.id}
-                        style={[styles.classChip, form.classId === cls.id && styles.activeClassChip]}
-                        onPress={() => setForm({ ...form, classId: cls.id })}
-                      >
-                        <Text style={[styles.classChipText, form.classId === cls.id && styles.activeClassChipText]}>
-                          {cls.display_name}
-                        </Text>
+                <Text style={styles.selectText}>Academic Session</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {academicSessions.map((s) => (
+                    <TouchableOpacity key={s} style={[styles.sessionChip, academicSession === s && styles.activeSessionChip]} onPress={() => setAcademicSession(s)}>
+                      <Text style={[styles.sessionChipText, academicSession === s && styles.activeSessionChipText]}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {!editingId && (
+                <View style={styles.selectContainer}>
+                  <Text style={styles.selectText}>Target Class</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {classes.map((c) => (
+                      <TouchableOpacity key={c.id} style={[styles.classChip, form.classId === c.id && styles.activeClassChip]} onPress={() => setForm({...form, classId: c.id})}>
+                        <Text style={[styles.classChipText, form.classId === c.id && styles.activeClassChipText]}>{c.display_name}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
-                )}
-              </View>
+                </View>
+              )}
+
+              <Text style={styles.label}>FIRST NAME</Text>
+              <TextInput style={styles.input} value={form.firstName} onChangeText={(t) => setForm({...form, firstName: t})} placeholder="e.g. John" />
               
-              <Text style={styles.label}>FULL NAME</Text>
-              <TextInput style={styles.input} placeholder="First Name" value={form.firstName} onChangeText={t => setForm({...form, firstName: t})} />
-              <TextInput style={styles.input} placeholder="Last Name" value={form.lastName} onChangeText={t => setForm({...form, lastName: t})} />
+              <Text style={styles.label}>LAST NAME</Text>
+              <TextInput style={styles.input} value={form.lastName} onChangeText={(t) => setForm({...form, lastName: t})} placeholder="e.g. Doe" />
               
-              <Text style={styles.label}>CONTACT INFO</Text>
-              <TextInput style={styles.input} placeholder="Email Address" keyboardType="email-address" value={form.email} onChangeText={t => setForm({...form, email: t})} />
-              <TextInput style={styles.input} placeholder="Phone Number" keyboardType="phone-pad" value={form.phone} onChangeText={t => setForm({...form, phone: t})} />
+              <Text style={styles.label}>EMAIL ADDRESS (OPTIONAL)</Text>
+              <TextInput style={styles.input} value={form.email} onChangeText={(t) => setForm({...form, email: t})} placeholder="john.doe@example.com" keyboardType="email-address" />
               
-              <Text style={styles.label}>ACADEMIC</Text>
-              <TextInput style={styles.input} placeholder="Student Number" value={form.studentNumber} onChangeText={t => setForm({...form, studentNumber: t})} />
-              
+              <Text style={styles.label}>PHONE NUMBER</Text>
+              <TextInput style={styles.input} value={form.phone} onChangeText={(t) => setForm({...form, phone: t})} placeholder="e.g. +234..." keyboardType="phone-pad" />
+
               <Text style={styles.label}>GENDER</Text>
               <View style={styles.genderRow}>
                 {['Male', 'Female'].map((g) => (
@@ -453,79 +446,38 @@ export default function StudentsManager() {
                 ))}
               </View>
 
-              <Text style={styles.label}>DATE OF BIRTH</Text>
-              <TouchableOpacity
-                style={styles.datePickerButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Ionicons name="calendar" size={18} color="#FACC15" />
-                <Text style={styles.datePickerButtonText}>
-                  {form.dateOfBirth ? form.dateOfBirth : 'Select date of birth'}
-                </Text>
-              </TouchableOpacity>
-              
-              {showDatePicker && (
-                <View style={styles.calendarContainer}>
-                  <View style={styles.calendarHeader}>
-                    <TouchableOpacity onPress={() => {
-                      const newDate = new Date(selectedDateForPicker);
-                      newDate.setMonth(newDate.getMonth() - 1);
-                      setSelectedDateForPicker(newDate);
-                    }}>
-                      <Ionicons name="chevron-back" size={24} color="#0F172A" />
-                    </TouchableOpacity>
-                    <Text style={styles.calendarMonthYear}>
-                      {selectedDateForPicker.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                    </Text>
-                    <TouchableOpacity onPress={() => {
-                      const newDate = new Date(selectedDateForPicker);
-                      newDate.setMonth(newDate.getMonth() + 1);
-                      setSelectedDateForPicker(newDate);
-                    }}>
-                      <Ionicons name="chevron-forward" size={24} color="#0F172A" />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.calendarGrid}>
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                      <Text key={day} style={styles.calendarDayHeader}>{day}</Text>
-                    ))}
-                    {generateCalendarDays(selectedDateForPicker).map((day, idx) => (
-                      <TouchableOpacity
-                        key={idx}
-                        style={[styles.calendarDay, 
-                          day === 0 && styles.calendarDayEmpty,
-                          day !== 0 && parseInt(form.dateOfBirth?.split('-')[2] || '') === day && styles.calendarDaySelected,
-                          day !== 0 && styles.calendarDayActive
-                        ]}
-                        onPress={() => {
-                          if (day !== 0) {
-                            const year = selectedDateForPicker.getFullYear();
-                            const month = String(selectedDateForPicker.getMonth() + 1).padStart(2, '0');
-                            const dayStr = String(day).padStart(2, '0');
-                            const dateStr = `${year}-${month}-${dayStr}`;
-                            setForm({...form, dateOfBirth: dateStr});
-                            setShowDatePicker(false);
-                          }
-                        }}
-                      >
-                        <Text style={[styles.calendarDayText, day === 0 && styles.calendarDayEmptyText, day !== 0 && parseInt(form.dateOfBirth?.split('-')[2] || '') === day && styles.calendarDaySelectedText]}>
-                          {day === 0 ? '' : day}
-                        </Text>
+              <Text style={styles.label}>DATE OF BIRTH (YEAR - MONTH - DAY)</Text>
+              <View style={styles.dobRow}>
+                <View style={styles.dobPart}>
+                  <ScrollView style={styles.dobScroll} nestedScrollEnabled>
+                    {years.map(y => (
+                      <TouchableOpacity key={y} style={[styles.dobItem, dobParts.year === y && styles.activeDobItem]} onPress={() => setDobParts({...dobParts, year: y})}>
+                        <Text style={[styles.dobItemText, dobParts.year === y && styles.activeDobItemText]}>{y}</Text>
                       </TouchableOpacity>
                     ))}
-                  </View>
-                  
-                  <TouchableOpacity
-                    style={styles.calendarCloseBtn}
-                    onPress={() => setShowDatePicker(false)}
-                  >
-                    <Text style={styles.calendarCloseBtnText}>Close</Text>
-                  </TouchableOpacity>
+                  </ScrollView>
                 </View>
-              )}
+                <View style={styles.dobPart}>
+                  <ScrollView style={styles.dobScroll} nestedScrollEnabled>
+                    {months.map(m => (
+                      <TouchableOpacity key={m} style={[styles.dobItem, dobParts.month === m && styles.activeDobItem]} onPress={() => setDobParts({...dobParts, month: m})}>
+                        <Text style={[styles.dobItemText, dobParts.month === m && styles.activeDobItemText]}>{m}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+                <View style={styles.dobPart}>
+                  <ScrollView style={styles.dobScroll} nestedScrollEnabled>
+                    {days.map(d => (
+                      <TouchableOpacity key={d} style={[styles.dobItem, dobParts.day === d && styles.activeDobItem]} onPress={() => setDobParts({...dobParts, day: d})}>
+                        <Text style={[styles.dobItemText, dobParts.day === d && styles.activeDobItemText]}>{d}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
 
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 25, marginBottom: 40 }}>
                 <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#F1F5F9' }]} onPress={() => setModalVisible(false)}>
                   <Text style={{ color: '#475569', fontWeight: '800' }}>Cancel</Text>
                 </TouchableOpacity>
@@ -586,28 +538,11 @@ const styles = StyleSheet.create({
   
   modalBtn: { flex: 1, padding: 18, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   
-  dropdown: { backgroundColor: '#0F172A', borderWidth: 2, borderColor: '#0F172A', padding: 15, borderRadius: 15, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dropdownText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  dropdownMenu: { backgroundColor: '#0F172A', borderWidth: 0, borderRadius: 15, marginBottom: 10, maxHeight: 300, paddingVertical: 8 },
-  dropdownItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
-  dropdownItemActive: { backgroundColor: '#FACC15' },
-  dropdownItemText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  dropdownItemTextActive: { fontWeight: '900', color: '#0F172A' },
-  
-  datePickerButton: { backgroundColor: '#F8FAFC', borderWidth: 2, borderColor: '#FACC15', padding: 15, borderRadius: 15, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  datePickerButtonText: { fontSize: 14, color: '#0F172A', fontWeight: '600', flex: 1 },
-  calendarContainer: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 15, padding: 15, marginBottom: 10, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
-  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  calendarMonthYear: { fontSize: 16, fontWeight: '900', color: '#0F172A' },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calendarDayHeader: { width: '14.28%', textAlign: 'center', fontWeight: '900', color: '#64748B', marginBottom: 10, fontSize: 12 },
-  calendarDay: { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
-  calendarDayActive: { borderRadius: 8, backgroundColor: '#F8FAFC' },
-  calendarDayEmpty: {},
-  calendarDaySelected: { backgroundColor: '#FACC15', borderRadius: 8 },
-  calendarDayText: { fontSize: 13, fontWeight: '600', color: '#0F172A' },
-  calendarDayEmptyText: { color: 'transparent' },
-  calendarDaySelectedText: { fontWeight: '900', color: '#0F172A' },
-  calendarCloseBtn: { backgroundColor: '#0F172A', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 15 },
-  calendarCloseBtnText: { color: '#FACC15', fontWeight: '900', fontSize: 14 }
+  dobRow: { flexDirection: 'row', gap: 10, height: 150 },
+  dobPart: { flex: 1, backgroundColor: '#F8FAFC', borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  dobScroll: { flex: 1 },
+  dobItem: { paddingVertical: 12, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  activeDobItem: { backgroundColor: '#FACC15' },
+  dobItemText: { color: '#0F172A', fontSize: 13, fontWeight: '600' },
+  activeDobItemText: { color: '#0F172A', fontWeight: '900' },
 });
