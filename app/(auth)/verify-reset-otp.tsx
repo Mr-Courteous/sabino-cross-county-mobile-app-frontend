@@ -20,7 +20,18 @@ export default function SchoolVerifyResetOTPScreen() {
 
     const [otp, setOtp] = useState('');
     const [timeLeft, setTimeLeft] = useState(600);
-    const [error, setError] = useState('');
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
     const [verifying, setVerifying] = useState(false);
 
     useEffect(() => {
@@ -44,12 +55,17 @@ export default function SchoolVerifyResetOTPScreen() {
 
     const handleVerifyOTP = async () => {
         if (otp.length !== 6) {
-            setError('Please enter the 6-digit code');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Input Required',
+                message: 'Please enter the 6-digit code'
+            });
             return;
         }
 
         setVerifying(true);
-        setError('');
+        setStatusAlert(prev => ({ ...prev, visible: false }));
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/verify-otp`, {
@@ -65,10 +81,20 @@ export default function SchoolVerifyResetOTPScreen() {
                     params: { email },
                 });
             } else {
-                setError(data.message || 'OTP verification failed');
+                setStatusAlert({
+                    visible: true,
+                    type: 'error',
+                    title: 'Verification Failed',
+                    message: data.message || 'OTP verification failed'
+                });
             }
         } catch (err) {
-            setError('Failed to verify OTP');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Connection Fault',
+                message: 'Failed to verify OTP'
+            });
         } finally {
             setVerifying(false);
         }
@@ -76,7 +102,6 @@ export default function SchoolVerifyResetOTPScreen() {
 
     const handleResendOTP = async () => {
         setVerifying(true);
-        setError('');
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/forgot-password`, {
                 method: 'POST',
@@ -85,10 +110,20 @@ export default function SchoolVerifyResetOTPScreen() {
             });
             if (response.ok) {
                 setTimeLeft(600);
-                Alert.alert('Success', 'A new reset code has been sent.');
+                setStatusAlert({
+                    visible: true,
+                    type: 'success',
+                    title: 'Success',
+                    message: 'A new reset code has been sent.'
+                });
             }
         } catch (err) {
-            setError('Failed to resend code');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Dispatch Error',
+                message: 'Failed to resend code'
+            });
         } finally {
             setVerifying(false);
         }
@@ -123,12 +158,13 @@ export default function SchoolVerifyResetOTPScreen() {
                                 <Ionicons name="shield-checkmark" size={32} color="#FACC15" />
                             </View>
 
-                            {error && (
+                            {statusAlert.visible && (
                                 <CustomAlert
-                                    type="error"
-                                    title="Verification Error"
-                                    message={error}
-                                    onClose={() => setError('')}
+                                    type={statusAlert.type}
+                                    title={statusAlert.title}
+                                    message={statusAlert.message}
+                                    onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                                    onConfirm={statusAlert.onConfirm}
                                     style={{ marginBottom: 20 }}
                                 />
                             )}
@@ -137,7 +173,7 @@ export default function SchoolVerifyResetOTPScreen() {
                                 label="6-Digit Code *"
                                 placeholder="000000"
                                 value={otp}
-                                onChangeText={(text) => { setOtp(text.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                                onChangeText={(text) => { setOtp(text.replace(/\D/g, '').slice(0, 6)); setStatusAlert({ ...statusAlert, visible: false }); }}
                                 keyboardType="numeric"
                                 maxLength={6}
                                 editable={!verifying}

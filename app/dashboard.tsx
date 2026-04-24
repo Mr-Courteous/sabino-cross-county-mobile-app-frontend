@@ -9,10 +9,11 @@ import {
   Platform,
   ActivityIndicator,
   Image,
-  SafeAreaView,
-  Alert
+  Alert,
+  RefreshControl,
+  Modal,
 } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +21,10 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { clearAllStorage } from '@/utils/storage';
 import { useTheme } from '@/contexts/theme-context';
+import { Colors } from '@/constants/design-system';
+import { ThemedView } from '@/components/themed-view';
+import { CustomButton } from '@/components/custom-button';
+import { CustomAlert } from '@/components/custom-alert';
 import Footer from './components/Footer';
 
 const { width } = Dimensions.get('window');
@@ -30,342 +35,292 @@ export default function DashboardPage() {
   const [schoolData, setSchoolData] = useState<any>(null);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusAlert, setStatusAlert] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      const token = Platform.OS !== 'web'
+        ? await SecureStore.getItemAsync('userToken')
+        : localStorage.getItem('userToken');
+
+      if (!token) {
+        router.replace('/(auth)');
+        return;
+      }
+
+      await loadThemeFromPreferences();
+
+      // Parallel fetch for better performance
+      const [schoolRes, sessionRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/schools/me`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_BASE_URL}/api/academic-sessions`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ]);
+
+      const schoolResult = await schoolRes.json();
+      if (schoolResult.success) setSchoolData(schoolResult.data);
+
+      const sessionResult = await sessionRes.json();
+      if (sessionResult.success && sessionResult.data.length > 0) {
+        const activeSession = sessionResult.data.find((s: any) => s.is_active);
+        if (activeSession) {
+          setActiveSessionId(activeSession.id);
+          const sid = String(activeSession.id);
+          Platform.OS !== 'web' 
+            ? await SecureStore.setItemAsync('activeSessionId', sid)
+            : localStorage.setItem('activeSessionId', sid);
+        }
+      }
+    } catch (e: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'System Error',
+        message: 'Unable to synchronize dashboard data.'
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [loadThemeFromPreferences, router]);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const token = Platform.OS !== 'web'
-          ? await SecureStore.getItemAsync('userToken')
-          : localStorage.getItem('userToken');
-
-        if (!token) {
-          router.replace('/(auth)');
-          return;
-        }
-
-        // Load theme color from preferences
-        await loadThemeFromPreferences();
-
-        // Fetch school profile
-        const schoolResponse = await fetch(`${API_BASE_URL}/api/schools/me`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const schoolResult = await schoolResponse.json();
-        if (schoolResult.success) {
-          setSchoolData(schoolResult.data);
-        }
-
-        // Fetch active academic session
-        const sessionResponse = await fetch(`${API_BASE_URL}/api/academic-sessions`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const sessionResult = await sessionResponse.json();
-        if (sessionResult.success && sessionResult.data.length > 0) {
-          // Find active session
-          const activeSession = sessionResult.data.find((s: any) => s.is_active);
-          if (activeSession) {
-            setActiveSessionId(activeSession.id);
-            // Store sessionId locally for use by other screens
-            if (Platform.OS !== 'web') {
-              await SecureStore.setItemAsync('activeSessionId', String(activeSession.id));
-            } else {
-              localStorage.setItem('activeSessionId', String(activeSession.id));
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Dashboard Load Error:", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchDashboardData();
+  };
 
   const handleLogout = async () => {
-    if (Platform.OS === 'web') {
-      try {
-        // use browser confirm on web
-        const ok = window.confirm('Are you sure you want to logout?');
-        if (ok) {
-          await clearAllStorage();
-          router.replace('/');
-        }
-      } catch (e) {
-        // fallback to alert if window.confirm unavailable
-        Alert.alert('Logout', 'Are you sure you want to logout?', [
-          { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-          { text: 'Logout', onPress: async () => { await clearAllStorage(); router.replace('/'); }, style: 'destructive' }
-        ]);
+    setStatusAlert({
+      visible: true,
+      type: 'warning',
+      title: 'Portal Sign-out',
+      message: 'Are you sure you want to terminate your current administrative session?',
+      onConfirm: async () => {
+        await clearAllStorage();
+        router.replace('/');
       }
-      return;
-    }
-
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-        {
-          text: 'Logout',
-          onPress: async () => {
-            await clearAllStorage();
-            router.replace('/');
-          },
-          style: 'destructive'
-        }
-      ]
-    );
+    });
   };
 
   if (loading) return (
-    <View style={styles.loader}>
-      <ActivityIndicator size="large" color="#FACC15" />
-    </View>
+    <ThemedView style={styles.loader}>
+      <ActivityIndicator size="large" color={Colors.accent.gold} />
+      <Text style={styles.loadingText}>INITIALIZING PORTAL...</Text>
+    </ThemedView>
   );
 
   return (
-    <SafeAreaView style={styles.mainWrapper}>
+    <ThemedView style={styles.mainWrapper}>
       <StatusBar style="light" />
 
-      <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.topHeader}>
-        <View style={styles.headerContent}>
-          <View style={styles.logoAndName}>
+      <View style={styles.hero}>
+        <LinearGradient
+          colors={['#1E293B', '#0F172A', Colors.accent.navy]}
+          style={styles.heroOverlay}
+        >
+          <View style={[styles.header, { zIndex: 50 }]}>
             <View style={styles.logoContainer}>
               {schoolData?.logo ? (
                 <Image source={{ uri: schoolData.logo }} style={styles.schoolLogo} />
               ) : (
                 <View style={[styles.logoPlaceholder, { backgroundColor: themeColor + '20' }]}>
-                  <Ionicons name="school" size={24} color={themeColor} />
+                  <Ionicons name="school" size={28} color={themeColor} />
                 </View>
               )}
             </View>
-
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.schoolTypeBadge}>
-                {schoolData?.school_type?.toUpperCase() || 'INSTITUTION'}
-              </Text>
-              <Text style={styles.schoolName} numberOfLines={1}>
-                {schoolData?.name?.toUpperCase() || 'SABINO ACADEMY'}
-              </Text>
-            </View>
+            <TouchableOpacity onPress={handleLogout} style={[styles.powerBtn, { zIndex: 50 }]}>
+              <Ionicons name="power" size={20} color={Colors.accent.gold} />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutIcon}>
-            <Ionicons name="power" size={18} color="#FACC15" />
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.infoBar}>
-          <View style={styles.infoItem}>
-            <Ionicons name="mail" size={12} color="#FACC15" />
-            <Text style={styles.infoText} numberOfLines={1}>{schoolData?.email}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="location" size={12} color="#FACC15" />
-              <Text style={styles.infoText} numberOfLines={1}>
-                {schoolData?.address || 'Location not set'}
-              </Text>
+          <View style={styles.heroContent}>
+            <Text style={styles.schoolType}>{schoolData?.school_type?.toUpperCase() || 'REGISTERED INSTITUTION'}</Text>
+            <Text style={styles.schoolName}>{schoolData?.name?.toUpperCase() || 'SABINO ACADEMY'}</Text>
+            <View style={styles.schoolMetaRow}>
+              <View style={styles.metaBadge}>
+                <Ionicons name="shield-checkmark" size={12} color="#94A3B8" />
+                <Text style={styles.schoolReg}>REG: {schoolData?.registration_code || 'PENDING'}</Text>
+              </View>
+              {schoolData?.email && (
+                <View style={styles.metaBadge}>
+                  <Ionicons name="mail" size={12} color="#94A3B8" />
+                  <Text style={styles.schoolReg}>{schoolData.email}</Text>
+                </View>
+              )}
+              {schoolData?.phone && (
+                <View style={styles.metaBadge}>
+                  <Ionicons name="call" size={12} color="#94A3B8" />
+                  <Text style={styles.schoolReg}>{schoolData.phone}</Text>
+                </View>
+              )}
+              {(schoolData?.city || schoolData?.country) && (
+                <View style={styles.metaBadge}>
+                  <Ionicons name="location" size={12} color={Colors.accent.gold} />
+                  <Text style={[styles.schoolReg, { color: Colors.accent.gold }]}>
+                    {[schoolData.city, schoolData.state, schoolData.country].filter(Boolean).join(', ')}
+                  </Text>
+                </View>
+              )}
             </View>
-            <View style={[styles.infoItem, { marginLeft: 10 }]}>
-              <Ionicons name="key" size={12} color="#FACC15" />
-              <Text style={styles.infoText}>{schoolData?.registration_code}</Text>
-            </View>
+          </View>
+        </LinearGradient>
+      </View>
+
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent.gold} />}
+      >
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>OPERATIONS CENTER</Text>
+          <View style={styles.actionList}>
+            <ActionListItem 
+              title="Student Management" 
+              icon="people-outline" 
+              onPress={() => router.push('/students_list')} 
+              highlight 
+              themeColor={Colors.primary.main} 
+            />
+            <ActionListItem 
+              title="Score & Assessments Entry" 
+              icon="document-text-outline" 
+              onPress={() => router.push('/score-entry')} 
+            />
+            <ActionListItem 
+              title="Batch Report Generation" 
+              icon="copy-outline" 
+              onPress={() => router.push('/report-cards')} 
+            />
+            <ActionListItem 
+              title="Institution Profile" 
+              icon="business-outline" 
+              onPress={() => router.push('/school-profile')} 
+            />
+            <ActionListItem 
+              title="School Branding Preferences" 
+              icon="color-palette-outline" 
+              onPress={() => router.push('/preferences')} 
+              highlight 
+              themeColor={themeColor} 
+            />
+            <ActionListItem 
+              title="Institution Finance" 
+              icon="card-outline" 
+              onPress={() => router.push('/(payments)/initiate')} 
+            />
           </View>
         </View>
-      </LinearGradient>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-
-        <View style={styles.sectionHeader}>
-          <View style={[styles.goldIndicator, { backgroundColor: themeColor }]} />
-          <Text style={styles.sectionTitle}>ACADEMIC COMMAND</Text>
-        </View>
-
-        <View style={styles.mainActionGrid}>
-          <MainActionCard
-            title="Register"
-            icon="person-add"
-            color="#2563EB"
-            onPress={() => router.push('/students_list')}
-          />
-          <MainActionCard
-            title="Scores"
-            icon="document-text"
-            color={themeColor}
-            onPress={() => router.push('/score-entry')}
-          />
-        </View>
-
-        <View style={styles.mainActionGrid}>
-          <MainActionCard
-            title="Results"
-            icon="document"
-            color="#059669"
-            onPress={() => router.push('/report-cards')}
-          />
-          <MainActionCard
-            title="View Results"
-            icon="eye"
-            color={themeColor}
-            onPress={() => router.push({
-              pathname: '/report-view',
-              params: { mode: 'class' }
-            })}
-          />
-        </View>
-
-        <View style={[styles.sectionHeader, { marginTop: 10 }]}>
-          <View style={[styles.goldIndicator, { backgroundColor: themeColor }]} />
-          <Text style={styles.sectionTitle}>SYSTEM UTILITIES</Text>
-        </View>
-
-        <View style={styles.utilityGrid}>
-          <SmallCard title="List" icon="list" onPress={() => router.push('/students_list')} themeColor={themeColor} />
-          <SmallCard
-            title="Branding"
-            icon="color-palette"
-            onPress={() => router.push('/preferences')}
-            themeColor={themeColor}
-            highlight
-          />
-          <SmallCard title="Settings" icon="settings" onPress={() => { }} themeColor={themeColor} />
-          <SmallCard title="Payments" icon="card" onPress={() => router.push('/(payments)/initiate')} themeColor={themeColor} />
-          <SmallCard title="Add-ons" icon="add-circle" isPlaceholder themeColor={themeColor} />
-        </View>
-
+        <View style={{ flex: 1 }} />
         <Footer themeColor={themeColor} schoolName={schoolData?.name} onLogout={handleLogout} />
-
       </ScrollView>
-    </SafeAreaView>
+
+      {/* App-level Status Alert Modal */}
+      <Modal visible={statusAlert.visible} transparent animationType="fade">
+        <View style={styles.alertOverlay}>
+          <CustomAlert 
+            type={statusAlert.type} 
+            title={statusAlert.title} 
+            message={statusAlert.message} 
+            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+            onConfirm={statusAlert.onConfirm}
+            style={{ width: '100%' }}
+          />
+        </View>
+      </Modal>
+    </ThemedView>
   );
 }
 
-function MainActionCard({ title, icon, color, onPress }: any) {
-  return (
-    <TouchableOpacity style={styles.mainCard} onPress={onPress} activeOpacity={0.8}>
-      <LinearGradient colors={[color, color + 'CC']} style={styles.mainCardGradient}>
-        <Ionicons name={icon} size={28} color="#fff" />
-        <Text style={styles.mainCardTitle}>{title}</Text>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
 
-function SmallCard({ title, icon, onPress, isPlaceholder, themeColor, highlight }: any) {
+function ActionListItem({ title, icon, onPress, themeColor, highlight }: any) {
   return (
     <TouchableOpacity
       style={[
-        styles.smallCard,
-        isPlaceholder && styles.placeholderCard,
-        highlight && { borderColor: themeColor, borderWidth: 2, backgroundColor: themeColor + '08' }
+        styles.actionListItem,
+        highlight && { borderColor: themeColor + '40', backgroundColor: themeColor + '08' }
       ]}
       onPress={onPress}
       activeOpacity={0.7}
-      disabled={isPlaceholder}
     >
-      <View style={[
-        styles.smallIconCircle,
-        isPlaceholder && { backgroundColor: '#F1F5F9' },
-        highlight && { backgroundColor: themeColor + '20', borderColor: themeColor, borderWidth: 1.5 }
-      ]}>
-        <Ionicons
-          name={icon}
-          size={20}
-          color={isPlaceholder ? "#94A3B8" : (highlight ? themeColor : "#1E293B")}
-        />
+      <View style={styles.actionListLeft}>
+        <View style={[
+          styles.actionListIconWrap,
+          highlight && { backgroundColor: themeColor + '15' }
+        ]}>
+          <Ionicons
+            name={icon}
+            size={22}
+            color={highlight ? themeColor : Colors.accent.gold}
+          />
+        </View>
+        <Text 
+          style={[
+            styles.actionListTitle,
+            highlight && { color: '#FFFFFF', fontWeight: '800' }
+          ]}
+          numberOfLines={2}  
+        >
+          {title}
+        </Text>
       </View>
-      <Text style={[
-        styles.smallCardTitle,
-        highlight && { color: themeColor, fontWeight: '900' }
-      ]} numberOfLines={1}>{title}</Text>
+      <Ionicons name="chevron-forward" size={20} color="#64748B" />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: '#F8FAFC' },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' },
+  mainWrapper: { flex: 1, backgroundColor: '#0A0F1E' },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0F1E' },
+  loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+  
+  hero: { height: 360, width: '100%', zIndex: 1 },
+  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 70 : 50, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
+  logoContainer: { width: 65, height: 65, borderRadius: 18, backgroundColor: '#FFFFFF', padding: 3, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
+  schoolLogo: { width: '100%', height: '100%', borderRadius: 15 },
+  logoPlaceholder: { width: '100%', height: '100%', borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
+  powerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center', elevation: 5 },
 
-  topHeader: {
-    paddingTop: Platform.OS === 'android' ? 45 : 10,
-    paddingHorizontal: 20,
-    paddingBottom: 25,
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
-  },
-  headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  logoAndName: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  logoContainer: { elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5 },
-  schoolLogo: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#fff' },
-  logoPlaceholder: {
-    width: 48, height: 48, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center'
-  },
-  schoolTypeBadge: {
-    color: '#FACC15', fontSize: 10, fontWeight: '900', letterSpacing: 1,
-    backgroundColor: 'rgba(250, 204, 21, 0.1)', alignSelf: 'flex-start',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4
-  },
-  schoolName: { color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 2 },
-  logoutIcon: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 10 },
-  logoutText: { color: '#FACC15', marginLeft: 8, fontWeight: '900' },
+  heroContent: { marginTop: 'auto', marginBottom: 80 },
+  schoolType: { color: Colors.accent.gold, fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
+  schoolName: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -0.5, marginBottom: 12 },
+  
+  schoolMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  metaBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.08)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, gap: 6 },
+  schoolReg: { color: '#E2E8F0', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
 
-  infoBar: { gap: 6, marginTop: 5 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  infoItem: { flexDirection: 'row', alignItems: 'center', opacity: 0.8 },
-  infoText: { color: '#CBD5E1', fontSize: 11, fontWeight: '600', marginLeft: 6 },
+  scrollView: { flex: 1, marginTop: -45, zIndex: 10, elevation: 10 },
+  scrollContent: { paddingHorizontal: 24, paddingBottom: 60, flexGrow: 1 },
+  
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 24 },
 
-  scrollContainer: { paddingHorizontal: 20, paddingBottom: 30 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, marginTop: 25 },
-  goldIndicator: { width: 4, height: 16, backgroundColor: '#FACC15', borderRadius: 2, marginRight: 8 },
-  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#64748B', letterSpacing: 1 },
+  card: { backgroundColor: 'rgba(30, 41, 59, 0.7)', borderRadius: 32, padding: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: 24 },
+  cardLabel: { color: '#64748B', fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 30, marginLeft: 4 },
 
-  mainActionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
-  mainCard: { width: '48%', borderRadius: 20, overflow: 'hidden', elevation: 4, marginBottom: 15 },
-  mainCardGradient: { paddingVertical: 24, alignItems: 'center' },
-  mainCardTitle: { color: '#fff', fontWeight: '900', marginTop: 10, fontSize: 15 },
-
-  utilityGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  smallCard: {
-    width: '31%',
-    backgroundColor: '#fff',
-    paddingVertical: 18,
-    borderRadius: 18,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 12,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-  },
-  placeholderCard: { borderStyle: 'dashed', borderColor: '#CBD5E1', backgroundColor: 'transparent' },
-  smallIconCircle: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 8
-  },
-  smallCardTitle: { fontSize: 12, fontWeight: '800', color: '#1E293B', textAlign: 'center' },
-
-  footerLogout: {
-    marginTop: 20, padding: 18, borderRadius: 15, borderStyle: 'dashed',
-    borderWidth: 1, borderColor: '#FEE2E2', alignItems: 'center'
-  },
-  footerLogoutText: { color: '#EF4444', fontSize: 12, fontWeight: '900', letterSpacing: 1 }
-});
+  actionList: { gap: 12 },
+  actionListItem: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(15, 23, 42, 0.6)', paddingRight: 20, paddingVertical: 12, paddingLeft: 12, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+  actionListLeft: { flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1, paddingRight: 10 },
+  actionListIconWrap: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center' },
+  actionListTitle: { color: '#E2E8F0', fontSize: 13, fontWeight: '700', letterSpacing: 0.5, flexShrink: 1 },
+});

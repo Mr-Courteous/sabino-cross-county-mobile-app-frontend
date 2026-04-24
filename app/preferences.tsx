@@ -1,71 +1,91 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, ActivityIndicator, Platform, SafeAreaView
+  StyleSheet, ActivityIndicator, Platform,
+  ImageBackground, RefreshControl, Modal, useWindowDimensions
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { API_BASE_URL } from '@/utils/api-service';
-import { useTheme } from '@/contexts/theme-context';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
+import { API_BASE_URL } from '@/utils/api-service';
+import { useTheme } from '@/contexts/theme-context';
+import { Colors } from '@/constants/design-system';
+import { ThemedView } from '@/components/themed-view';
+import { CustomButton } from '@/components/custom-button';
+import { CustomAlert } from '@/components/custom-alert';
+import ColorPicker, {
+  Panel1,
+  HueSlider,
+  SaturationSlider,
+  BrightnessSlider,
+  InputWidget,
+  Swatches,
+} from 'reanimated-color-picker';
 
-// Preset color palette
-const PRESET_COLORS = [
-  '#FF5252', '#FF6E40', '#FF9100', '#FFC400',
-  '#FFEB3B', '#CDDC39', '#8BC34A', '#4CAF50',
-  '#00BCD4', '#00ACC1', '#0097A7', '#0288D1',
-  '#2196F3', '#1976D2', '#1565C0', '#6A1B9A',
-  '#7B1FA2', '#512DA8', '#C2185B', '#E91E63',
-  '#000000', '#424242', '#757575', '#BDBDBD',
+const SWATCHES = [
+  '#1E40AF', '#2563EB', '#0EA5E9', '#059669',
+  '#10B981', '#D97706', '#EF4444', '#EC4899',
+  '#8B5CF6', '#1E293B', '#475569', '#FACC15',
 ];
 
 export default function SchoolPreferencesScreen() {
   const router = useRouter();
   const { themeColor, loadThemeFromPreferences } = useTheme();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pickerColor, setPickerColor] = useState('#2563EB');
+
+  const { width: windowWidth } = useWindowDimensions();
+  const isLargeScreen = windowWidth > 768;
+  const contentWidth = isLargeScreen ? 700 : windowWidth;
+
+  const [statusAlert, setStatusAlert] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+
   const [prefs, setPrefs] = useState({
-    theme_color: '#2196F3',
+    theme_color: '#2563EB',
     logo_url: '',
     stamp_url: '',
     report_footer_text: '',
     show_attendance: false,
   });
+
   const [logoFile, setLogoFile] = useState<any>(null);
   const [stampFile, setStampFile] = useState<any>(null);
 
-  useEffect(() => {
-    fetchPreferences();
-  }, []);
-
   const getAuthData = async () => {
-    if (Platform.OS === 'web') {
-      return {
-        token: localStorage.getItem('userToken'),
-        schoolId: JSON.parse(localStorage.getItem('userData') || '{}').schoolId
-      };
-    } else {
-      const token = await SecureStore.getItemAsync('userToken');
-      const userData = await SecureStore.getItemAsync('userData');
-      const schoolId = JSON.parse(userData || '{}').schoolId;
-      return { token, schoolId };
-    }
+    const token = Platform.OS === 'web'
+      ? localStorage.getItem('userToken')
+      : await SecureStore.getItemAsync('userToken');
+    const userDataStr = Platform.OS === 'web'
+      ? localStorage.getItem('userData')
+      : await SecureStore.getItemAsync('userData');
+
+    const schoolId = JSON.parse(userDataStr || '{}').schoolId;
+    return { token, schoolId };
   };
 
-  const fetchPreferences = async () => {
+  const fetchPreferences = useCallback(async () => {
     try {
       const { token, schoolId } = await getAuthData();
-
-      if (!token || !schoolId) {
-        Alert.alert("Auth Error", "Please log in again.");
-        return;
-      }
+      if (!token || !schoolId) return;
 
       const response = await fetch(`${API_BASE_URL}/api/preferences/${schoolId}`, {
-        method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -73,23 +93,37 @@ export default function SchoolPreferencesScreen() {
       });
 
       const data = await response.json();
-
-      if (response.ok && data.success) {
-        // Merge fetched data with state, providing defaults for null values
+      if (data.success) {
+        const color = data.data.theme_color || '#2563EB';
         setPrefs({
-          theme_color: data.data.theme_color || '#2196F3',
+          theme_color: color,
           logo_url: data.data.logo_url || '',
           stamp_url: data.data.stamp_url || '',
           report_footer_text: data.data.report_footer_text || '',
           show_attendance: data.data.show_attendance || false,
         });
+        setPickerColor(color);
       }
     } catch (err) {
-      console.error('Fetch Error:', err);
-      Alert.alert("Error", "Could not load school preferences");
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Fetch Error',
+        message: 'Unable to retrieve school branding profiles.'
+      });
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchPreferences();
+  }, [fetchPreferences]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchPreferences();
   };
 
   const handlePickDocument = async (type: 'logo' | 'stamp') => {
@@ -101,16 +135,8 @@ export default function SchoolPreferencesScreen() {
 
       if (result.assets && result.assets.length > 0) {
         const file = result.assets[0];
-        console.log(`📁 ${type} file picked:`, {
-          name: file.name,
-          uri: file.uri,
-          mimeType: file.mimeType,
-          size: file.size
-        });
-
         if (type === 'logo') {
           setLogoFile(file);
-          // Show preview immediately
           setPrefs(prev => ({ ...prev, logo_url: file.uri }));
         } else {
           setStampFile(file);
@@ -118,8 +144,12 @@ export default function SchoolPreferencesScreen() {
         }
       }
     } catch (err) {
-      console.log('Document Picker Error:', err);
-      Alert.alert('Error', 'Failed to pick file: ' + (err instanceof Error ? err.message : ''));
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Selection Error',
+        message: 'Failed to acquire asset from secure storage.'
+      });
     }
   };
 
@@ -127,594 +157,388 @@ export default function SchoolPreferencesScreen() {
     setSaving(true);
     try {
       const { token, schoolId } = await getAuthData();
-
-      console.log('🚀 Starting save process...');
-      console.log('Logo file:', logoFile);
-      console.log('Stamp file:', stampFile);
-      console.log('Platform:', Platform.OS);
-
       const formData = new FormData();
 
-      // Text fields
       formData.append('theme_color', prefs.theme_color);
       formData.append('header_text', prefs.report_footer_text);
       formData.append('show_attendance', String(prefs.show_attendance));
 
-      // Handle Logo - Convert uri to Blob for upload
       if (logoFile) {
-        console.log('📸 Preparing logo for upload...');
-        const fileName = logoFile.name || 'logo.png';
-        const mimeType = logoFile.mimeType || 'image/png';
-
-        try {
-          if (Platform.OS === 'web') {
-            // On web: fetch the uri and convert to Blob
-            console.log('Web: Fetching logo from uri...', logoFile.uri);
-            console.log('File size from picker:', logoFile.size, 'bytes');
-            
-            const response = await fetch(logoFile.uri);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
-            }
-            
-            const blob = await response.blob();
-            console.log('Web: Logo blob created, size:', blob.size, 'bytes');
-            
-            if (blob.size === 0) {
-              throw new Error('Logo file is empty. Please try again.');
-            }
-            
-            // Create a proper File object
-            const file = new File([blob], fileName, { type: mimeType });
-            console.log('Logo File object:', { name: file.name, size: file.size, type: file.type });
-            formData.append('logo', file);
-          } else {
-            // On native: Use uri-based format that React Native FormData understands
-            const logoToUpload: any = {
-              uri: Platform.OS === 'ios' ? logoFile.uri.replace('file://', '') : logoFile.uri,
-              name: fileName,
-              type: mimeType,
-            };
-            console.log('Native: Logo upload object:', logoToUpload);
-            formData.append('logo', logoToUpload);
-          }
-        } catch (fileErr) {
-          console.error('Error processing logo file:', fileErr);
-          Alert.alert("Error", "Failed to process logo file: " + (fileErr instanceof Error ? fileErr.message : ''));
-          setSaving(false);
-          return;
-        }
-      } else if (prefs.logo_url && !logoFile) {
-        console.log('📝 Using existing logo URL:', prefs.logo_url);
+        const logoData: any = {
+          uri: Platform.OS === 'ios' ? logoFile.uri.replace('file://', '') : logoFile.uri,
+          name: logoFile.name || 'logo.png',
+          type: logoFile.mimeType || 'image/png',
+        };
+        formData.append('logo', logoData);
+      } else if (prefs.logo_url) {
         formData.append('logo_url', prefs.logo_url);
       }
 
-      // Handle Stamp - Convert uri to Blob for upload
       if (stampFile) {
-        console.log('📸 Preparing stamp for upload...');
-        const fileName = stampFile.name || 'stamp.png';
-        const mimeType = stampFile.mimeType || 'image/png';
-
-        try {
-          if (Platform.OS === 'web') {
-            // On web: fetch the uri and convert to Blob
-            console.log('Web: Fetching stamp from uri...', stampFile.uri);
-            console.log('File size from picker:', stampFile.size, 'bytes');
-            
-            const response = await fetch(stampFile.uri);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
-            }
-            
-            const blob = await response.blob();
-            console.log('Web: Stamp blob created, size:', blob.size, 'bytes');
-            
-            if (blob.size === 0) {
-              throw new Error('Stamp file is empty. Please try again.');
-            }
-            
-            // Create a proper File object
-            const file = new File([blob], fileName, { type: mimeType });
-            console.log('Stamp File object:', { name: file.name, size: file.size, type: file.type });
-            formData.append('stamp', file);
-          } else {
-            // On native: Use uri-based format
-            const stampToUpload: any = {
-              uri: Platform.OS === 'ios' ? stampFile.uri.replace('file://', '') : stampFile.uri,
-              name: fileName,
-              type: mimeType,
-            };
-            console.log('Native: Stamp upload object:', stampToUpload);
-            formData.append('stamp', stampToUpload);
-          }
-        } catch (fileErr) {
-          console.error('Error processing stamp file:', fileErr);
-          Alert.alert("Error", "Failed to process stamp file: " + (fileErr instanceof Error ? fileErr.message : ''));
-          setSaving(false);
-          return;
-        }
-      } else if (prefs.stamp_url && !stampFile) {
-        console.log('📝 Using existing stamp URL:', prefs.stamp_url);
+        const stampData: any = {
+          uri: Platform.OS === 'ios' ? stampFile.uri.replace('file://', '') : stampFile.uri,
+          name: stampFile.name || 'stamp.png',
+          type: stampFile.mimeType || 'image/png',
+        };
+        formData.append('stamp', stampData);
+      } else if (prefs.stamp_url) {
         formData.append('stamp_url', prefs.stamp_url);
       }
 
-      console.log('📤 Sending request to:', `${API_BASE_URL}/api/preferences/${schoolId}`);
-      console.log('FormData keys:', Array.from(formData.entries()).map(([k]) => k));
-
       const response = await fetch(`${API_BASE_URL}/api/preferences/${schoolId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          // Do NOT set Content-Type - let fetch set it with multipart/form-data boundary
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
       });
 
-      console.log('📨 Response status:', response.status);
-      const data = await response.json();
-      console.log('📨 Response data:', data);
-
-      if (response.ok && data.success) {
-        console.log('✅ Upload successful, returned URLs:', {
-          logo_url: data.data.logo_url,
-          stamp_url: data.data.stamp_url
-        });
+      const result = await response.json();
+      if (result.success) {
         await loadThemeFromPreferences();
-        Alert.alert("Success", "Branding updated successfully!");
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Success',
+          message: 'School branding has been updated and propagated.'
+        });
         setLogoFile(null);
         setStampFile(null);
-        // Reload preferences to show updated URLs
-        await new Promise(resolve => setTimeout(resolve, 500));
         fetchPreferences();
       } else {
-        console.error('❌ Update failed:', data);
-        Alert.alert("Update Failed", data.error || data.details || "Could not save changes.");
+        throw new Error(result.error || 'Update failed');
       }
-    } catch (err) {
-      console.error('❌ Save Error:', err);
-      Alert.alert("Error", "An error occurred while saving: " + (err instanceof Error ? err.message : String(err)));
+    } catch (err: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Application Error',
+        message: err.message || 'Failed to synchronize branding changes.'
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={themeColor} />
-      </View>
-    );
-  }
+  // Called on every color change from the picker (worklet-safe via JS callback)
+  const onColorSelect = (colors: { hex: string }) => {
+    setPickerColor(colors.hex);
+  };
+
+  const confirmColor = () => {
+    setPrefs(prev => ({ ...prev, theme_color: pickerColor }));
+    setShowColorPicker(false);
+  };
+
+  if (loading) return (
+    <ThemedView style={styles.loader}>
+      <ActivityIndicator size="large" color={Colors.accent.gold} />
+      <Text style={styles.loadingText}>SYNCHRONIZING ASSETS...</Text>
+    </ThemedView>
+  );
 
   return (
-    <SafeAreaView style={styles.mainWrapper}>
-      <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.titleSection}>
-            <Ionicons name="color-palette" size={28} color={themeColor} />
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.headerTitle}>School Branding</Text>
-              <Text style={styles.headerSubtitle}>Customize your school's look & feel</Text>
-            </View>
+    <ThemedView style={styles.mainWrapper}>
+      <ImageBackground
+        source={{ uri: 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?q=80&w=2074&auto=format&fit=crop' }}
+        style={[styles.hero, { height: isLargeScreen ? 350 : 250 }]}
+      >
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.7)', Colors.accent.navy]}
+          style={styles.heroOverlay}
+        >
+          <View style={[styles.header, { maxWidth: 1200, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 20 }]}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>System Branding</Text>
+            <View style={{ width: 44 }} />
           </View>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="close" size={24} color="#fff" />
+
+          <View style={[styles.heroContent, { maxWidth: contentWidth, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 30 }]}>
+            <Text style={styles.heroSubtitle}>VISUAL IDENTITY</Text>
+            <Text style={styles.heroMainTitle}>Portal Customization</Text>
+          </View>
+        </LinearGradient>
+      </ImageBackground>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent.gold} />}
+      >
+        {statusAlert.visible && (
+          <CustomAlert
+            type={statusAlert.type}
+            title={statusAlert.title}
+            message={statusAlert.message}
+            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+            style={styles.alert}
+          />
+        )}
+
+
+        {/* ── Theme Color ── */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>THEME SPECIFICATION</Text>
+          <Text style={styles.helperText}>Choose a primary color to define the portal's visual accent.</Text>
+
+          {/* Current color preview + open picker button */}
+          <TouchableOpacity
+            style={[styles.colorTrigger, { borderColor: prefs.theme_color }]}
+            onPress={() => {
+              setPickerColor(prefs.theme_color);
+              setShowColorPicker(true);
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.colorDot, { backgroundColor: prefs.theme_color }]} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.colorTriggerLabel} numberOfLines={1}>Active Theme Color</Text>
+              <Text style={styles.colorTriggerValue} adjustsFontSizeToFit numberOfLines={1}>{prefs.theme_color.toUpperCase()}</Text>
+            </View>
+            <View style={[styles.colorTriggerChip, { backgroundColor: prefs.theme_color }]}>
+              <Ionicons name="color-palette-outline" size={windowWidth < 360 ? 16 : 18} color="#FFFFFF" />
+              {windowWidth >= 360 && <Text style={styles.colorTriggerChipText}>Change</Text>}
+            </View>
           </TouchableOpacity>
         </View>
-      </LinearGradient>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        {/* ── Identity Assets ── */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>IDENTITY ASSETS</Text>
 
-        {/* Theme Color Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIndicator, { backgroundColor: themeColor }]} />
-            <Text style={styles.sectionTitle}>Theme Color</Text>
-          </View>
+          <AssetUploader
+            title="School Emblem"
+            subtitle="High-resolution PNG/JPG"
+            url={prefs.logo_url}
+            onUpload={() => handlePickDocument('logo')}
+            icon="image-outline"
+          />
 
-          {/* Color Palette Grid */}
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>Choose from Popular Colors</Text>
-            <View style={styles.colorPaletteContainer}>
-              {PRESET_COLORS.map((color) => (
-                <TouchableOpacity
-                  key={color}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: color },
-                    prefs.theme_color === color && styles.colorOptionSelected,
-                  ]}
-                  onPress={() => setPrefs({ ...prefs, theme_color: color })}
-                >
-                  {prefs.theme_color === color && (
-                    <Ionicons name="checkmark-done" size={20} color="#fff" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+          <View style={styles.divider} />
 
-            {/* Hex Input for Custom Colors */}
-            <View style={styles.hexInputContainer}>
-              <Text style={styles.hexLabel}>Custom Hex:</Text>
-              <TextInput
-                style={styles.hexInput}
-                value={prefs.theme_color}
-                onChangeText={(txt) => setPrefs({ ...prefs, theme_color: txt })}
-                placeholder="#2196F3"
-                autoCapitalize="characters"
-                maxLength={7}
-              />
-            </View>
-
-            {/* Live Color Preview */}
-            <View style={styles.previewContainer}>
-              <View style={[styles.colorPreviewBox, { backgroundColor: prefs.theme_color }]}>
-                <Text style={styles.previewText}>Preview</Text>
-              </View>
-            </View>
-          </View>
+          <AssetUploader
+            title="Official Stamp"
+            subtitle="Transparent background recommended"
+            url={prefs.stamp_url}
+            onUpload={() => handlePickDocument('stamp')}
+            icon="ribbon-outline"
+          />
         </View>
 
-        {/* Assets Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIndicator, { backgroundColor: themeColor }]} />
-            <Text style={styles.sectionTitle}>Brand Assets</Text>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.imageUploadRow}>
-              {prefs.logo_url ? (
-                <Image source={{ uri: prefs.logo_url }} style={styles.previewImage} contentFit="contain" />
-              ) : (
-                <View style={styles.placeholderImage}>
-                  <Ionicons name="image-outline" size={32} color="#CBD5E1" />
-                </View>
-              )}
-              <View style={{ flex: 1, marginLeft: 15 }}>
-                <Text style={styles.cardLabel}>School Logo</Text>
-                <Text style={styles.helperText}>Used on clear backgrounds</Text>
-                <TouchableOpacity style={styles.uploadButton} onPress={() => handlePickDocument('logo')}>
-                  <Ionicons name="cloud-upload-outline" size={16} color="#475569" />
-                  <Text style={styles.uploadButtonText}>Upload Logo</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
+        {/* ── Report Config ── */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>REPORT CONFIGURATION</Text>
           <View style={styles.inputGroup}>
-            <View style={styles.imageUploadRow}>
-              {prefs.stamp_url ? (
-                <Image source={{ uri: prefs.stamp_url }} style={styles.previewImage} contentFit="contain" />
-              ) : (
-                <View style={styles.placeholderImage}>
-                  <Ionicons name="ribbon-outline" size={32} color="#CBD5E1" />
-                </View>
-              )}
-              <View style={{ flex: 1, marginLeft: 15 }}>
-                <Text style={styles.cardLabel}>Official Stamp</Text>
-                <Text style={styles.helperText}>Used on official reports</Text>
-                <TouchableOpacity style={styles.uploadButton} onPress={() => handlePickDocument('stamp')}>
-                  <Ionicons name="cloud-upload-outline" size={16} color="#475569" />
-                  <Text style={styles.uploadButtonText}>Upload Stamp</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <Text style={styles.inputLabel}>Dynamic Footer Text</Text>
+            <TextInput
+              style={styles.textArea}
+              value={prefs.report_footer_text}
+              onChangeText={(txt) => setPrefs({ ...prefs, report_footer_text: txt })}
+              placeholder="Enter validation disclaimer or school motto..."
+              placeholderTextColor="rgba(255,255,255,0.2)"
+              multiline
+            />
+            <Text style={styles.helperText}>This text will appear at the base of all generated result certificates.</Text>
           </View>
         </View>
 
-        {/* Footer Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIndicator, { backgroundColor: themeColor }]} />
-            <Text style={styles.sectionTitle}>Report Footer</Text>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.inputGroup}>
-              <View style={styles.labelRow}>
-                <Ionicons name="document-text" size={18} color={themeColor} />
-                <Text style={styles.cardLabel}>Footer Text</Text>
-              </View>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={prefs.report_footer_text}
-                onChangeText={(txt) => setPrefs({ ...prefs, report_footer_text: txt })}
-                placeholder="e.g. This result is valid only with the official seal."
-                multiline
-              />
-              <Text style={styles.helperText}>Displayed at the bottom of all report cards</Text>
-            </View>
-          </View>
+        <View style={styles.actionRow}>
+          <CustomButton
+            title={saving ? "Propagating Changes..." : "Secure & Apply Branding"}
+            onPress={handleSave}
+            loading={saving}
+            icon="shield-checkmark-outline"
+          />
+          <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>Discard Changes</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Save Button */}
-        <TouchableOpacity
-          style={[styles.saveButton, { backgroundColor: prefs.theme_color }]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.85}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <>
-              <Ionicons name="save" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save & Apply Changes</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.cancelButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-
       </ScrollView>
-    </SafeAreaView>
+
+      {/* ── Full Color Picker Modal ── */}
+      <Modal
+        visible={showColorPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowColorPicker(false)}
+      >
+        <View style={[styles.pickerOverlay, isLargeScreen && styles.pickerOverlayLarge]}>
+          <View style={[
+            styles.pickerSheet,
+            isLargeScreen && { width: 500, borderRadius: 32, marginBottom: 0, alignSelf: 'center' }
+          ]}>
+            {/* Header */}
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Color Studio</Text>
+              <TouchableOpacity onPress={() => setShowColorPicker(false)} style={styles.pickerClose}>
+                <Ionicons name="close" size={22} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={{ paddingBottom: 20 }}>
+                <ColorPicker
+                  value={pickerColor}
+                  onComplete={onColorSelect}
+                  onChange={onColorSelect}
+                  style={styles.colorPicker}
+                >
+                  {/* Full HSB spectrum panel */}
+                  <Panel1 style={styles.pickerPanel} />
+
+                  {/* Sliders */}
+                  <View style={styles.slidersBlock}>
+                    <Text style={styles.sliderLabel}>HUE</Text>
+                    <HueSlider style={styles.slider} />
+
+                    <Text style={styles.sliderLabel}>SATURATION</Text>
+                    <SaturationSlider style={styles.slider} />
+
+                    <Text style={styles.sliderLabel}>BRIGHTNESS</Text>
+                    <BrightnessSlider style={styles.slider} />
+                  </View>
+
+                  {/* Hex / RGB / HSL input */}
+                  <View style={styles.hexBlock}>
+                    <InputWidget
+                      inputStyle={styles.pickerHexText}
+                      iconStyle={{ tintColor: '#94A3B8' }}
+                      formats={['HEX', 'RGB', 'HSL']}
+                    />
+                  </View>
+
+                  {/* Quick swatches */}
+                  <Text style={styles.swatchesLabel}>QUICK PICKS</Text>
+                  <Swatches
+                    style={styles.swatchesContainer}
+                    swatchStyle={styles.swatch}
+                    colors={SWATCHES}
+                  />
+                </ColorPicker>
+              </View>
+            </ScrollView>
+
+            {/* Live preview + confirm */}
+            <View style={styles.pickerFooter}>
+              <View style={[styles.pickerPreview, { backgroundColor: pickerColor }]}>
+                <Text style={styles.pickerPreviewText}>{pickerColor.toUpperCase()}</Text>
+              </View>
+              <TouchableOpacity style={styles.confirmBtn} onPress={confirmColor}>
+                <Ionicons name="checkmark-circle" size={20} color={Colors.accent.navy} />
+                <Text style={styles.confirmBtnText}>Apply Color</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ThemedView>
+  );
+}
+
+function AssetUploader({ title, subtitle, url, onUpload, icon }: any) {
+  return (
+    <View style={styles.assetRow}>
+      <View style={styles.assetPreview}>
+        {url ? (
+          <Image source={{ uri: url }} style={styles.assetImage} contentFit="contain" />
+        ) : (
+          <View style={styles.assetPlaceholder}>
+            <Ionicons name={icon} size={28} color="rgba(255,255,255,0.1)" />
+          </View>
+        )}
+      </View>
+      <View style={styles.assetInfo}>
+        <Text style={styles.assetTitle}>{title}</Text>
+        <Text style={styles.assetSubtitle}>{subtitle}</Text>
+        <TouchableOpacity style={styles.uploadBtn} onPress={onUpload}>
+          <Ionicons name="cloud-upload" size={14} color={Colors.accent.gold} />
+          <Text style={styles.uploadBtnText}>Select File</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: '#F8FAFC' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent.navy },
+  loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
 
-  header: {
-    paddingTop: Platform.OS === 'android' ? 45 : 10,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  titleSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  headerSubtitle: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    marginTop: 2,
-  },
+  hero: { height: 280, width: '100%' },
+  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
+  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
 
-  scrollContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    paddingBottom: 40,
-  },
+  heroContent: { marginTop: 'auto', marginBottom: 30 },
+  heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
+  heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
-  sectionContainer: {
-    marginBottom: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionIndicator: {
-    width: 4,
-    height: 18,
-    borderRadius: 2,
-    marginRight: 10,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#1E293B',
-    letterSpacing: 0.5,
-  },
+  scrollView: { flex: 1, marginTop: -30 },
+  scrollContent: { padding: 20, paddingBottom: 60 },
+  alert: { marginBottom: 20 },
 
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-  },
+  card: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: 24 },
+  cardLabel: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
+  helperText: { color: '#64748B', fontSize: 12, lineHeight: 18, marginBottom: 12 },
 
-  cardLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+  // Color trigger button
+  colorTrigger: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, padding: 16, borderWidth: 1.5 },
+  colorDot: { width: 48, height: 48, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  colorTriggerLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
+  colorTriggerValue: { color: '#FFFFFF', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
+  colorTriggerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+  colorTriggerChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
-  inputGroup: {
-    marginBottom: 16,
-  },
+  // Picker modal
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  pickerOverlayLarge: { justifyContent: 'center', padding: 40 },
+  pickerSheet: { backgroundColor: '#0F172A', borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%' },
 
-  input: {
-    backgroundColor: '#F8FAFC',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    fontSize: 15,
-    color: '#1E293B',
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
+  pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 },
+  pickerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  pickerClose: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', justifyContent: 'center', alignItems: 'center' },
 
-  helperText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 6,
-    fontStyle: 'italic',
-  },
+  colorPicker: { paddingHorizontal: 20 },
+  pickerPanel: { borderRadius: 20, height: 220, marginBottom: 20 },
 
-  colorPaletteContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginVertical: 16,
-    gap: 10,
-  },
-  colorOption: {
-    width: '22%',
-    aspectRatio: 1,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-  },
-  colorOptionSelected: {
-    borderColor: '#fff',
-    borderWidth: 4,
-    elevation: 5,
-    shadowOpacity: 0.3,
-  },
+  slidersBlock: { gap: 12, marginBottom: 20 },
+  sliderLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
+  slider: { borderRadius: 12, height: 28 },
 
-  hexInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 16,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  hexLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
-    minWidth: 90,
-  },
-  hexInput: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    fontSize: 14,
-    fontFamily: 'monospace',
-    color: '#1E293B',
-  },
+  hexBlock: { marginBottom: 20 },
+  pickerHexText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 
-  previewContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 12,
-  },
-  colorPreviewBox: {
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-  },
-  previewText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
+  swatchesLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, paddingHorizontal: 20 },
+  swatchesContainer: { paddingHorizontal: 20, marginBottom: 8 },
+  swatch: { borderRadius: 12, height: 36, width: 36 },
 
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 14,
-    marginTop: 10,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-    marginLeft: 10,
-  },
+  pickerFooter: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginTop: 8 },
+  pickerPreview: { flex: 1, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  pickerPreviewText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent.gold, paddingHorizontal: 24, borderRadius: 16 },
+  confirmBtnText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
 
-  cancelButton: {
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  cancelButtonText: {
-    color: '#64748B',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  assetRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  assetPreview: { width: 80, height: 80, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
+  assetImage: { width: '100%', height: '100%' },
+  assetPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  assetInfo: { flex: 1, gap: 4 },
+  assetTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  assetSubtitle: { color: '#64748B', fontSize: 12, fontWeight: '600' },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  uploadBtnText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 20 },
 
-  // Upload Styles
-  imageUploadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  previewImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  placeholderImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    backgroundColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  uploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-  },
-  uploadButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-    marginLeft: 6,
-  },
+  inputGroup: { gap: 12 },
+  inputLabel: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
+  textArea: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 20, padding: 16, color: '#FFFFFF', fontSize: 14, height: 120, textAlignVertical: 'top', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+
+  actionRow: { gap: 16, marginTop: 20 },
+  cancelBtn: { alignItems: 'center', paddingVertical: 12 },
+  cancelText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
 });

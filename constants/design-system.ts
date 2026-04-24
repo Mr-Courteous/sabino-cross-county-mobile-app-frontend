@@ -30,8 +30,8 @@ export const Colors = {
   // Premium Accent Colors
   accent: {
     gold: '#FACC15',
-    navy: '#0F172A',
-    slate: '#1E293B',
+    navy: '#1e293b', // Shifted from #0F172A (900 -> 800ish)
+    slate: '#475569', // Shifted from #1E293B (900 -> 600)
   },
 
   // Status Colors
@@ -61,8 +61,8 @@ export const Colors = {
     primary: '#FFFFFF',
     secondary: '#F9FAFB',
     tertiary: '#F3F4F6',
-    dark: '#0F172A',
-    darkElevated: '#1E293B',
+    dark: '#1e293b',
+    darkElevated: '#334155',
   },
 
   text: {

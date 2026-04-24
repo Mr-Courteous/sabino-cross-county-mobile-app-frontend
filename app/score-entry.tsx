@@ -9,13 +9,23 @@ import {
   Platform,
   FlatList,
   KeyboardAvoidingView,
+  ImageBackground,
+  Dimensions,
+  Modal,
+  StyleSheet,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '@/utils/api-service';
+import { Colors } from '@/constants/design-system';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { CustomButton } from '@/components/custom-button';
+import { CustomAlert } from '@/components/custom-alert';
+import { router } from 'expo-router';
+import { getStorageItem as getToken } from '@/utils/storage';
 
 interface Subject {
   id: number;
@@ -77,6 +87,19 @@ export default function ScoreEntryScreen() {
   const [subjectSearchFilter, setSubjectSearchFilter] = useState('');
   const [subjectSearchQuery, setSubjectSearchQuery] = useState('');
   const [searchingSubjects, setSearchingSubjects] = useState(false);
+  const [activeModal, setActiveModal] = useState<'session' | 'term' | 'class' | 'subject' | null>(null);
+  const [statusAlert, setStatusAlert] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
 
   // Loading & Errors
   const [loadingInitial, setLoadingInitial] = useState(true);
@@ -579,7 +602,12 @@ export default function ScoreEntryScreen() {
         .filter((s) => s.ca1_score !== null || s.ca2_score !== null || s.ca3_score !== null || s.ca4_score !== null || s.exam_score !== null);
 
       if (scoresPayload.length === 0) {
-        setSaveError('Please enter at least one score');
+        setStatusAlert({
+          visible: true,
+          type: 'error',
+          title: 'Missing Data',
+          message: 'Please enter at least one score before saving.'
+        });
         return;
       }
 
@@ -599,9 +627,12 @@ export default function ScoreEntryScreen() {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        const successMsg = `${data.count} score(s) saved successfully!`;
-        setSaveSuccess(successMsg);
-        setSaveError('');
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'System Updated',
+          message: `${data.count} score(s) record(s) have been successfully uploaded.`
+        });
 
         // Update local state with new score IDs from the response
         if (data.data && Array.isArray(data.data)) {
@@ -632,10 +663,12 @@ export default function ScoreEntryScreen() {
           setSaveSuccess('');
         }, 4000);
       } else {
-        const errorMsg = data.message || data.error || 'Failed to save scores';
-        console.error(`❌ Save failed: ${errorMsg}`);
-        setSaveError(errorMsg);
-        setSaveSuccess('');
+        setStatusAlert({
+          visible: true,
+          type: 'error',
+          title: 'Update Failed',
+          message: data.message || data.error || 'The system was unable to save the score records.'
+        });
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred while saving scores';
@@ -659,7 +692,12 @@ export default function ScoreEntryScreen() {
       console.log(`API_BASE_URL: ${API_BASE_URL}`);
       
       if (!token) {
-        Alert.alert('Error', 'Authentication token missing. Please log in again.');
+        setStatusAlert({
+          visible: true,
+          type: 'error',
+          title: 'Session Expired',
+          message: 'Your authentication token is missing. Please log in again to continue.'
+        });
         return;
       }
       
@@ -706,8 +744,12 @@ export default function ScoreEntryScreen() {
 
             if (!response.ok || !data.success) {
               const errorMessage = data.message || data.error || 'Failed to delete score from server';
-              console.error(`❌ Backend delete failed: ${errorMessage}`);
-              setSaveError(errorMessage);
+              setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Deletion Failed',
+                message: errorMessage
+              });
               setSavingScores(false);
               return;
             }
@@ -739,20 +781,13 @@ export default function ScoreEntryScreen() {
           );
 
           setScoreEntries(updatedEntries);
-          console.log(`✅ Local state updated`);
           
-          if (Platform.OS === 'web') {
-            alert(hasValidScoreId ? 'Score record deleted from server.' : 'Local scores cleared.');
-          } else {
-            Alert.alert('Success', hasValidScoreId ? 'Score record deleted from server.' : 'Local scores cleared.');
-          }
-          
-          setSaveSuccess('Score cleared successfully!');
-          console.log(`✅ Success message set`);
-
-          setTimeout(() => {
-            setSaveSuccess('');
-          }, 3000);
+          setStatusAlert({
+            visible: true,
+            type: 'success',
+            title: 'Record Cleared',
+            message: hasValidScoreId ? 'The score record has been permanently removed from the server.' : 'Local score fields have been cleared.'
+          });
 
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
@@ -771,14 +806,13 @@ export default function ScoreEntryScreen() {
           executeDelete();
         }
       } else {
-        Alert.alert(
-          'Clear Score',
-          `Are you sure you want to clear score ID ${scoreId}? This cannot be undone.`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => console.log('ℹ️ User cancelled') },
-            { text: 'Delete', style: 'destructive', onPress: executeDelete },
-          ]
-        );
+        setStatusAlert({
+          visible: true,
+          type: 'warning',
+          title: 'Clear Score',
+          message: `Are you sure you want to clear score record? This cannot be undone.`,
+          onConfirm: executeDelete
+        });
       }
     } catch (err) {
       console.error(`❌ Critical error in handleDeleteScore:`, err);
@@ -788,1095 +822,377 @@ export default function ScoreEntryScreen() {
 
   if (loadingInitial) {
     return (
-      <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <ThemedText style={{ marginTop: 16 }}>Loading score entry screen...</ThemedText>
+      <ThemedView style={[styles.mainWrapper, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.accent.gold} />
+        <ThemedText style={{ marginTop: 24, fontSize: 10, fontWeight: '800', letterSpacing: 2, color: Colors.accent.gold }}>INITIALIZING PORTAL...</ThemedText>
       </ThemedView>
     );
   }
+
+  const renderDropdownModal = () => {
+    let data: any[] = [];
+    let title = '';
+    let currentSelection: any = null;
+    let onSelect = (item: any) => {};
+
+    switch (activeModal) {
+      case 'session':
+        data = academicSessions;
+        title = 'Select Session';
+        currentSelection = selectedSessionId;
+        onSelect = (item) => {
+          setSelectedSession(item.session_name);
+          setSelectedSessionId(item.id);
+        };
+        break;
+      case 'term':
+        data = terms.map(t => ({ id: t, name: t }));
+        title = 'Select Term';
+        currentSelection = selectedTerm;
+        onSelect = (item) => setSelectedTerm(item.name);
+        break;
+      case 'class':
+        data = classes;
+        title = 'Select Class';
+        currentSelection = selectedClass?.id;
+        onSelect = (item) => setSelectedClass(item);
+        break;
+      case 'subject':
+        data = subjects;
+        title = 'Select Subject';
+        currentSelection = selectedSubject?.id;
+        onSelect = (item) => setSelectedSubject(item);
+        break;
+    }
+
+    return (
+      <Modal
+        visible={activeModal !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setActiveModal(null)}
+        >
+          <View style={styles.modalContent}>
+            <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+            
+            {activeModal === 'subject' && (
+              <View style={[styles.pickerButton, { marginBottom: 16 }]}>
+                <Ionicons name="search" size={20} color="rgba(255,255,255,0.4)" />
+                <TextInput
+                  style={[styles.pickerText, { flex: 1, marginLeft: 12 }]}
+                  placeholder="Search subjects..."
+                  value={subjectSearchQuery}
+                  onChangeText={setSubjectSearchQuery}
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                />
+              </View>
+            )}
+
+            <FlatList
+              data={data}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => {
+                const isSelected = activeModal === 'term' ? currentSelection === item.name : currentSelection === item.id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.dropdownItem, isSelected && styles.selectedItem]}
+                    onPress={() => {
+                      onSelect(item);
+                      setActiveModal(null);
+                    }}
+                  >
+                    <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText]}>
+                      {item.session_name || item.name || item.display_name}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
     >
-      <ThemedView style={{ flex: 1 }}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#2E7D32', '#1B5E20']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ paddingTop: 20, paddingHorizontal: 20, paddingBottom: 20 }}
-        >
-          <ThemedText
-            type="title"
-            style={{ color: '#fff', marginBottom: 6 }}
+      <ThemedView style={styles.mainWrapper}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Hero Header */}
+          <ImageBackground
+            source={{ uri: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=2070' }}
+            style={styles.hero}
           >
-            Upload Results
-          </ThemedText>
-          <ThemedText style={{ color: '#e8f5e9', fontSize: 13 }}>
-            Enter student scores for continuous assessment and exams
-          </ThemedText>
-        </LinearGradient>
-
-        <ScrollView
-          style={{ flex: 1, padding: 16 }}
-          contentContainerStyle={{ paddingBottom: 30 }}
-          showsVerticalScrollIndicator={true}
-        >
-          {initialError && (
-            <View
-              style={{
-                backgroundColor: '#ffebee',
-                borderLeftColor: '#d32f2f',
-                borderLeftWidth: 5,
-                padding: 14,
-                borderRadius: 6,
-                marginBottom: 20,
-                borderWidth: 1,
-                borderColor: '#ffcdd2',
-              }}
+            <LinearGradient
+              colors={['transparent', Colors.accent.navy]}
+              style={styles.heroOverlay}
             >
-              <ThemedText style={{ color: '#c62828', fontSize: 15, fontWeight: '600' }}>
-                ❌ Error
-              </ThemedText>
-              <ThemedText style={{ color: '#b71c1c', fontSize: 14, marginTop: 4 }}>
-                {initialError}
-              </ThemedText>
-            </View>
-          )}
-
-          {/* Session Selection */}
-          <View style={{ marginBottom: 16 }}>
-            <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-              Academic Session *
-            </ThemedText>
-            <TouchableOpacity
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 12,
-                backgroundColor: '#fff',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              onPress={() => setShowSessionDropdown(!showSessionDropdown)}
-            >
-              <ThemedText
-                style={{
-                  fontSize: 14,
-                  color: selectedSession ? '#000' : '#999',
-                }}
-              >
-                {selectedSession || 'Select session...'}
-              </ThemedText>
-              <ThemedText style={{ fontSize: 16 }}>
-                {showSessionDropdown ? '▲' : '▼'}
-              </ThemedText>
-            </TouchableOpacity>
-
-            {showSessionDropdown && (
-              <View
-                style={{
-                  borderWidth: 1,
-                  borderColor: '#ddd',
-                  borderTopWidth: 0,
-                  borderBottomLeftRadius: 6,
-                  borderBottomRightRadius: 6,
-                  backgroundColor: '#fff',
-                  maxHeight: 150,
-                  marginTop: -1,
-                }}
-              >
-                <FlatList
-                  data={academicSessions}
-                  keyExtractor={(item) => String(item.id)}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={{
-                        padding: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: '#eee',
-                        backgroundColor:
-                          selectedSession === item.session_name ? '#e8f5e9' : '#fff',
-                      }}
-                      onPress={() => {
-                        setSelectedSession(item.session_name);
-                        setSelectedSessionId(item.id);
-                        setShowSessionDropdown(false);
-                      }}
-                    >
-                      <ThemedText
-                        style={{
-                          fontSize: 14,
-                          color:
-                            selectedSession === item.session_name ? '#2e7d32' : '#333',
-                          fontWeight:
-                            selectedSession === item.session_name ? '600' : '400',
-                        }}
-                      >
-                        {item.session_name}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            )}
-          </View>
-
-          {/* Term Selection */}
-          <View style={{ marginBottom: 16 }}>
-            <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-              Term *
-            </ThemedText>
-            <TouchableOpacity
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 12,
-                backgroundColor: '#fff',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              onPress={() => setShowTermDropdown(!showTermDropdown)}
-            >
-              <ThemedText style={{ fontSize: 14, color: '#000' }}>
-                {selectedTerm}
-              </ThemedText>
-              <ThemedText style={{ fontSize: 16 }}>
-                {showTermDropdown ? '▲' : '▼'}
-              </ThemedText>
-            </TouchableOpacity>
-
-            {showTermDropdown && (
-              <View
-                style={{
-                  borderWidth: 1,
-                  borderColor: '#ddd',
-                  borderTopWidth: 0,
-                  borderBottomLeftRadius: 6,
-                  borderBottomRightRadius: 6,
-                  backgroundColor: '#fff',
-                  marginTop: -1,
-                }}
-              >
-                {terms.map((term) => (
-                  <TouchableOpacity
-                    key={term}
-                    style={{
-                      padding: 12,
-                      borderBottomWidth: 1,
-                      borderBottomColor: '#eee',
-                      backgroundColor:
-                        selectedTerm === term ? '#e8f5e9' : '#fff',
-                    }}
-                    onPress={() => {
-                      setSelectedTerm(term);
-                      setShowTermDropdown(false);
-                    }}
-                  >
-                    <ThemedText
-                      style={{
-                        fontSize: 14,
-                        color: selectedTerm === term ? '#2e7d32' : '#333',
-                        fontWeight: selectedTerm === term ? '600' : '400',
-                      }}
-                    >
-                      {term}
-                    </ThemedText>
+              <View style={styles.header}>
+                <TouchableOpacity 
+                  style={styles.backButton}
+                  onPress={() => router.back()}
+                >
+                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                  <TouchableOpacity style={styles.actionIcon}>
+                    <Ionicons name="help-circle-outline" size={24} color="#FFFFFF" />
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* Class Selection */}
-          <View style={{ marginBottom: 16 }}>
-            <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-              Class *
-            </ThemedText>
-            <TouchableOpacity
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 12,
-                backgroundColor: '#fff',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              onPress={() => {
-                setShowClassDropdown(!showClassDropdown);
-                setClassSearchFilter('');
-              }}
-            >
-              <ThemedText
-                style={{
-                  fontSize: 14,
-                  color: selectedClass ? '#000' : '#999',
-                }}
-              >
-                {selectedClass ? selectedClass.display_name : 'Select class...'}
-              </ThemedText>
-              <ThemedText style={{ fontSize: 16 }}>
-                {showClassDropdown ? '▲' : '▼'}
-              </ThemedText>
-            </TouchableOpacity>
-
-            {showClassDropdown && (
-              <View
-                style={{
-                  borderWidth: 1,
-                  borderColor: '#ddd',
-                  borderTopWidth: 0,
-                  borderBottomLeftRadius: 6,
-                  borderBottomRightRadius: 6,
-                  backgroundColor: '#fff',
-                  marginTop: -1,
-                }}
-              >
-                {/* Search Input */}
-                <TextInput
-                  style={{
-                    borderBottomWidth: 1,
-                    borderBottomColor: '#ddd',
-                    padding: 10,
-                    fontSize: 14,
-                    backgroundColor: '#f9f9f9',
-                  }}
-                  placeholder="Search classes..."
-                  value={classSearchFilter}
-                  onChangeText={setClassSearchFilter}
-                  placeholderTextColor="#999"
-                />
-
-                {/* Filtered Classes List */}
-                <FlatList
-                  data={classes.filter(cls =>
-                    cls.display_name.toLowerCase().includes(classSearchFilter.toLowerCase())
-                  )}
-                  keyExtractor={(item) => String(item.id)}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={{
-                        padding: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: '#eee',
-                        backgroundColor:
-                          selectedClass?.id === item.id ? '#e8f5e9' : '#fff',
-                      }}
-                      onPress={() => {
-                        setSelectedClass(item);
-                        setShowClassDropdown(false);
-                        setClassSearchFilter('');
-                      }}
-                    >
-                      <ThemedText
-                        style={{
-                          fontSize: 14,
-                          color:
-                            selectedClass?.id === item.id ? '#2e7d32' : '#333',
-                          fontWeight:
-                            selectedClass?.id === item.id ? '600' : '400',
-                        }}
-                      >
-                        {item.display_name}
-                      </ThemedText>
-                      <ThemedText
-                        style={{
-                          fontSize: 11,
-                          color: '#999',
-                          marginTop: 2,
-                        }}
-                      >
-                        Capacity: {item.capacity}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            )}
-          </View>
-
-          {/* Subject Selection */}
-          <View style={{ marginBottom: 16 }}>
-            <ThemedText style={{ marginBottom: 6, fontWeight: '600', fontSize: 14 }}>
-              Subject *
-            </ThemedText>
-            <TouchableOpacity
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 6,
-                padding: 12,
-                backgroundColor: '#fff',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              onPress={() => {
-                setShowSubjectDropdown(!showSubjectDropdown);
-                setSubjectSearchFilter('');
-              }}
-            >
-              <ThemedText
-                style={{
-                  fontSize: 14,
-                  color: selectedSubject ? '#000' : '#999',
-                }}
-              >
-                {selectedSubject ? selectedSubject.name : 'Select subject...'}
-              </ThemedText>
-              <ThemedText style={{ fontSize: 16 }}>
-                {showSubjectDropdown ? '▲' : '▼'}
-              </ThemedText>
-            </TouchableOpacity>
-
-            {showSubjectDropdown && (
-              <View
-                style={{
-                  borderWidth: 1,
-                  borderColor: '#ddd',
-                  borderTopWidth: 0,
-                  borderBottomLeftRadius: 6,
-                  borderBottomRightRadius: 6,
-                  backgroundColor: '#fff',
-                  marginTop: -1,
-                  maxHeight: 280,
-                }}
-              >
-                {/* Search Input */}
-                <TextInput
-                  style={{
-                    borderBottomWidth: 1,
-                    borderBottomColor: '#ddd',
-                    padding: 10,
-                    fontSize: 14,
-                    backgroundColor: '#f9f9f9',
-                  }}
-                  placeholder="Search by name..."
-                  value={subjectSearchQuery}
-                  onChangeText={setSubjectSearchQuery}
-                  placeholderTextColor="#999"
-                />
-
-                {searchingSubjects && (
-                  <View style={{ padding: 12, alignItems: 'center' }}>
-                    <ActivityIndicator size="small" color="#2e7d32" />
-                    <ThemedText style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-                      Searching subjects...
-                    </ThemedText>
-                  </View>
-                )}
-
-                {/* Searched Subjects List */}
-                <FlatList
-                  data={subjects}
-                  keyExtractor={(item) => String(item.id)}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={{
-                        padding: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: '#eee',
-                        backgroundColor:
-                          selectedSubject?.id === item.id ? '#e8f5e9' : '#fff',
-                      }}
-                      onPress={() => {
-                        setSelectedSubject(item);
-                        setShowSubjectDropdown(false);
-                        setSubjectSearchQuery('');
-                      }}
-                    >
-                      <ThemedText
-                        style={{
-                          fontSize: 14,
-                          color:
-                            selectedSubject?.id === item.id
-                              ? '#2e7d32'
-                              : '#333',
-                          fontWeight:
-                            selectedSubject?.id === item.id ? '600' : '400',
-                        }}
-                      >
-                        {item.name}
-                      </ThemedText>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          justifyContent: 'space-between',
-                          marginTop: 4,
-                        }}
-                      >
-                        <ThemedText
-                          style={{
-                            fontSize: 11,
-                            color: '#666',
-                            backgroundColor: '#f0f0f0',
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderRadius: 3,
-                            marginRight: 6,
-                          }}
-                        >
-                          {item.category}
-                        </ThemedText>
-                        <ThemedText
-                          style={{
-                            fontSize: 11,
-                            color: '#666',
-                            backgroundColor: '#e3f2fd',
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderRadius: 3,
-                          }}
-                        >
-                          {item.education_level}
-                        </ThemedText>
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            )}
-          </View>
-
-          {/* Debug Info - Remove after testing */}
-          <View
-            style={{
-              backgroundColor: '#f5f5f5',
-              padding: 10,
-              borderRadius: 6,
-              marginBottom: 10,
-              borderLeftWidth: 3,
-              borderLeftColor: '#666',
-            }}
-          >
-            <ThemedText style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
-              DEBUG: Class: {selectedClass ? '✓' : '✗'} | Subject: {selectedSubject ? '✓' : '✗'} | Session: {selectedSessionId ? '✓' : '✗'} | Term: {selectedTermId ? '✓' : '✗'}
-            </ThemedText>
-            <ThemedText style={{ fontSize: 11, color: '#999' }}>
-              Class: {selectedClass?.display_name || 'none'} | Subject: {selectedSubject?.name || 'none'} | SessionId: {selectedSessionId || 'null'} | TermId: {selectedTermId}
-            </ThemedText>
-          </View>
-
-          {/* Success Message */}
-          {saveSuccess && (
-            <View
-              style={{
-                backgroundColor: '#e8f5e9',
-                borderLeftColor: '#4CAF50',
-                borderLeftWidth: 5,
-                padding: 14,
-                borderRadius: 6,
-                marginBottom: 16,
-                borderWidth: 1,
-                borderColor: '#c8e6c9',
-              }}
-            >
-              <ThemedText style={{ color: '#2e7d32', fontSize: 14, fontWeight: '600', marginBottom: 4 }}>
-                ✅ Success
-              </ThemedText>
-              <ThemedText style={{ color: '#1b5e20', fontSize: 13, lineHeight: 20 }}>
-                {saveSuccess}
-              </ThemedText>
-            </View>
-          )}
-
-          {/* Error Message */}
-          {saveError && (
-            <View
-              style={{
-                backgroundColor: '#ffebee',
-                borderLeftColor: '#d32f2f',
-                borderLeftWidth: 5,
-                padding: 14,
-                borderRadius: 6,
-                marginBottom: 16,
-                borderWidth: 1,
-                borderColor: '#ffcdd2',
-              }}
-            >
-              <ThemedText style={{ color: '#c62828', fontSize: 14, fontWeight: '600', marginBottom: 4 }}>
-                ❌ Error
-              </ThemedText>
-              <ThemedText style={{ color: '#b71c1c', fontSize: 13, lineHeight: 20 }}>
-                {saveError}
-              </ThemedText>
-            </View>
-          )}
-
-          {/* Load Students Button */}
-          <TouchableOpacity
-            style={{
-              backgroundColor: selectedClass && selectedSubject ? '#2196F3' : '#ccc',
-              padding: 14,
-              borderRadius: 8,
-              alignItems: 'center',
-              marginBottom: 20,
-              opacity: selectedClass && selectedSubject && selectedSessionId && selectedTermId ? 1 : 0.6,
-            }}
-            onPress={() => selectedClass && loadScoringSheet(selectedClass.id)}
-            disabled={!selectedClass || !selectedSubject || !selectedSessionId || !selectedTermId || loadingSheet}
-          >
-            {loadingSheet ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />
-                <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-                  Loading sheet...
-                </ThemedText>
-              </View>
-            ) : (
-              <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-                Load Scoring Sheet
-              </ThemedText>
-            )}
-          </TouchableOpacity>
-
-          {sheetError && (
-            <View
-              style={{
-                backgroundColor: '#ffebee',
-                borderLeftColor: '#d32f2f',
-                borderLeftWidth: 5,
-                padding: 16,
-                borderRadius: 6,
-                marginBottom: 20,
-                borderWidth: 1,
-                borderColor: '#ffcdd2',
-              }}
-            >
-              <View style={{ marginBottom: 8 }}>
-                <ThemedText style={{ color: '#c62828', fontSize: 15, fontWeight: '600', marginBottom: 4 }}>
-                  ⚠️ No Students Available
-                </ThemedText>
-                <ThemedText style={{ color: '#b71c1c', fontSize: 13, lineHeight: 20 }}>
-                  {sheetError}
-                </ThemedText>
-              </View>
-              <View
-                style={{
-                  backgroundColor: '#fff9c4',
-                  borderRadius: 4,
-                  padding: 10,
-                  marginTop: 8,
-                  borderLeftWidth: 3,
-                  borderLeftColor: '#f57f17',
-                }}
-              >
-                <ThemedText style={{ fontSize: 12, color: '#f57f17', fontWeight: '600', marginBottom: 4 }}>
-                  💡 Troubleshooting Steps:
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#e65100', marginBottom: 3 }}>
-                  • Verify that students are enrolled in the selected class
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#e65100', marginBottom: 3 }}>
-                  • Check that the class enrollment matches the selected session
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#e65100' }}>
-                  • Try selecting a different class, session, or term
-                </ThemedText>
-              </View>
-            </View>
-          )}
-
-          {/* Score Entry Table */}
-          {scoreEntries.length > 0 && (
-            <View style={{ marginBottom: 20 }}>
-              <ThemedText
-                style={{
-                  fontSize: 16,
-                  fontWeight: '600',
-                  marginBottom: 12,
-                  color: '#333',
-                }}
-              >
-                Student Scores - {selectedSubject?.name} ({selectedSubject?.category})
-              </ThemedText>
-
-              {/* Table Header */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  backgroundColor: '#f5f5f5',
-                  padding: 10,
-                  borderRadius: 6,
-                  marginBottom: 8,
-                  borderWidth: 1,
-                  borderColor: '#ddd',
-                }}
-              >
-                <ThemedText
-                  style={{
-                    flex: 2,
-                    fontWeight: '600',
-                    fontSize: 12,
-                    color: '#333',
-                  }}
-                >
-                  Student
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.8,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  CA1
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.8,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  CA2
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.8,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  CA3
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.8,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  CA4
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.8,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  Exam
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.8,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  Total
-                </ThemedText>
-                <ThemedText
-                  style={{
-                    flex: 0.6,
-                    fontWeight: '600',
-                    fontSize: 11,
-                    color: '#333',
-                    textAlign: 'center',
-                  }}
-                >
-                  Actions
-                </ThemedText>
+                </View>
               </View>
 
-              {/* Students Rows */}
-              {scoreEntries.map((entry) => (
-                <View key={entry.enrollment_id} style={{ marginBottom: 12 }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      backgroundColor: '#fff',
-                      padding: 10,
-                      borderRadius: 6,
-                      borderWidth: 1,
-                      borderColor: '#ddd',
-                      alignItems: 'flex-start',
-                    }}
+              <View style={styles.heroContent}>
+                <ThemedText style={styles.heroSubtitle}>ACADEMIC PERFORMANCE</ThemedText>
+                <ThemedText style={styles.heroMainTitle}>Score Entry</ThemedText>
+              </View>
+            </LinearGradient>
+          </ImageBackground>
+
+          {/* Filter Section */}
+          <View style={styles.filterSection}>
+            <View style={styles.glassCard}>
+              <View style={styles.filterGroup}>
+                <ThemedText style={styles.filterLabel}>Academic Session</ThemedText>
+                <TouchableOpacity 
+                  style={styles.pickerButton}
+                  onPress={() => setActiveModal('session')}
+                >
+                  <ThemedText style={selectedSession ? styles.pickerText : styles.placeholderText}>
+                    {selectedSession || 'Choose Session'}
+                  </ThemedText>
+                  <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 16 }}>
+                <View style={[styles.filterGroup, { flex: 1 }]}>
+                  <ThemedText style={styles.filterLabel}>Term</ThemedText>
+                  <TouchableOpacity 
+                    style={styles.pickerButton}
+                    onPress={() => setActiveModal('term')}
                   >
-                    {/* Student Name */}
-                    <View style={{ flex: 2, paddingRight: 8 }}>
-                      <ThemedText
-                        style={{
-                          fontSize: 12,
-                          fontWeight: '600',
-                          color: '#333',
-                        }}
-                      >
+                    <ThemedText style={styles.pickerText}>{selectedTerm}</ThemedText>
+                    <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.filterGroup, { flex: 1.5 }]}>
+                  <ThemedText style={styles.filterLabel}>Class</ThemedText>
+                  <TouchableOpacity 
+                    style={styles.pickerButton}
+                    onPress={() => setActiveModal('class')}
+                  >
+                    <ThemedText style={selectedClass ? styles.pickerText : styles.placeholderText}>
+                      {selectedClass?.display_name || 'Select Class'}
+                    </ThemedText>
+                    <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.filterGroup}>
+                <ThemedText style={styles.filterLabel}>Subject</ThemedText>
+                <TouchableOpacity 
+                  style={styles.pickerButton}
+                  onPress={() => setActiveModal('subject')}
+                >
+                  <ThemedText style={selectedSubject ? styles.pickerText : styles.placeholderText}>
+                    {selectedSubject?.name || 'Select Subject'}
+                  </ThemedText>
+                  <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
+                </TouchableOpacity>
+              </View>
+
+              <CustomButton
+                title="Load Scoring Sheet"
+                onPress={() => selectedClass && loadScoringSheet(selectedClass.id)}
+                loading={loadingSheet}
+                disabled={!selectedClass || !selectedSubject}
+                variant="premium"
+                style={{ marginTop: 8 }}
+                icon={<Ionicons name="cloud-download-outline" size={20} color={Colors.accent.navy} style={{ marginRight: 8 }} />}
+              />
+            </View>
+          </View>
+
+          {/* Student List */}
+          <View style={styles.listContent}>
+            {scoreEntries.length > 0 ? (
+              scoreEntries.map((entry) => (
+                <View key={entry.enrollment_id} style={styles.studentCard}>
+                  <View style={styles.studentHeader}>
+                    <View style={styles.avatar}>
+                      <ThemedText style={styles.avatarText}>
+                        {entry.first_name[0]}{entry.last_name[0]}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.nameInfo}>
+                      <ThemedText style={styles.studentName}>
                         {entry.first_name} {entry.last_name}
                       </ThemedText>
-                    </View>
-
-                    {/* CA1 Input */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2 }}>
-                      <TextInput
-                        style={{
-                          borderWidth: 1,
-                          borderColor:
-                            scoreErrors[`${entry.enrollment_id}-ca1`]
-                              ? '#d32f2f'
-                              : '#ddd',
-                          borderRadius: 4,
-                          padding: 6,
-                          fontSize: 12,
-                          backgroundColor:
-                            scoreErrors[`${entry.enrollment_id}-ca1`]
-                              ? '#ffebee'
-                              : '#fff',
-                          textAlign: 'center',
-                        }}
-                        placeholder="0"
-                        keyboardType="decimal-pad"
-                        value={entry.ca1 === '' || entry.ca1 === 0 ? '' : String(entry.ca1)}
-                        onChangeText={(text) =>
-                          handleScoreChange(entry.enrollment_id, 'ca1', text)
-                        }
-                        maxLength={4}
-                      />
-                      {scoreErrors[`${entry.enrollment_id}-ca1`] && (
-                        <ThemedText
-                          style={{
-                            fontSize: 9,
-                            color: '#d32f2f',
-                            marginTop: 2,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {scoreErrors[`${entry.enrollment_id}-ca1`]}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* CA2 Input */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2 }}>
-                      <TextInput
-                        style={{
-                          borderWidth: 1,
-                          borderColor:
-                            scoreErrors[`${entry.enrollment_id}-ca2`]
-                              ? '#d32f2f'
-                              : '#ddd',
-                          borderRadius: 4,
-                          padding: 6,
-                          fontSize: 12,
-                          backgroundColor:
-                            scoreErrors[`${entry.enrollment_id}-ca2`]
-                              ? '#ffebee'
-                              : '#fff',
-                          textAlign: 'center',
-                        }}
-                        placeholder="0"
-                        keyboardType="decimal-pad"
-                        value={entry.ca2 === '' || entry.ca2 === 0 ? '' : String(entry.ca2)}
-                        onChangeText={(text) =>
-                          handleScoreChange(entry.enrollment_id, 'ca2', text)
-                        }
-                        maxLength={4}
-                      />
-                      {scoreErrors[`${entry.enrollment_id}-ca2`] && (
-                        <ThemedText
-                          style={{
-                            fontSize: 9,
-                            color: '#d32f2f',
-                            marginTop: 2,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {scoreErrors[`${entry.enrollment_id}-ca2`]}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* CA3 Input */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2 }}>
-                      <TextInput
-                        style={{
-                          borderWidth: 1,
-                          borderColor:
-                            scoreErrors[`${entry.enrollment_id}-ca3`]
-                              ? '#d32f2f'
-                              : '#ddd',
-                          borderRadius: 4,
-                          padding: 6,
-                          fontSize: 12,
-                          backgroundColor:
-                            scoreErrors[`${entry.enrollment_id}-ca3`]
-                              ? '#ffebee'
-                              : '#fff',
-                          textAlign: 'center',
-                        }}
-                        placeholder="0"
-                        keyboardType="decimal-pad"
-                        value={entry.ca3 === '' || entry.ca3 === 0 ? '' : String(entry.ca3)}
-                        onChangeText={(text) =>
-                          handleScoreChange(entry.enrollment_id, 'ca3', text)
-                        }
-                        maxLength={4}
-                      />
-                      {scoreErrors[`${entry.enrollment_id}-ca3`] && (
-                        <ThemedText
-                          style={{
-                            fontSize: 9,
-                            color: '#d32f2f',
-                            marginTop: 2,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {scoreErrors[`${entry.enrollment_id}-ca3`]}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* CA4 Input */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2 }}>
-                      <TextInput
-                        style={{
-                          borderWidth: 1,
-                          borderColor:
-                            scoreErrors[`${entry.enrollment_id}-ca4`]
-                              ? '#d32f2f'
-                              : '#ddd',
-                          borderRadius: 4,
-                          padding: 6,
-                          fontSize: 12,
-                          backgroundColor:
-                            scoreErrors[`${entry.enrollment_id}-ca4`]
-                              ? '#ffebee'
-                              : '#fff',
-                          textAlign: 'center',
-                        }}
-                        placeholder="0"
-                        keyboardType="decimal-pad"
-                        value={entry.ca4 === '' || entry.ca4 === 0 ? '' : String(entry.ca4)}
-                        onChangeText={(text) =>
-                          handleScoreChange(entry.enrollment_id, 'ca4', text)
-                        }
-                        maxLength={4}
-                      />
-                      {scoreErrors[`${entry.enrollment_id}-ca4`] && (
-                        <ThemedText
-                          style={{
-                            fontSize: 9,
-                            color: '#d32f2f',
-                            marginTop: 2,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {scoreErrors[`${entry.enrollment_id}-ca4`]}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* Exam Input */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2 }}>
-                      <TextInput
-                        style={{
-                          borderWidth: 1,
-                          borderColor:
-                            scoreErrors[`${entry.enrollment_id}-exam`]
-                              ? '#d32f2f'
-                              : '#ddd',
-                          borderRadius: 4,
-                          padding: 6,
-                          fontSize: 12,
-                          backgroundColor:
-                            scoreErrors[`${entry.enrollment_id}-exam`]
-                              ? '#ffebee'
-                              : '#fff',
-                          textAlign: 'center',
-                        }}
-                        placeholder="0"
-                        keyboardType="decimal-pad"
-                        value={entry.exam === '' || entry.exam === 0 ? '' : String(entry.exam)}
-                        onChangeText={(text) =>
-                          handleScoreChange(entry.enrollment_id, 'exam', text)
-                        }
-                        maxLength={4}
-                      />
-                      {scoreErrors[`${entry.enrollment_id}-exam`] && (
-                        <ThemedText
-                          style={{
-                            fontSize: 9,
-                            color: '#d32f2f',
-                            marginTop: 2,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {scoreErrors[`${entry.enrollment_id}-exam`]}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* Total Score */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2 }}>
-                      <ThemedText
-                        style={{
-                          fontSize: 12,
-                          fontWeight: '700',
-                          color: '#2e7d32',
-                          textAlign: 'center',
-                          paddingVertical: 6,
-                        }}
-                      >
-                        {calculateTotal(entry).toFixed(1)}
+                      <ThemedText style={styles.classInfo}>
+                        ID: {entry.student_id} • {selectedClass?.display_name}
                       </ThemedText>
                     </View>
+                    <TouchableOpacity 
+                      style={styles.deleteAction}
+                      onPress={() => handleDeleteScore(entry.score_id, entry.enrollment_id)}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
 
-                    {/* Actions */}
-                    <View style={{ flex: 0.8, marginHorizontal: 2, alignItems: 'center', justifyContent: 'center' }}>
-                      <TouchableOpacity
-                        style={{
-                          backgroundColor: '#d32f2f',
-                          borderRadius: 6,
-                          paddingVertical: 6,
-                          paddingHorizontal: 12,
-                          minWidth: 60,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                        onPress={() => {
-                          console.log(`👆 DELETE BUTTON PRESSED - calling handleDeleteScore(${entry.score_id}, ${entry.enrollment_id})`);
-                          handleDeleteScore(entry.score_id, entry.enrollment_id);
-                        }}
-                        disabled={savingScores}
-                        activeOpacity={0.7}
-                      >
-                        <ThemedText
-                          style={{
-                            fontSize: 11,
-                            color: '#fff',
-                            fontWeight: '700',
-                            textAlign: 'center',
-                          }}
-                        >
-                          🗑️ Delete
-                        </ThemedText>
-                      </TouchableOpacity>
+                  <View style={styles.scoreGrid}>
+                    {['ca1', 'ca2', 'ca3', 'ca4'].map((field) => (
+                      <View key={field} style={styles.scoreInputWrapper}>
+                        <ThemedText style={styles.inputLabel}>{field.toUpperCase()}</ThemedText>
+                        <TextInput
+                          style={[
+                            styles.scoreInput,
+                            scoreErrors[`${entry.enrollment_id}-${field}`] && styles.errorInput
+                          ]}
+                          keyboardType="decimal-pad"
+                          placeholder="0"
+                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          value={String(entry[field as keyof ScoreEntry] ?? '')}
+                          onChangeText={(text) => handleScoreChange(entry.enrollment_id, field, text)}
+                        />
+                      </View>
+                    ))}
+
+                    <View style={styles.scoreInputWrapper}>
+                      <ThemedText style={styles.inputLabel}>EXAM</ThemedText>
+                      <TextInput
+                        style={[
+                          styles.scoreInput,
+                          scoreErrors[`${entry.enrollment_id}-exam`] && styles.errorInput
+                        ]}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor="rgba(255,255,255,0.2)"
+                        value={String(entry.exam ?? '')}
+                        onChangeText={(text) => handleScoreChange(entry.enrollment_id, 'exam', text)}
+                      />
+                    </View>
+
+                    <View style={styles.totalContainer}>
+                      <ThemedText style={styles.totalLabel}>TOTAL</ThemedText>
+                      <ThemedText style={styles.totalValue}>
+                        {calculateTotal(entry).toFixed(0)}
+                      </ThemedText>
                     </View>
                   </View>
                 </View>
-              ))}
-
-              {/* Scoring Legend */}
-              <View
-                style={{
-                  backgroundColor: '#f9f9f9',
-                  padding: 12,
-                  borderRadius: 6,
-                  marginTop: 16,
-                  borderWidth: 1,
-                  borderColor: '#eee',
-                }}
-              >
-                <ThemedText style={{ fontSize: 12, fontWeight: '600', marginBottom: 8 }}>
-                  📋 Scoring Guide:
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                  • CA1, CA2, CA3, CA4: Max 10 each
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                  • Exam: Max 60
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#666' }}>
-                  • Use the Delete button to remove saved scores if needed
-                </ThemedText>
-                <ThemedText style={{ fontSize: 11, color: '#666' }}>
-                  • Total: Max 100 (sum of all scores)
-                </ThemedText>
-              </View>
-            </View>
-          )}
-
-          {/* Save All Button */}
-          {scoreEntries.length > 0 && (
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#4CAF50',
-                padding: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-                marginTop: 20,
-                opacity: savingScores ? 0.6 : 1,
-              }}
-              onPress={handleSaveAllScores}
-              disabled={savingScores}
-            >
-              {savingScores ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />
-                  <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-                    Saving Scores...
+              ))
+            ) : (
+              !loadingSheet && (
+                <View style={styles.emptyState}>
+                  <Ionicons name="document-text-outline" size={64} color="rgba(255,255,255,0.1)" />
+                  <ThemedText style={styles.emptyTitle}>No Records Loaded</ThemedText>
+                  <ThemedText style={styles.emptySubtitle}>
+                    Select class and subject then load the sheet to start entering scores
                   </ThemedText>
                 </View>
-              ) : (
-                <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-                  💾 Save All Scores
-                </ThemedText>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* Empty State */}
-          {scoreEntries.length === 0 && !loadingInitial && !initialError && (
-            <View
-              style={{
-                backgroundColor: '#e3f2fd',
-                padding: 24,
-                borderRadius: 8,
-                alignItems: 'center',
-                marginTop: 40,
-              }}
-            >
-              <ThemedText
-                style={{
-                  fontSize: 16,
-                  fontWeight: '600',
-                  color: '#1565c0',
-                  marginBottom: 8,
-                }}
-              >
-                📚 Ready to Enter Scores
-              </ThemedText>
-              <ThemedText
-                style={{
-                  fontSize: 13,
-                  color: '#0d47a1',
-                  textAlign: 'center',
-                  lineHeight: 20,
-                }}
-              >
-                Select a class, subject, session, term and click "Load Scoring Sheet" to begin entering scores.
-              </ThemedText>
-            </View>
-          )}
+              )
+            )}
+          </View>
         </ScrollView>
+
+        {/* Floating Save Button */}
+        {scoreEntries.length > 0 && (
+          <View style={styles.floatingActions}>
+            <CustomButton
+              title={savingScores ? "Saving..." : "Save All Scores"}
+              onPress={handleSaveAllScores}
+              loading={savingScores}
+              variant="premium"
+              style={{ height: 60, borderRadius: 20 }}
+              icon={<Ionicons name="save-outline" size={24} color={Colors.accent.navy} style={{ marginRight: 10 }} />}
+            />
+          </View>
+        )}
+
+        {/* Modals */}
+        {renderDropdownModal()}
+
+        {statusAlert.visible && (
+          <CustomAlert
+            type={statusAlert.type}
+            title={statusAlert.title}
+            message={statusAlert.message}
+            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+            onConfirm={statusAlert.onConfirm}
+            style={{ marginBottom: 20 }}
+          />
+        )}
       </ThemedView>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
+  scrollContent: { paddingBottom: 120 },
+  hero: { height: 260, width: '100%' },
+  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', gap: 12 },
+  actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  heroContent: { marginTop: 'auto', marginBottom: 20 },
+  heroSubtitle: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
+  heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+
+  filterSection: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 },
+  glassCard: { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
+  filterGroup: { marginBottom: 20 },
+  filterLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, textTransform: 'uppercase' },
+  
+  pickerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 16, paddingHorizontal: 16, height: 52, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  pickerText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  placeholderText: { color: 'rgba(255,255,255,0.3)', fontSize: 14, fontWeight: '600' },
+
+  listContent: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 120 },
+  studentCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+  studentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  avatar: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+  avatarText: { color: Colors.accent.gold, fontSize: 16, fontWeight: '800' },
+  nameInfo: { flex: 1, marginLeft: 16 },
+  studentName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 2 },
+  classInfo: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
+
+  scoreGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 16 },
+  scoreInputWrapper: { width: '31%' },
+  inputLabel: { fontSize: 10, color: 'rgba(255,255,255,0.4)', fontWeight: '800', marginBottom: 6, textAlign: 'center' },
+  scoreInput: { height: 48, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', color: '#FFFFFF', textAlign: 'center', fontSize: 14, fontWeight: '700' },
+  errorInput: { borderColor: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.1)' },
+  
+  totalContainer: { width: '31%', height: 48, backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(34, 197, 94, 0.2)', marginTop: 16 },
+  totalLabel: { fontSize: 9, color: '#22C55E', fontWeight: '800', marginBottom: 2 },
+  totalValue: { fontSize: 14, color: '#22C55E', fontWeight: '900' },
+
+  deleteAction: { width: 44, height: 44, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.2)' },
+
+  floatingActions: { position: 'absolute', bottom: 30, left: 24, right: 24, gap: 12 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 24 },
+  modalContent: { backgroundColor: '#1E293B', borderRadius: 32, padding: 24, maxHeight: '80%', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  modalTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
+  dropdownItem: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  dropdownItemText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  selectedItem: { backgroundColor: 'rgba(250, 204, 21, 0.1)', borderRadius: 12 },
+  selectedItemText: { color: Colors.accent.gold },
+
+  emptyState: { padding: 40, alignItems: 'center', marginTop: 40 },
+  emptyTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', marginTop: 20, marginBottom: 8 },
+  emptySubtitle: { color: '#94A3B8', fontSize: 13, textAlign: 'center', lineHeight: 20 },
+
+});

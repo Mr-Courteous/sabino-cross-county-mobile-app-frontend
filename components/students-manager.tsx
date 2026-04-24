@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { 
+import React, { useEffect, useState, useCallback } from 'react';
+import {
   View,
   Text,
   StyleSheet,
@@ -12,21 +12,25 @@ import {
   Alert,
   ScrollView,
   Dimensions,
-  Share
+  RefreshControl,
+  ImageBackground
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
-import { API_BASE_URL } from '@/utils/api-service';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { API_BASE_URL } from '@/utils/api-service';
 import { clearAllStorage } from '@/utils/storage';
+import { Colors } from '@/constants/design-system';
+import { ThemedView } from '@/components/themed-view';
+import { CustomButton } from '@/components/custom-button';
+import { CustomAlert } from '@/components/custom-alert';
 import Footer from '../app/components/Footer';
 
-import * as FileSystem from 'expo-file-system/legacy';
-import * as DocumentPicker from 'expo-document-picker';
-import * as Sharing from 'expo-sharing';
-
 const { width } = Dimensions.get('window');
-const rf = (size: number) => Math.round((size * width) / 375);
 
 type Student = {
   id: string | number;
@@ -49,14 +53,25 @@ export default function StudentsManager() {
   const router = useRouter();
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
-  const [academicSessions, setAcademicSessions] = useState<string[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+
+  const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [statusAlert, setStatusAlert] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
 
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
-  
-  // Fully Restored Form State
+
   const [form, setForm] = useState<any>({
     firstName: '',
     lastName: '',
@@ -70,233 +85,493 @@ export default function StudentsManager() {
   });
   const [dobParts, setDobParts] = useState({ year: '', month: '', day: '' });
   const [editingId, setEditingId] = useState<string | number | null>(null);
-  const [academicSession, setAcademicSession] = useState<string>('');
-  const [showSessionDropdown, setShowSessionDropdown] = useState(false);
+
   const [searchText, setSearchText] = useState<string>('');
 
-  useEffect(() => {
-    fetchStudents();
-    fetchClasses();
-    fetchAcademicSessions();
-  }, []);
-
   const getToken = async () => {
-    if (Platform.OS !== 'web') return await SecureStore.getItemAsync('userToken');
-    return localStorage.getItem('userToken');
+    return Platform.OS !== 'web'
+      ? await SecureStore.getItemAsync('userToken')
+      : localStorage.getItem('userToken');
   };
 
-  async function fetchClasses() {
+  const fetchInitialData = useCallback(async () => {
     try {
       const token = await getToken();
-      const res = await fetch(`${API_BASE_URL}/api/classes`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setClasses(json.data);
-      }
-    } catch (e) {
-      console.log('Error fetching classes:', e);
-    }
-  }
+      if (!token) return;
 
-  async function fetchAcademicSessions() {
-    try {
-      const token = await getToken();
-      const res = await fetch(`${API_BASE_URL}/api/academic-sessions`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        const sessions = json.data.map((s: any) => s.session_name || s.name);
-        setAcademicSessions(sessions);
-        if (sessions.length > 0) {
-          setAcademicSession(sessions[0]);
-        }
-      }
-    } catch (e) {
-      console.log('Error fetching academic sessions:', e);
-    }
-  }
+      const [classRes, studentRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/students`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
 
-  async function fetchStudents() {
-    setLoading(true);
-    try {
-      const token = await getToken();
-      const res = await fetch(`${API_BASE_URL}/api/students`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      const json = await res.json();
-      if (json.success) setStudents(json.data || []);
-      console.log(json);
+      const [classData, studentData] = await Promise.all([
+        classRes.json(),
+        studentRes.json()
+      ]);
+
+      if (classData.success) setClasses(classData.data);
+
+      if (studentData.success) setStudents(studentData.data || []);
+
     } catch (e) {
-      Alert.alert('Load Error', 'Unable to fetch students.');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'System Error',
+        message: 'Unable to synchronize student records.'
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, []);
 
-  async function downloadSampleCsv() {
-    const SAMPLE_CSV = 'firstName,lastName,studentNumber,classId\nJohn,Doe,STU-001,1\nJane,Smith,STU-002,1';
+  useEffect(() => {
+    fetchInitialData();
+  }, [fetchInitialData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchInitialData();
+  };
+
+  const handleDownloadTemplate = async () => {
     try {
-      // Show sample format in alert
-      Alert.alert('CSV Template', SAMPLE_CSV);
+      const csvContent = "firstName,lastName,email,phone,dateOfBirth,classId,studentNumber,gender\nJohn,Doe,john@example.com,1234567890,2005-08-16,1,STU-001,Male";
+      
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "student_bulk_template.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const fileUri = `${FileSystem.documentDirectory}student_bulk_template.csv`;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: 'utf8' });
+        
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(fileUri);
+        } else {
+          Alert.alert('Sharing unavailable', 'Cannot process CSV locally.');
+        }
+      }
     } catch (e) {
-      Alert.alert('Info', 'Sample CSV format:\nfirstName,lastName,studentNumber,classId');
+      console.error(e);
+      setStatusAlert({ visible: true, type: 'error', title: 'Download Error', message: 'Could not generate sample bulk data.' });
     }
-  }
+  };
 
-  async function pickAndUploadFile() {
+  const handlePickAndUpload = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['text/comma-separated-values', 'text/csv'],
       });
-      console.log(result);
       if (result.canceled) return;
       const file = result.assets[0];
       
       setLoading(true);
-      let content = '';
+      const token = await getToken();
+      
+      let text = '';
       if (Platform.OS === 'web') {
-        content = await (file as any).file.text();
+         text = await (file as any).file.text();
       } else {
-        content = await FileSystem.readAsStringAsync(file.uri);
+         text = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
       }
 
-      const rows = content.split('\n');
-      const headers = rows[0].split(',').map(h => h.trim());
-      const studentsPayload = rows.slice(1).filter(r => r.trim()).map(r => {
-        const values = r.split(',').map(v => v.trim());
-        const obj: any = {};
-        headers.forEach((h, i) => obj[h] = values[i]);
-        return {
-          firstName: obj.firstName || obj.first_name,
-          lastName: obj.lastName || obj.last_name,
-          email: obj.email || null,
-          phone: obj.phone || null,
-          dateOfBirth: obj.dateOfBirth || obj.date_of_birth || null,
-          studentNumber: obj.studentNumber || obj.registration_number || null,
-          classId: form.classId,
-          gender: obj.gender || null
-        };
+      setStatusAlert({
+        visible: true,
+        type: 'info',
+        title: 'Processing',
+        message: 'Formatting bulk CSV payload...'
       });
 
-      const token = await getToken();
-      const resp = await fetch(`${API_BASE_URL}/api/students/bulk`, {
+      const sessionRes = await fetch(`${API_BASE_URL}/api/academic-sessions`, { headers: { Authorization: `Bearer ${token}` } });
+      const sessionData = await sessionRes.json();
+      let sessionName = '';
+      if (sessionData.success && sessionData.data?.length > 0) {
+        sessionName = sessionData.data.find((s: any) => s.is_active)?.session_name || sessionData.data[0].session_name;
+      }
+      
+      if (!sessionName) throw new Error('No active academic session found on the server.');
+
+      const lines = text.split('\n').filter(l => l.trim().length > 0);
+      if (lines.length < 2) throw new Error('CSV is empty or missing data rows');
+
+      const studentsArray = [];
+      for (let i = 1; i < lines.length; i++) {
+         const attrs = lines[i].split(',').map(a => a.trim());
+         if (attrs.length >= 6) {
+           studentsArray.push({
+             firstName: attrs[0],
+             lastName: attrs[1],
+             email: attrs[2],
+             phone: attrs[3],
+             dateOfBirth: attrs[4],
+             classId: Number(attrs[5]),
+             studentNumber: attrs[6] || undefined,
+             gender: attrs[7] || undefined,
+           });
+         }
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/students/bulk`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          students: studentsPayload,
-          academicSession: academicSession
-        })
+        body: JSON.stringify({ students: studentsArray, academicSession: sessionName })
       });
-      const json = await resp.json();
+      
+      const json = await res.json();
       if (json.success) {
-        Alert.alert('Success', `Created and enrolled ${studentsPayload.length} students`);
-        fetchStudents();
+        fetchInitialData();
+        setStatusAlert({ visible: true, type: 'success', title: 'Bulk Success', message: `Processed ${studentsArray.length} records successfully.` });
       } else {
-        Alert.alert('Error', json.error || 'Upload failed');
+        throw new Error(json.error || 'Server rejected bulk payload');
       }
-    } catch (e) {
-      Alert.alert('Upload Error', 'Check your file format and ensure all required fields are present.');
-      console.log('Upload error:', e);
+    } catch (e: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Process Error',
+        message: e?.message || 'Bulk synchronization failed.'
+      });
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  const handleLogout = async () => {
+    setStatusAlert({
+      visible: true,
+      type: 'warning',
+      title: 'Sign-out',
+      message: 'Terminate administrative session?',
+      onConfirm: async () => {
+        await clearAllStorage();
+        router.replace('/');
+      }
+    });
+  };
+
+  const renderStudent = ({ item }: { item: Student }) => (
+    <TouchableOpacity style={styles.studentCard} onPress={() => openEdit(item)}>
+      <View style={styles.avatarContainer}>
+        <Text style={styles.avatarText}>
+          {(item.first_name?.[0] || '') + (item.last_name?.[0] || '')}
+        </Text>
+      </View>
+      <View style={styles.studentInfo}>
+        <Text style={styles.studentName}>{item.first_name} {item.last_name}</Text>
+        <View style={styles.metaRow}>
+          <Text style={styles.studentSub}>{item.registration_number || 'REG: N/A'}</Text>
+          <View style={styles.metaDivider} />
+          <Text style={styles.studentSub}>{item.gender || 'N/A'}</Text>
+        </View>
+        <Text style={styles.studentEmail}>{item.email || 'No email attached'}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.2)" />
+    </TouchableOpacity>
+  );
+
+  if (loading) return (
+    <ThemedView style={styles.loader}>
+      <ActivityIndicator size="large" color={Colors.accent.gold} />
+      <Text style={styles.loadingText}>SYNCHRONIZING RECORDS...</Text>
+    </ThemedView>
+  );
+
+  return (
+    <ThemedView style={styles.mainWrapper}>
+      <ImageBackground
+        source={{ uri: 'https://images.unsplash.com/photo-1577891913314-147eeaa99602?q=80&w=2069&auto=format&fit=crop' }}
+        style={styles.hero}
+      >
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.7)', Colors.accent.navy]}
+          style={styles.heroOverlay}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity style={styles.actionIcon} onPress={handleDownloadTemplate}>
+                <Ionicons name="cloud-download-outline" size={20} color={Colors.accent.gold} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionIcon} onPress={handlePickAndUpload}>
+                <Ionicons name="cloud-upload-outline" size={20} color={Colors.accent.gold} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => { setForm({ gender: 'Male' }); setDobParts({ year: '', month: '', day: '' }); setEditingId(null); setModalVisible(true); }}
+              >
+                <Ionicons name="add" size={24} color={Colors.accent.navy} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.heroContent}>
+            <Text style={styles.heroSubtitle}>STUDENT DIRECTORY</Text>
+            <Text style={styles.heroMainTitle}>Record Registry</Text>
+          </View>
+        </LinearGradient>
+      </ImageBackground>
+
+      <View style={styles.searchSection}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={18} color="#94A3B8" />
+          <TextInput
+            placeholder="Search registry..."
+            style={styles.searchInput}
+            placeholderTextColor="#64748B"
+            value={searchText}
+            onChangeText={setSearchText}
+          />
+        </View>
+      </View>
+
+      <FlatList
+        data={students.filter(s => {
+          const search = searchText.toLowerCase();
+          return `${s.first_name} ${s.last_name}`.toLowerCase().includes(search) ||
+            (s.registration_number || '').toLowerCase().includes(search);
+        })}
+        keyExtractor={(i) => String(i.id)}
+        contentContainerStyle={styles.listContent}
+        renderItem={renderStudent}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        ListHeaderComponent={statusAlert.visible ? (
+          <CustomAlert
+            type={statusAlert.type}
+            title={statusAlert.title}
+            message={statusAlert.message}
+            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+            onConfirm={statusAlert.onConfirm}
+            style={styles.alert}
+          />
+        ) : null}
+        ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={handleLogout} />}
+      />
+
+      <Modal animationType="fade" transparent={true} visible={modalVisible}>
+        <View style={styles.modalOverlay}>
+          <LinearGradient
+            colors={['rgba(15, 23, 42, 0.95)', 'rgba(30, 41, 59, 0.98)']}
+            style={styles.modalSheet}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>{editingId ? 'Modify Record' : 'Enroll Student'}</Text>
+                <Text style={styles.modalSubtitle}>System-level database entry</Text>
+              </View>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
+
+              {!editingId && (
+                <View style={styles.formSection}>
+                  <Text style={styles.sectionLabel}>ACADEMIC PARAMETERS</Text>
+                  <View style={styles.classGrid}>
+                    {classes.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.classChip, form.classId === c.id && styles.activeClassChip]}
+                        onPress={() => setForm({ ...form, classId: c.id })}
+                      >
+                        <Text style={[styles.chipText, form.classId === c.id && styles.activeChipText]}>{c.display_name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.formSection}>
+                <Text style={styles.sectionLabel}>PERSONAL INFORMATION</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="person-outline" size={18} color={Colors.accent.gold} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.formInput}
+                    value={form.firstName}
+                    onChangeText={(t) => setForm({ ...form, firstName: t })}
+                    placeholder="First Name"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                  />
+                </View>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="person-outline" size={18} color={Colors.accent.gold} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.formInput}
+                    value={form.lastName}
+                    onChangeText={(t) => setForm({ ...form, lastName: t })}
+                    placeholder="Last Name"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                  />
+                </View>
+
+                <View style={styles.genderSelect}>
+                  {['Male', 'Female'].map((g) => (
+                    <TouchableOpacity
+                      key={g}
+                      style={[styles.genderOption, form.gender === g && styles.activeGender]}
+                      onPress={() => setForm({ ...form, gender: g })}
+                    >
+                      <Text style={[styles.genderBtnText, form.gender === g && styles.activeGenderBtnText]}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.formSection}>
+                <Text style={styles.sectionLabel}>COMMUNICATION & LOGISTICS</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="mail-outline" size={18} color={Colors.accent.gold} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.formInput}
+                    value={form.email}
+                    onChangeText={(t) => setForm({ ...form, email: t })}
+                    placeholder="Email Address"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    keyboardType="email-address"
+                  />
+                </View>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="call-outline" size={18} color={Colors.accent.gold} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.formInput}
+                    value={form.phone}
+                    onChangeText={(t) => setForm({ ...form, phone: t })}
+                    placeholder="Direct Link / Phone"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formSection}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>DATE OF BIRTH</Text>
+                  {(dobParts.year && dobParts.month && dobParts.day) ? (
+                    <Text style={{ color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 1 }}>
+                      {dobParts.year}-{dobParts.month}-{dobParts.day}
+                    </Text>
+                  ) : form.dateOfBirth ? (
+                    <Text style={{ color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 1 }}>
+                      {String(form.dateOfBirth).split('T')[0]}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={styles.dobGrid}>
+                  <DobPicker data={years} selected={dobParts.year} onSelect={(y: any) => setDobParts({ ...dobParts, year: y })} label="Year" />
+                  <DobPicker data={months} selected={dobParts.month} onSelect={(m: any) => setDobParts({ ...dobParts, month: m })} label="Month" />
+                  <DobPicker data={days} selected={dobParts.day} onSelect={(d: any) => setDobParts({ ...dobParts, day: d })} label="Day" />
+                </View>
+              </View>
+
+              <View style={styles.modalActions}>
+                <CustomButton
+                  title={saving ? "SECURELY SAVING..." : "COMMIT TO REGISTRY"}
+                  onPress={saveStudent}
+                  loading={saving}
+                  icon="shield-checkmark-outline"
+                />
+              </View>
+            </ScrollView>
+          </LinearGradient>
+        </View>
+      </Modal>
+    </ThemedView>
+  );
 
   async function saveStudent() {
     if (!form.firstName || !form.lastName) {
-      Alert.alert('Required', 'First and Last name are required.');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Validation Error',
+        message: 'Identity attributes are mandatory.'
+      });
+      return;
+    }
+    if (!form.classId && !editingId) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Allocation Error',
+        message: 'Student must be assigned to a class.'
+      });
       return;
     }
 
-    if (!form.classId) {
-      Alert.alert('Required', 'Please select a class.');
-      return;
-    }
-
-    if (!academicSession) {
-      Alert.alert('Required', 'Please select an academic session.');
-      return;
-    }
-
-    // Construct Date of Birth from parts
     const { year, month, day } = dobParts;
     let finalDob = form.dateOfBirth;
-    if (year && month && day) {
-      finalDob = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    }
+    if (year && month && day) finalDob = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 
     setSaving(true);
     try {
       const token = await getToken();
+      const method = editingId ? 'PUT' : 'POST';
+      const endpoint = editingId ? `/api/students/${editingId}` : `/api/students/bulk`;
+      const body = editingId
+        ? JSON.stringify({ ...form, dateOfBirth: finalDob })
+        : JSON.stringify({ students: [{ ...form, dateOfBirth: finalDob }], academicSession });
 
-      if (!editingId) {
-        const resp = await fetch(`${API_BASE_URL}/api/students/bulk`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            students: [{
-              firstName: form.firstName,
-              lastName: form.lastName,
-              email: form.email || null,
-              phone: form.phone || null,
-              dateOfBirth: finalDob || null,
-              studentNumber: form.studentNumber || null,
-              classId: form.classId,
-              gender: form.gender || null
-            }],
-            academicSession: academicSession
-          })
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body
+      });
+      const json = await res.json();
+      if (json.success) {
+        setModalVisible(false);
+        fetchInitialData();
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Registry Success',
+          message: 'Database synchronized successfully.'
         });
-        const json = await resp.json();
-        if (json.success) {
-          setModalVisible(false);
-          setForm({ firstName: '', lastName: '', email: '', phone: '', registrationNumber: '', gender: 'Male', dateOfBirth: '', classId: null, studentNumber: '' });
-          setDobParts({ year: '', month: '', day: '' });
-          fetchStudents();
-          Alert.alert('Success', 'Student created and enrolled successfully');
-        } else {
-          Alert.alert('Error', json.error || 'Failed to save student');
-        }
-      } else {
-        const res = await fetch(`${API_BASE_URL}/api/students/${editingId}`, {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...form, dateOfBirth: finalDob })
-        });
-        const json = await res.json();
-        if (json.success) {
-          setModalVisible(false);
-          fetchStudents();
-          Alert.alert('Success', 'Student updated successfully');
-        } else {
-          Alert.alert('Error', json.message || 'Update failed');
-        }
       }
     } catch (e) {
-      Alert.alert('Error', 'Connection failed');
-      console.log('Save error:', e);
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Protocol Error',
+        message: 'Session timed out or connection lost.'
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  const openEdit = (s: Student) => {
+  function openEdit(s: Student) {
     let year = '', month = '', day = '';
     if (s.date_of_birth) {
-        const dateOnly = s.date_of_birth.split('T')[0];
-        const parts = dateOnly.split('-');
-        year = parts[0] || '';
-        month = parts[1] || '';
-        day = parts[2] || '';
-        if (month.length === 1) month = '0' + month;
-        if (day.length === 1) day = '0' + day;
+      try {
+        const d = new Date(s.date_of_birth);
+        if (!isNaN(d.getTime())) {
+          year = String(d.getFullYear());
+          month = String(d.getMonth() + 1).padStart(2, '0');
+          day = String(d.getDate()).padStart(2, '0');
+        } else {
+          // Fallback if Date parsing somehow fails but string format aligns
+          const parts = String(s.date_of_birth).split('T')[0].split('-');
+          if (parts.length === 3) {
+            year = parts[0];
+            month = parts[1].padStart(2, '0');
+            day = parts[2].padStart(2, '0');
+          }
+        }
+      } catch (e) { }
     }
     setDobParts({ year, month, day });
-
     setForm({
       firstName: s.first_name,
       lastName: s.last_name,
@@ -305,244 +580,107 @@ export default function StudentsManager() {
       phone: s.phone,
       gender: s.gender || 'Male',
       dateOfBirth: s.date_of_birth,
-      classId: null,
-      studentNumber: ''
+      classId: null
     });
     setEditingId(s.id);
     setModalVisible(true);
-  };
+  }
+}
 
-  const renderItem = ({ item }: { item: Student }) => (
-    <View style={styles.studentCard}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.studentName}>{item.first_name} {item.last_name}</Text>
-        <Text style={styles.studentSub}>{item.registration_number || 'No Reg'}</Text>
-        <Text style={styles.studentMeta}>{item.email || 'No Email'}</Text>
-        {item.date_of_birth && (
-          <Text style={styles.studentMeta}>
-            DOB: {(() => {
-              const d = new Date(item.date_of_birth);
-              return isNaN(d.getTime()) ? item.date_of_birth : d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-            })()}
-          </Text>
-        )}
-      </View>
-      <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(item)}>
-        <Ionicons name="pencil" size={16} color="#0F172A" />
-      </TouchableOpacity>
-    </View>
-  );
-
-  const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: async () => {
-          await clearAllStorage();
-          router.replace('/');
-        }}
-      ]
-    );
-  };
-
-  const years = Array.from({ length: 100 }, (_, i) => String(new Date().getFullYear() - 2 - i));
-  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-  const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
-
+function DobPicker({ data, selected, onSelect, label }: any) {
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Students</Text>
-        <View style={{ flexDirection: 'row' }}>
-          <TouchableOpacity style={styles.smallBtn} onPress={downloadSampleCsv}>
-            <Ionicons name="download-outline" size={14} color="#0F172A" />
-            <Text style={styles.smallBtnText}> Template</Text>
+    <View style={styles.dobColumn}>
+      <Text style={styles.dobLabel}>{label}</Text>
+      <ScrollView style={styles.dobList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+        {data.map((item: any) => (
+          <TouchableOpacity
+            key={item}
+            style={[styles.dobItem, selected === item && styles.activeDobItem]}
+            onPress={() => onSelect(item)}
+          >
+            <Text style={[styles.dobItemText, selected === item && styles.activeDobItemText]}>{item}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.smallBtn, { backgroundColor: '#0F172A', marginLeft: 6 }]} onPress={pickAndUploadFile}>
-            <Ionicons name="cloud-upload-outline" size={14} color="#FACC15" />
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.addButton, { marginLeft: 6 }]} onPress={() => { setForm({gender: 'Male'}); setDobParts({year:'', month:'', day:''}); setEditingId(null); setModalVisible(true); }}>
-            <Ionicons name="add" size={20} color="#0F172A" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <FlatList
-        data={students.filter(s => {
-          const fullName = `${s.first_name || ''} ${s.last_name || ''}`.toLowerCase();
-          const regNum = (s.registration_number || '').toLowerCase();
-          const email = (s.email || '').toLowerCase();
-          const phone = (s.phone || '').toLowerCase();
-          const search = searchText.toLowerCase();
-          return fullName.includes(search) || regNum.includes(search) || email.includes(search) || phone.includes(search);
-        })}
-        keyExtractor={(i) => String(i.id)}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={renderItem}
-        refreshing={refreshing}
-        onRefresh={fetchStudents}
-        ListHeaderComponent={
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={16} color="#94A3B8" />
-            <TextInput placeholder="Search students..." style={styles.searchInput} placeholderTextColor="#94A3B8" value={searchText} onChangeText={setSearchText} />
-          </View>
-        }
-      />
-
-      <Modal animationType="slide" transparent={true} visible={modalVisible}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{editingId ? 'Edit Student' : 'Add New Student'}</Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              
-              <View style={styles.selectContainer}>
-                <Text style={styles.selectText}>Academic Session</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {academicSessions.map((s) => (
-                    <TouchableOpacity key={s} style={[styles.sessionChip, academicSession === s && styles.activeSessionChip]} onPress={() => setAcademicSession(s)}>
-                      <Text style={[styles.sessionChipText, academicSession === s && styles.activeSessionChipText]}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {!editingId && (
-                <View style={styles.selectContainer}>
-                  <Text style={styles.selectText}>Target Class</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {classes.map((c) => (
-                      <TouchableOpacity key={c.id} style={[styles.classChip, form.classId === c.id && styles.activeClassChip]} onPress={() => setForm({...form, classId: c.id})}>
-                        <Text style={[styles.classChipText, form.classId === c.id && styles.activeClassChipText]}>{c.display_name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-
-              <Text style={styles.label}>FIRST NAME</Text>
-              <TextInput style={styles.input} value={form.firstName} onChangeText={(t) => setForm({...form, firstName: t})} placeholder="e.g. John" />
-              
-              <Text style={styles.label}>LAST NAME</Text>
-              <TextInput style={styles.input} value={form.lastName} onChangeText={(t) => setForm({...form, lastName: t})} placeholder="e.g. Doe" />
-              
-              <Text style={styles.label}>EMAIL ADDRESS (OPTIONAL)</Text>
-              <TextInput style={styles.input} value={form.email} onChangeText={(t) => setForm({...form, email: t})} placeholder="john.doe@example.com" keyboardType="email-address" />
-              
-              <Text style={styles.label}>PHONE NUMBER</Text>
-              <TextInput style={styles.input} value={form.phone} onChangeText={(t) => setForm({...form, phone: t})} placeholder="e.g. +234..." keyboardType="phone-pad" />
-
-              <Text style={styles.label}>GENDER</Text>
-              <View style={styles.genderRow}>
-                {['Male', 'Female'].map((g) => (
-                  <TouchableOpacity 
-                    key={g}
-                    style={[styles.genderBtn, form.gender === g && styles.activeGender]} 
-                    onPress={() => setForm({...form, gender: g})}
-                  >
-                    <Text style={[styles.genderText, form.gender === g && styles.activeGenderText]}>{g}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>DATE OF BIRTH (YEAR - MONTH - DAY)</Text>
-              <View style={styles.dobRow}>
-                <View style={styles.dobPart}>
-                  <ScrollView style={styles.dobScroll} nestedScrollEnabled>
-                    {years.map(y => (
-                      <TouchableOpacity key={y} style={[styles.dobItem, dobParts.year === y && styles.activeDobItem]} onPress={() => setDobParts({...dobParts, year: y})}>
-                        <Text style={[styles.dobItemText, dobParts.year === y && styles.activeDobItemText]}>{y}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-                <View style={styles.dobPart}>
-                  <ScrollView style={styles.dobScroll} nestedScrollEnabled>
-                    {months.map(m => (
-                      <TouchableOpacity key={m} style={[styles.dobItem, dobParts.month === m && styles.activeDobItem]} onPress={() => setDobParts({...dobParts, month: m})}>
-                        <Text style={[styles.dobItemText, dobParts.month === m && styles.activeDobItemText]}>{m}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-                <View style={styles.dobPart}>
-                  <ScrollView style={styles.dobScroll} nestedScrollEnabled>
-                    {days.map(d => (
-                      <TouchableOpacity key={d} style={[styles.dobItem, dobParts.day === d && styles.activeDobItem]} onPress={() => setDobParts({...dobParts, day: d})}>
-                        <Text style={[styles.dobItemText, dobParts.day === d && styles.activeDobItemText]}>{d}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 25, marginBottom: 40 }}>
-                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#F1F5F9' }]} onPress={() => setModalVisible(false)}>
-                  <Text style={{ color: '#475569', fontWeight: '800' }}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#FACC15' }]} onPress={saveStudent} disabled={saving}>
-                  {saving ? <ActivityIndicator color="#0F172A" /> : <Text style={{ color: '#0F172A', fontWeight: '900' }}>{editingId ? 'Update' : 'Save Student'}</Text>}
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-      <Footer onLogout={handleLogout} />
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  header: { padding: 16, paddingTop: 50, backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  title: { fontSize: 20, fontWeight: '900', color: '#0F172A' },
-  addButton: { backgroundColor: '#FACC15', padding: 8, borderRadius: 12, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  
-  searchContainer: { flexDirection: 'row', backgroundColor: '#fff', marginBottom: 16, padding: 12, borderRadius: 15, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
-  searchInput: { marginLeft: 8, flex: 1, fontSize: 14, color: '#0F172A' },
-  
-  studentCard: { backgroundColor: '#fff', padding: 16, borderRadius: 20, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
-  studentName: { fontSize: 15, fontWeight: '900', color: '#1E293B' },
-  studentSub: { fontSize: 12, color: '#64748B', marginTop: 2, fontWeight: '600' },
-  studentMeta: { fontSize: 11, color: '#94A3B8', marginTop: 2 },
-  
-  iconBtn: { padding: 10, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#F1F5F9' },
-  smallBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F1F5F9' },
-  smallBtnText: { fontSize: 12, fontWeight: '900', color: '#0F172A' },
+const years = Array.from({ length: 50 }, (_, i) => String(new Date().getFullYear() - 2 - i));
+const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 35, borderTopRightRadius: 35, padding: 25, maxHeight: '90%' },
-  modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 20, color: '#0F172A', textAlign: 'center' },
-  label: { fontSize: 11, fontWeight: '900', color: '#64748B', marginBottom: 8, marginTop: 15, letterSpacing: 1 },
-  input: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', padding: 15, borderRadius: 15, marginBottom: 10, fontSize: 14, color: '#0F172A' },
-  
-  selectContainer: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', padding: 15, borderRadius: 15, marginBottom: 10 },
-  selectText: { fontSize: 14, color: '#0F172A', fontWeight: '600', marginBottom: 8 },
-  
-  sessionChip: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 8 },
-  activeSessionChip: { backgroundColor: '#0F172A', borderColor: '#0F172A' },
-  sessionChipText: { fontSize: 12, color: '#0F172A', fontWeight: '600' },
-  activeSessionChipText: { color: '#FACC15' },
-  
-  classChip: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 8 },
-  activeClassChip: { backgroundColor: '#2E7D32', borderColor: '#2E7D32' },
-  classChipText: { fontSize: 12, color: '#0F172A', fontWeight: '600' },
-  activeClassChipText: { color: '#fff' },
-  
-  genderRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  genderBtn: { flex: 1, padding: 15, borderRadius: 15, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
-  activeGender: { backgroundColor: '#0F172A', borderColor: '#0F172A' },
-  genderText: { fontWeight: '800', color: '#64748B' },
-  activeGenderText: { color: '#FACC15' },
-  
-  modalBtn: { flex: 1, padding: 18, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  
-  dobRow: { flexDirection: 'row', gap: 10, height: 150 },
-  dobPart: { flex: 1, backgroundColor: '#F8FAFC', borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
-  dobScroll: { flex: 1 },
-  dobItem: { paddingVertical: 12, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  activeDobItem: { backgroundColor: '#FACC15' },
-  dobItemText: { color: '#0F172A', fontSize: 13, fontWeight: '600' },
-  activeDobItemText: { color: '#0F172A', fontWeight: '900' },
+const styles = StyleSheet.create({
+  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent.navy },
+  loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+
+  hero: { height: 260, width: '100%' },
+  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 },
+  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
+
+  heroContent: { marginTop: 'auto', marginBottom: 20 },
+  heroSubtitle: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
+  heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+
+  searchSection: { paddingHorizontal: 24, marginTop: -25, marginBottom: 20 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 20, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
+  searchInput: { flex: 1, marginLeft: 12, color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+
+  listContent: { paddingHorizontal: 24, paddingBottom: 100 },
+  studentCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+  avatarContainer: { width: 50, height: 50, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+  avatarText: { color: Colors.accent.gold, fontSize: 16, fontWeight: '800' },
+  studentInfo: { flex: 1, marginLeft: 16 },
+  studentName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  studentSub: { fontSize: 12, color: '#94A3B8', fontWeight: '600' },
+  metaDivider: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)' },
+  studentEmail: { fontSize: 11, color: '#64748B', fontWeight: '500' },
+  alert: { marginBottom: 20 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+  modalSheet: { height: '90%', borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 24 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 },
+  modalTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
+  modalSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '700', letterSpacing: 1, marginTop: 4 },
+  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+
+  modalScroll: { paddingBottom: 60 },
+  formSection: { marginBottom: 32 },
+  sectionLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
+
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  classGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  sessionChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  classChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  activeSessionChip: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
+  activeClassChip: { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: Colors.accent.gold },
+  chipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  activeChipText: { color: Colors.accent.navy },
+
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 16, paddingHorizontal: 16, height: 55, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  inputIcon: { marginRight: 12 },
+  formInput: { flex: 1, color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+
+  genderSelect: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  genderOption: { flex: 1, height: 50, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.03)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  activeGender: { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: Colors.accent.gold },
+  genderBtnText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
+  activeGenderBtnText: { color: Colors.accent.gold },
+
+  dobGrid: { flexDirection: 'row', gap: 12, height: 180 },
+  dobColumn: { flex: 1 },
+  dobLabel: { color: '#64748B', fontSize: 10, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
+  dobList: { flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  dobItem: { paddingVertical: 12, alignItems: 'center' },
+  activeDobItem: { backgroundColor: 'rgba(255, 255, 255, 0.05)' },
+  dobItemText: { color: '#64748B', fontSize: 13, fontWeight: '600' },
+  activeDobItemText: { color: Colors.accent.gold, fontWeight: '900' },
+
+  modalActions: { marginTop: 10 }
 });

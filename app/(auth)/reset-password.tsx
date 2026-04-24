@@ -23,7 +23,18 @@ export default function SchoolResetPasswordScreen() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
 
     useEffect(() => {
         if (!email) {
@@ -33,23 +44,38 @@ export default function SchoolResetPasswordScreen() {
 
     const handleResetPassword = async () => {
         if (!password || !confirmPassword) {
-            setError('Please fill in all fields');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Validation Error',
+                message: 'Please fill in all fields'
+            });
             return;
         }
 
         const passwordValidation = validatePassword(password);
         if (!passwordValidation.isValid) {
-            setError(passwordValidation.errorMessage);
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Security Policy',
+                message: passwordValidation.errorMessage
+            });
             return;
         }
 
         if (password !== confirmPassword) {
-            setError('Passwords do not match');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Mismatch',
+                message: 'Passwords do not match'
+            });
             return;
         }
 
         setLoading(true);
-        setError('');
+        setStatusAlert({ ...statusAlert, visible: false });
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/reset-password`, {
@@ -63,23 +89,29 @@ export default function SchoolResetPasswordScreen() {
                 throw new Error(data.error || data.message || 'Failed to reset password');
             }
 
-            Alert.alert('Success', 'Administrator password reset successfully.', [
-                {
-                    text: 'OK',
-                    onPress: async () => {
-                        if (Platform.OS === 'web') {
-                            localStorage.removeItem('userToken');
-                            localStorage.removeItem('studentToken');
-                        } else {
-                            await SecureStore.deleteItemAsync('userToken');
-                            await SecureStore.deleteItemAsync('studentToken');
-                        }
-                        router.replace('/');
+            setStatusAlert({
+                visible: true,
+                type: 'success',
+                title: 'Success',
+                message: 'Administrator password reset successfully.',
+                onConfirm: async () => {
+                    if (Platform.OS === 'web') {
+                        localStorage.removeItem('userToken');
+                        localStorage.removeItem('studentToken');
+                    } else {
+                        await SecureStore.deleteItemAsync('userToken');
+                        await SecureStore.deleteItemAsync('studentToken');
                     }
+                    router.replace('/');
                 }
-            ]);
+            });
         } catch (error: any) {
-            setError(error.message || 'Failed to reset password');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Protocol Error',
+                message: error.message || 'Failed to reset password'
+            });
         } finally {
             setLoading(false);
         }
@@ -114,12 +146,13 @@ export default function SchoolResetPasswordScreen() {
                                 <Ionicons name="lock-closed" size={32} color="#FACC15" />
                             </View>
 
-                            {error && (
+                            {statusAlert.visible && (
                                 <CustomAlert
-                                    type="error"
-                                    title="Security Error"
-                                    message={error}
-                                    onClose={() => setError('')}
+                                    type={statusAlert.type}
+                                    title={statusAlert.title}
+                                    message={statusAlert.message}
+                                    onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                                    onConfirm={statusAlert.onConfirm}
                                     style={{ marginBottom: 20 }}
                                 />
                             )}
@@ -129,7 +162,7 @@ export default function SchoolResetPasswordScreen() {
                                 placeholder="Min. 8 characters"
                                 isPassword
                                 value={password}
-                                onChangeText={(v) => { setPassword(v); setError(''); }}
+                                onChangeText={(v) => { setPassword(v); setStatusAlert(prev => ({ ...prev, visible: false })); }}
                                 containerStyle={styles.inputContainer}
                             />
 
@@ -138,7 +171,7 @@ export default function SchoolResetPasswordScreen() {
                                 placeholder="Match password above"
                                 isPassword
                                 value={confirmPassword}
-                                onChangeText={(v) => { setConfirmPassword(v); setError(''); }}
+                                onChangeText={(v) => { setConfirmPassword(v); setStatusAlert(prev => ({ ...prev, visible: false })); }}
                                 containerStyle={styles.inputContainer}
                             />
 

@@ -3,16 +3,23 @@ import {
   View,
   ScrollView,
   ActivityIndicator,
-  StyleSheet,
   TouchableOpacity,
   Platform,
   FlatList,
   Modal,
   TextInput,
+  ImageBackground,
+  Dimensions,
+  StyleSheet,
 } from 'react-native';
+
+const { width } = Dimensions.get('window');
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { CustomButton } from '@/components/custom-button';
+import { CustomAlert } from '@/components/custom-alert';
+import { Colors } from '@/constants/design-system';
 import { API_BASE_URL } from '@/utils/api-service';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
@@ -91,6 +98,15 @@ export default function ReportViewScreen() {
     enrollmentId: number;
     studentName: string;
   } | null>(null);
+
+  // Premium design system state
+  const [activePortalModal, setActivePortalModal] = useState<'class' | 'session' | 'email' | null>(null);
+  const [statusAlert, setStatusAlert] = useState<{ visible: boolean; type: 'success' | 'error'; title: string; message: string }>({
+    visible: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
 
   // Fetch data based on mode
   useEffect(() => {
@@ -212,35 +228,10 @@ export default function ReportViewScreen() {
     try {
       const token = await getToken();
 
-      if (Platform.OS === 'ios') {
-        // iOS: Use Alert.prompt
-        Alert.prompt(
-          'Email Report Card',
-          `Enter email address to send the report card for ${studentName}:`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Send',
-              onPress: async (email) => {
-                if (!email || !email.includes('@')) {
-                  Alert.alert('Invalid Email', 'Please enter a valid email address.');
-                  return;
-                }
-                await sendEmailReport(enrollmentId, selectedTerm, selectedSession, email.trim(), token);
-                setStudentDownloadError(prev => ({ ...prev, [enrollmentId]: '✓ Emailed' }));
-              }
-            }
-          ],
-          'plain-text',
-          '', // default value
-          'email-address' // keyboard type
-        );
-      } else {
-        // Android/Web: Use modal
-        setCurrentEmailRequest({ enrollmentId, studentName });
-        setEmailInput('');
-        setEmailModalVisible(true);
-      }
+      // Android/Web/iOS: Use premium portal modal
+      setCurrentEmailRequest({ enrollmentId, studentName });
+      setEmailInput('');
+      setActivePortalModal('email');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Email setup failed';
       console.error(`Error setting up email for ${studentName}:`, err);
@@ -276,36 +267,67 @@ export default function ReportViewScreen() {
   // Handle email modal submission
   const handleEmailModalSubmit = async () => {
     if (!currentEmailRequest || !emailInput.trim()) {
-      Alert.alert('Error', 'Please enter a valid email address.');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Input Missing',
+        message: 'Please provide a destination email address.'
+      });
       return;
     }
 
     if (!emailInput.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Validation Error',
+        message: 'Please enter a valid school email address.'
+      });
       return;
     }
 
-    setEmailModalVisible(false);
+    setActivePortalModal(null);
 
     const token = await getToken();
     if (!token) {
-      Alert.alert('Error', 'Authentication required. Please login again.');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Session Expired',
+        message: 'Please login again to verify your credentials.'
+      });
       return;
     }
 
     setDownloadingStudentId(currentEmailRequest.enrollmentId);
 
     try {
-      await sendEmailReport(
-        currentEmailRequest.enrollmentId,
-        selectedTerm,
-        selectedSession,
-        emailInput.trim(),
-        token
-      );
-      setStudentDownloadError(prev => ({ ...prev, [currentEmailRequest.enrollmentId]: '✓ Emailed' }));
+      if (currentEmailRequest.enrollmentId === 0) {
+        await sendBulkEmailReports(emailInput.trim());
+      } else {
+        await sendEmailReport(
+          currentEmailRequest.enrollmentId,
+          selectedTerm,
+          selectedSession,
+          emailInput.trim(),
+          token
+        );
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Report Emailed',
+          message: `The report card for ${currentEmailRequest.studentName} has been sent successfully.`
+        });
+        setStudentDownloadError(prev => ({ ...prev, [currentEmailRequest.enrollmentId]: '✓ Emailed' }));
+      }
     } catch (emailError) {
       console.error('Email error:', emailError);
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Delivery Failed',
+        message: 'Unable to send the email at this time. Please check the address and try again.'
+      });
       setStudentDownloadError(prev => ({ ...prev, [currentEmailRequest.enrollmentId]: 'Email failed' }));
     } finally {
       setDownloadingStudentId(null);
@@ -319,49 +341,9 @@ export default function ReportViewScreen() {
       return;
     }
 
-    if (Platform.OS === 'ios') {
-      // iOS: Use Alert.prompt
-      Alert.prompt(
-        'Email All Report Cards',
-        `Enter email address to send all ${classData.length} report cards:`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Send All',
-            onPress: async (email) => {
-              if (!email || !email.includes('@')) {
-                Alert.alert('Invalid Email', 'Please enter a valid email address.');
-                return;
-              }
-              await sendBulkEmailReports(email.trim());
-            }
-          }
-        ],
-        'plain-text',
-        '', // default value
-        'email-address' // keyboard type
-      );
-    } else {
-      // Android/Web: Use modal - but for bulk, we'll use a simpler approach
-      // For now, just show an alert asking for email
-      Alert.prompt(
-        'Email All Report Cards',
-        `Enter email address to send all ${classData.length} report cards:`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Send All',
-            onPress: async (email) => {
-              if (!email || !email.includes('@')) {
-                Alert.alert('Invalid Email', 'Please enter a valid email address.');
-                return;
-              }
-              await sendBulkEmailReports(email.trim());
-            }
-          }
-        ]
-      );
-    }
+    setCurrentEmailRequest({ enrollmentId: 0, studentName: `All Students (${classData.length})` });
+    setEmailInput('');
+    setActivePortalModal('email');
   };
 
   const sendBulkEmailReports = async (email: string) => {
@@ -371,6 +353,7 @@ export default function ReportViewScreen() {
 
     try {
       const token = await getToken();
+      if (!token) throw new Error('Authorization required');
       let successCount = 0;
       let failedCount = 0;
 
@@ -387,12 +370,27 @@ export default function ReportViewScreen() {
       }
 
       if (failedCount === 0) {
-        setDownloadError(`✓ Successfully emailed ${successCount} PDF(s)`);
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Bulk Email Complete',
+          message: `All ${successCount} report cards have been successfully dispatched.`
+        });
       } else {
-        setDownloadError(`Emailed ${successCount} PDF(s). Failed: ${failedCount}`);
+        setStatusAlert({
+          visible: true,
+          type: 'error',
+          title: 'Partial Success',
+          message: `Dispatched ${successCount} reports, but ${failedCount} deliveries failed.`
+        });
       }
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : 'Failed to email PDFs');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Bulk Process Failed',
+        message: err instanceof Error ? err.message : 'An error occurred during bulk processing.'
+      });
     } finally {
       setDownloadingAll(false);
       setDownloadProgress({ current: 0, total: 0 });
@@ -416,8 +414,10 @@ export default function ReportViewScreen() {
   const renderStudentReport = () => {
     if (studentData.length === 0) {
       return (
-        <View style={styles.emptyContainer}>
-          <ThemedText style={styles.emptyText}>No scores available for this student</ThemedText>
+        <View style={styles.emptyState}>
+          <Ionicons name="document-text-outline" size={64} color="rgba(255,255,255,0.1)" />
+          <ThemedText style={styles.emptyTitle}>No Records Found</ThemedText>
+          <ThemedText style={styles.emptySubtitle}>No academic performance data is available for this student in the selected term.</ThemedText>
         </View>
       );
     }
@@ -426,86 +426,52 @@ export default function ReportViewScreen() {
       <View>
         {studentData.map((subject, index) => (
           <View key={index} style={styles.subjectCard}>
-            {/* Subject Header */}
             <View style={styles.subjectHeader}>
-              <View>
-                <ThemedText style={styles.subjectName}>{subject.subject_name}</ThemedText>
-              </View>
-              <View
-                style={[
-                  styles.totalScoreBadge,
-                  {
-                    backgroundColor: getPerformanceColor(
-                      subject.student_total,
-                      subject.class_average || 0
-                    ),
-                  },
-                ]}
-              >
-                <ThemedText style={styles.totalScoreText}>
-                  {subject.student_total}
-                </ThemedText>
+              <ThemedText style={styles.subjectTitle}>{subject.subject_name}</ThemedText>
+              <View style={styles.scoreBadge}>
+                <ThemedText style={styles.scoreBadgeText}>{subject.student_total}</ThemedText>
               </View>
             </View>
 
-            {/* Individual Scores Grid */}
-            <View style={styles.scoresGrid}>
-              <View style={styles.scoreItem}>
-                <ThemedText style={styles.scoreLabel}>CA1</ThemedText>
-                <ThemedText style={styles.scoreValue}>{subject.ca1_score}</ThemedText>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <ThemedText style={styles.statLabel}>CA1</ThemedText>
+                <ThemedText style={styles.statValue}>{subject.ca1_score || 0}</ThemedText>
               </View>
-              <View style={styles.scoreItem}>
-                <ThemedText style={styles.scoreLabel}>CA2</ThemedText>
-                <ThemedText style={styles.scoreValue}>{subject.ca2_score}</ThemedText>
+              <View style={styles.statItem}>
+                <ThemedText style={styles.statLabel}>CA2</ThemedText>
+                <ThemedText style={styles.statValue}>{subject.ca2_score || 0}</ThemedText>
               </View>
-              <View style={styles.scoreItem}>
-                <ThemedText style={styles.scoreLabel}>CA3</ThemedText>
-                <ThemedText style={styles.scoreValue}>{subject.ca3_score}</ThemedText>
+              <View style={styles.statItem}>
+                <ThemedText style={styles.statLabel}>CA3</ThemedText>
+                <ThemedText style={styles.statValue}>{subject.ca3_score || 0}</ThemedText>
               </View>
-              <View style={styles.scoreItem}>
-                <ThemedText style={styles.scoreLabel}>CA4</ThemedText>
-                <ThemedText style={styles.scoreValue}>{subject.ca4_score}</ThemedText>
+              <View style={styles.statItem}>
+                <ThemedText style={styles.statLabel}>CA4</ThemedText>
+                <ThemedText style={styles.statValue}>{subject.ca4_score || 0}</ThemedText>
               </View>
-              <View style={styles.scoreItem}>
-                <ThemedText style={styles.scoreLabel}>Exam</ThemedText>
-                <ThemedText style={styles.scoreValue}>{subject.exam_score}</ThemedText>
+              <View style={styles.statItem}>
+                <ThemedText style={styles.statLabel}>EXAM</ThemedText>
+                <ThemedText style={styles.statValue}>{subject.exam_score || 0}</ThemedText>
               </View>
             </View>
 
-            {/* Class Average Comparison */}
-            {subject.class_average !== undefined && subject.class_average !== null && (
+            {subject.class_average !== undefined && (
               <View style={styles.comparisonContainer}>
                 <View style={styles.comparisonRow}>
-                  <ThemedText style={styles.comparisonLabel}>Your Score:</ThemedText>
+                  <ThemedText style={styles.comparisonLabel}>Student Rank Score</ThemedText>
                   <ThemedText style={styles.comparisonValue}>{Number(subject.student_total).toFixed(1)}</ThemedText>
                 </View>
                 <View style={styles.comparisonRow}>
-                  <ThemedText style={styles.comparisonLabel}>Class Average:</ThemedText>
+                  <ThemedText style={styles.comparisonLabel}>Class Average</ThemedText>
                   <ThemedText style={styles.comparisonValue}>{Number(subject.class_average).toFixed(1)}</ThemedText>
                 </View>
                 <View style={styles.comparisonRow}>
-                  <ThemedText style={styles.comparisonLabel}>Difference:</ThemedText>
-                  <ThemedText
-                    style={[
-                      styles.comparisonValue,
-                      {
-                        color:
-                          Number(subject.student_total) >= Number(subject.class_average)
-                            ? '#4CAF50'
-                            : '#F44336',
-                      },
-                    ]}
-                  >
+                  <ThemedText style={styles.comparisonLabel}>Performance Margin</ThemedText>
+                  <ThemedText style={[styles.comparisonValue, { color: Number(subject.student_total) >= Number(subject.class_average) ? '#22C55E' : '#EF4444' }]}>
                     {(Number(subject.student_total) - Number(subject.class_average)).toFixed(1)}
                   </ThemedText>
                 </View>
-              </View>
-            )}
-            {(!subject.class_average || subject.class_average === undefined) && (
-              <View style={[styles.comparisonContainer, { backgroundColor: '#f0f0f0', borderLeftColor: '#999' }]}>
-                <ThemedText style={{ fontSize: 12, color: '#666', textAlign: 'center' }}>
-                  No class comparison data available
-                </ThemedText>
               </View>
             )}
           </View>
@@ -517,8 +483,10 @@ export default function ReportViewScreen() {
   const renderClassReport = () => {
     if (classData.length === 0) {
       return (
-        <View style={styles.emptyContainer}>
-          <ThemedText style={styles.emptyText}>No student data available for this class</ThemedText>
+        <View style={styles.emptyState}>
+          <Ionicons name="people-outline" size={64} color="rgba(255,255,255,0.1)" />
+          <ThemedText style={styles.emptyTitle}>Class List Empty</ThemedText>
+          <ThemedText style={styles.emptySubtitle}>No records found for the selected class and session.</ThemedText>
         </View>
       );
     }
@@ -527,82 +495,52 @@ export default function ReportViewScreen() {
       <View>
         {classData.map((student, studentIndex) => (
           <View key={studentIndex} style={styles.studentCard}>
-            {/* Student Header with Rank */}
             <View style={styles.studentHeader}>
-              <View style={styles.studentNameContainer}>
-                <View
-                  style={[
-                    styles.rankBadge,
-                    { backgroundColor: getRankColor(student.rank) },
-                  ]}
-                >
-                  <ThemedText style={styles.rankText}>{student.rank}</ThemedText>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.studentName}>{student.name}</ThemedText>
-                  <ThemedText style={styles.grandTotal}>
-                    Total: {student.grand_total}
-                  </ThemedText>
-                </View>
+              <View style={[styles.rankBadge, { backgroundColor: getRankColor(student.rank), borderColor: 'rgba(255,255,255,0.1)' }]}>
+                <ThemedText style={[styles.rankText, { color: student.rank <= 3 ? '#1E293B' : '#FFFFFF' }]}>{student.rank}</ThemedText>
+              </View>
+              <View style={styles.nameStack}>
+                <ThemedText style={styles.studentName}>{student.name}</ThemedText>
+                <ThemedText style={styles.totalPoints}>TOTAL: {student.grand_total} POINTS</ThemedText>
               </View>
             </View>
 
-            {/* Subject Breakdown */}
             <View style={styles.subjectsContainer}>
               {student.subjects.map((subject, subjectIndex) => (
                 <View key={subjectIndex} style={styles.subjectRow}>
                   <View style={styles.subjectInfo}>
                     <ThemedText style={styles.subjectNameSmall}>{subject.subject}</ThemedText>
-                    <ThemedText style={styles.scoreBreakdown}>
-                      {subject.ca1_score + subject.ca2_score + subject.ca3_score + subject.ca4_score} + {subject.exam_score}
-                    </ThemedText>
+                    <ThemedText style={styles.scoreBreakdown}>CA: {subject.ca1_score + subject.ca2_score + subject.ca3_score + subject.ca4_score} • EXAM: {subject.exam_score}</ThemedText>
                   </View>
                   <View style={styles.subjectScoreContainer}>
-                    <View
-                      style={[
-                        styles.subjectScoreBadge,
-                        {
-                          backgroundColor: getPerformanceColor(
-                            subject.subject_total,
-                            Number(subject.subject_class_average) || 0
-                          ),
-                        },
-                      ]}
-                    >
-                      <ThemedText style={styles.subjectScoreText}>
+                    <View style={[styles.subjectScoreBadge, { backgroundColor: getPerformanceColor(subject.subject_total, Number(subject.subject_class_average) || 0) + '20' }]}>
+                      <ThemedText style={[styles.subjectScoreText, { color: getPerformanceColor(subject.subject_total, Number(subject.subject_class_average) || 0) }]}>
                         {subject.subject_total}
                       </ThemedText>
                     </View>
-                    <ThemedText style={styles.subjectAverage}>
-                      avg: {Number(subject.subject_class_average || 0).toFixed(0)}
-                    </ThemedText>
+                    <ThemedText style={styles.subjectAverage}>AVG: {Number(subject.subject_class_average || 0).toFixed(0)}</ThemedText>
                   </View>
                 </View>
               ))}
             </View>
 
-            {/* Individual Download Button */}
-            <TouchableOpacity
-              style={[styles.individualDownloadButton, downloadingStudentId === student.enrollment_id && styles.downloadButtonDisabledIndividual]}
+            <TouchableOpacity 
+              style={styles.individualDownloadButton}
               onPress={() => emailStudentPDF(student.enrollment_id, student.name)}
               disabled={downloadingStudentId === student.enrollment_id}
             >
               {downloadingStudentId === student.enrollment_id ? (
-                <>
-                  <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-                  <ThemedText style={styles.individualDownloadButtonText}>Downloading...</ThemedText>
-                </>
+                <ActivityIndicator size="small" color={Colors.accent.gold} />
               ) : (
                 <>
-                  <Ionicons name="download" size={16} color="#fff" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.individualDownloadButtonText}>Download</ThemedText>
+                  <Ionicons name="mail-outline" size={18} color="#FFFFFF" />
+                  <ThemedText style={styles.individualDownloadButtonText}>Email Report</ThemedText>
                 </>
               )}
             </TouchableOpacity>
 
-            {/* Individual Download Status */}
             {studentDownloadError[student.enrollment_id] && (
-              <ThemedText style={[styles.studentDownloadStatus, studentDownloadError[student.enrollment_id].startsWith('✓') && styles.downloadStatusSuccess]}>
+              <ThemedText style={[styles.studentDownloadStatus, { color: studentDownloadError[student.enrollment_id].includes('✓') ? '#22C55E' : '#EF4444' }]}>
                 {studentDownloadError[student.enrollment_id]}
               </ThemedText>
             )}
@@ -612,794 +550,334 @@ export default function ReportViewScreen() {
     );
   };
 
-  return (
-    <ThemedView style={styles.container}>
-      {/* Header */}
-      <LinearGradient colors={['#2196F3', '#1976D2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={28} color="#fff" />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <ThemedText style={styles.headerTitle}>
-              {mode === 'student' ? 'Student Report' : 'Class Report'}
-            </ThemedText>
-            <ThemedText style={styles.headerSubtitle}>{reportName || 'Select a class'}</ThemedText>
-          </View>
-        </View>
-      </LinearGradient>
+  const renderPortalModal = () => {
+    let data: any[] = [];
+    let title = '';
+    let currentId: any = null;
+    let onSelect = (item: any) => {};
 
-      {/* Class/Session/Term Selector for Student Mode - Allow selection before loading report */}
-      {mode === 'student' && !reportId && (
-        <View style={styles.studentSelectorContainer}>
-          <ThemedText style={styles.selectorTitle}>Select Student Report Filters</ThemedText>
-          
-          {/* Class Selector */}
-          <View style={styles.filterGroup}>
-            <ThemedText style={styles.filterLabel}>📚 Class:</ThemedText>
-            <TouchableOpacity
-              style={styles.classSelectorButton}
-              onPress={() => {
-                console.log('🔽 Opening class dropdown, classes:', classes);
-                setShowClassDropdown(true);
-              }}
-            >
-              <ThemedText style={styles.classSelectorButtonText}>
-                {selectedClass ? selectedClass.display_name : '📋 Choose a class...'}
+    if (activePortalModal === 'class') {
+      data = classes;
+      title = 'Select Class';
+      currentId = selectedClass?.id;
+      onSelect = (item) => setSelectedClass(item);
+    } else if (activePortalModal === 'session') {
+      data = sessions.map(s => ({ id: s.id, name: s.session_name }));
+      title = 'Academic Year';
+      currentId = Number(selectedSession);
+      onSelect = (item) => setSelectedSession(String(item.id));
+    }
+
+    if (activePortalModal === 'email') {
+      return (
+        <Modal visible transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <ThemedText style={styles.modalTitle}>Email Report Card</ThemedText>
+              <ThemedText style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 24, textAlign: 'center' }}>
+                Enter the recipient email address for {currentEmailRequest?.studentName}'s official report.
               </ThemedText>
-              <Ionicons name="chevron-down" size={20} color="#2196F3" />
-            </TouchableOpacity>
-          </View>
+              
+              <TextInput
+                style={styles.emailInput}
+                placeholder="recipient@example.com"
+                placeholderTextColor="rgba(255,255,255,0.2)"
+                value={emailInput}
+                onChangeText={setEmailInput}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
 
-          {/* Term Selector */}
-          <View style={styles.filterGroup}>
-            <ThemedText style={styles.filterLabel}>📝 Term:</ThemedText>
-            <View style={styles.filterOptions}>
-              {['1', '2'].map((term) => (
-                <TouchableOpacity
-                  key={term}
-                  style={[styles.filterButton, selectedTerm === term && styles.activeFilter]}
-                  onPress={() => setSelectedTerm(term)}
-                >
-                  <ThemedText
-                    style={[
-                      styles.filterButtonText,
-                      selectedTerm === term && styles.activeFilterText,
-                    ]}
-                  >
-                    T{term}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <CustomButton 
+                  title="Cancel" 
+                  onPress={() => setActivePortalModal(null)} 
+                  style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)' }} 
+                />
+                <CustomButton 
+                  title="Send Now" 
+                  variant="premium"
+                  onPress={handleEmailModalSubmit} 
+                  style={{ flex: 1 }} 
+                />
+              </View>
             </View>
           </View>
+        </Modal>
+      );
+    }
 
-          {/* Session/Academic Year Selector */}
-          {sessions.length > 0 && (
-            <View style={styles.filterGroup}>
-              <ThemedText style={styles.filterLabel}>📅 Academic Year:</ThemedText>
-              <TouchableOpacity
-                style={styles.sessionDropdownButton}
-                onPress={() => setShowSessionDropdown(true)}
-              >
-                <ThemedText style={styles.sessionDropdownButtonText}>
-                  {sessions.find((s: any) => String(s.id) === selectedSession)?.session_name || 'Select year...'}
-                </ThemedText>
-                <Ionicons name="chevron-down" size={20} color="#2196F3" />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Load Student Report Button */}
-          {selectedClass && (
-            <TouchableOpacity
-              style={styles.loadStudentReportButton}
-              onPress={() => {
-                console.log('📊 Loading student report with class:', selectedClass);
-                setReportId(String(selectedClass.id));
-                setReportName(selectedClass.display_name);
-                fetchReportData();
-              }}
-            >
-              <Ionicons name="document-text" size={18} color="#fff" style={{ marginRight: 8 }} />
-              <ThemedText style={styles.loadStudentReportButtonText}>Load My Report</ThemedText>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Class Selector for Class Mode without ID */}
-      {mode === 'class' && !reportId && (
-        <View style={styles.classSelectorContainer}>
-          <ThemedText style={styles.classSelectorLabel}>Select a Class: ({classes.length} available)</ThemedText>
-          <TouchableOpacity
-            style={styles.classSelectorButton}
-            onPress={() => {
-              console.log('🔽 Opening class dropdown, classes:', classes);
-              setShowClassDropdown(true);
-            }}
-          >
-            <ThemedText style={styles.classSelectorButtonText}>
-              {selectedClass ? selectedClass.display_name : '📋 Choose a class...'}
-            </ThemedText>
-            <Ionicons name="chevron-down" size={20} color="#2196F3" />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Class Dropdown Modal */}
+    return (
       <Modal
-        visible={showClassDropdown}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowClassDropdown(false)}
+        visible={activePortalModal !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setActivePortalModal(null)}
       >
-        <View style={styles.dropdownOverlay}>
-          <View style={styles.dropdownModal}>
-            <View style={styles.dropdownHeader}>
-              <ThemedText style={styles.dropdownTitle}>Select Class</ThemedText>
-              <TouchableOpacity onPress={() => setShowClassDropdown(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setActivePortalModal(null)}
+        >
+          <View style={styles.modalContent}>
+            <ThemedText style={styles.modalTitle}>{title}</ThemedText>
             <FlatList
-              data={classes}
+              data={data}
               keyExtractor={(item) => String(item.id)}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[
-                    styles.dropdownItem,
-                    selectedClass?.id === item.id && styles.dropdownItemSelected,
-                  ]}
+                  style={[styles.dropdownItem, currentId === item.id && styles.dropdownItemSelected]}
                   onPress={() => {
-                    setSelectedClass(item);
-                    // Don't close dropdown - user can search for another class
-                    console.log('✓ Selected class:', item);
+                    onSelect(item);
+                    setActivePortalModal(null);
                   }}
                 >
-                  <ThemedText
-                    style={[
-                      styles.dropdownItemText,
-                      selectedClass?.id === item.id && styles.dropdownItemTextSelected,
-                    ]}
-                  >
-                    {item.display_name}
+                  <ThemedText style={[styles.dropdownItemText, currentId === item.id && styles.dropdownItemTextSelected]}>
+                    {item.display_name || item.name}
                   </ThemedText>
-                  {selectedClass?.id === item.id && (
-                    <Ionicons name="checkmark" size={20} color="#2196F3" />
-                  )}
+                  {currentId === item.id && <Ionicons name="checkmark-circle" size={20} color={Colors.accent.gold} />}
                 </TouchableOpacity>
               )}
             />
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
+    );
+  };
 
-      {/* Filter Controls */}
-      <View style={styles.filterContainer}>
-        <View style={styles.filterGroup}>
-          <ThemedText style={styles.filterLabel}>Term:</ThemedText>
-          <View style={styles.filterOptions}>
-            {['1', '2'].map((term) => (
-              <TouchableOpacity
-                key={term}
-                style={[styles.filterButton, selectedTerm === term && styles.activeFilter]}
-                onPress={() => setSelectedTerm(term)}
-              >
-                <ThemedText
-                  style={[
-                    styles.filterButtonText,
-                    selectedTerm === term && styles.activeFilterText,
-                  ]}
-                >
-                  T{term}
-                </ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {sessions.length > 0 && (
-          <View style={styles.filterGroup}>
-            <ThemedText style={styles.filterLabel}>Academic Year:</ThemedText>
-            <TouchableOpacity
-              style={styles.sessionDropdownButton}
-              onPress={() => setShowSessionDropdown(true)}
-            >
-              <ThemedText
-                style={styles.sessionDropdownButtonText}>
-                {sessions.find((s) => String(s.id) === selectedSession)?.session_name || 'Select year...'}
-              </ThemedText>
-              <Ionicons name="chevron-down" size={20} color="#2196F3" />
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-
-      {/* New Report Button - When Results Displayed */}
-      {reportId && !loading && !error && (
-        <View style={styles.newReportButtonContainer}>
-          <TouchableOpacity
-            style={styles.newReportButton}
-            onPress={() => {
-              console.log('🔄 Starting new report request');
-              setReportId(null);
-              setSelectedClass(null);
-              setStudentData([]);
-              setClassData([]);
-              setError('');
-            }}
+  return (
+    <ThemedView style={styles.mainWrapper}>
+      <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false}>
+        {/* Premium Hero Header */}
+        <ImageBackground
+          source={{ uri: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070' }}
+          style={styles.hero}
+        >
+          <LinearGradient
+            colors={['transparent', Colors.accent.navy]}
+            style={styles.heroOverlay}
           >
-            <Ionicons name="refresh" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <ThemedText style={styles.newReportButtonText}>New Report</ThemedText>
-          </TouchableOpacity>
-        </View>
-      )}
+            <View style={styles.header}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => router.back()}
+              >
+                <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                <TouchableOpacity 
+                  style={styles.actionIcon}
+                  onPress={() => {
+                    setReportId(null);
+                    setSelectedClass(null);
+                    setStudentData([]);
+                    setClassData([]);
+                    setError('');
+                  }}
+                >
+                  <Ionicons name="refresh" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-      {/* Session Dropdown Modal */}
-      <Modal
-        visible={showSessionDropdown}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowSessionDropdown(false)}
-      >
-        <View style={styles.dropdownOverlay}>
-          <View style={styles.dropdownModal}>
-            <View style={styles.dropdownHeader}>
-              <ThemedText style={styles.dropdownTitle}>Select Academic Year</ThemedText>
-              <TouchableOpacity onPress={() => setShowSessionDropdown(false)}>
-                <Ionicons name="close" size={24} color="#333" />
+            <View style={styles.heroContent}>
+              <ThemedText style={styles.heroSubtitle}>ACADEMIC INSIGHTS</ThemedText>
+              <ThemedText style={styles.heroTitle}>
+                {mode === 'student' ? 'Progress Report' : 'Class Analytics'}
+              </ThemedText>
+            </View>
+          </LinearGradient>
+        </ImageBackground>
+
+        {/* Dynamic Filters Section */}
+        <View style={styles.contentWrapper}>
+          <View style={styles.glassCard}>
+            <View style={styles.filterRow}>
+              <View style={styles.filterItem}>
+                <ThemedText style={styles.label}>Academic Term</ThemedText>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['1', '2'].map((term) => (
+                    <TouchableOpacity
+                      key={term}
+                      style={[styles.termOption, selectedTerm === term && styles.termOptionSelected]}
+                      onPress={() => setSelectedTerm(term)}
+                    >
+                      <ThemedText style={[styles.termText, selectedTerm === term && styles.termTextSelected]}>
+                        T{term}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              
+              <View style={styles.filterItem}>
+                <ThemedText style={styles.label}>Academic Year</ThemedText>
+                <TouchableOpacity 
+                  style={styles.pickerButton}
+                  onPress={() => setActivePortalModal('session')}
+                >
+                  <ThemedText style={styles.pickerText}>
+                    {sessions.find((s: any) => String(s.id) === selectedSession)?.session_name || 'Select'}
+                  </ThemedText>
+                  <Ionicons name="chevron-down" size={16} color={Colors.accent.gold} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={{ marginBottom: 20 }}>
+              <ThemedText style={styles.label}>Target Class</ThemedText>
+              <TouchableOpacity 
+                style={styles.pickerButton}
+                onPress={() => setActivePortalModal('class')}
+              >
+                <ThemedText style={selectedClass ? styles.pickerText : styles.placeholderText}>
+                  {selectedClass ? selectedClass.display_name : 'Choose a class...'}
+                </ThemedText>
+                <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={sessions}
-              keyExtractor={(item: any) => String(item.id)}
-              renderItem={({ item }: { item: any }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.dropdownItem,
-                    selectedSession === String(item.id) && styles.dropdownItemSelected,
-                  ]}
-                  onPress={() => {
-                    setSelectedSession(String(item.id));
-                    setShowSessionDropdown(false);
-                  }}
-                >
-                  <ThemedText
-                    style={[
-                      styles.dropdownItemText,
-                      selectedSession === String(item.id) && styles.dropdownItemTextSelected,
-                    ]}
-                  >
-                    {item.session_name}
-                  </ThemedText>
-                  {selectedSession === String(item.id) && (
-                    <Ionicons name="checkmark" size={20} color="#2196F3" />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
 
-      {/* Load Results Button - Only for Class Mode when class is selected */}
-      {mode === 'class' && !reportId && selectedClass && (
-        <View style={styles.loadResultsContainer}>
-          <TouchableOpacity
-            style={styles.loadResultsButton}
-            onPress={() => {
-              console.log('📊 Loading report for class:', selectedClass);
-              setReportId(String(selectedClass.id));
-              setReportName(selectedClass.display_name);
-              fetchReportData();
-            }}
-          >
-            <ThemedText style={styles.loadResultsButtonText}>Load Results</ThemedText>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Loading State */}
-      {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2196F3" />
-          <ThemedText style={styles.loadingText}>Loading report data...</ThemedText>
-        </View>
-      )}
-
-      {/* Error State */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={40} color="#F44336" />
-          <ThemedText style={styles.errorText}>{error}</ThemedText>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchReportData}>
-            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Email All PDFs Button - Class Mode Only */}
-      {mode === 'class' && reportId && !loading && !error && classData.length > 0 && (
-        <View style={styles.downloadAllContainer}>
-          <TouchableOpacity
-            style={[styles.downloadAllButton, downloadingAll && styles.downloadAllButtonDisabled]}
-            onPress={emailAllPDFs}
-            disabled={downloadingAll}
-          >
-            {downloadingAll ? (
-              <View style={styles.downloadProgressView}>
-                <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-                <ThemedText style={styles.downloadAllButtonText}>
-                  Downloading {downloadProgress.current}/{downloadProgress.total}...
-                </ThemedText>
-              </View>
-            ) : (
-              <View style={styles.downloadButtonContent}>
-                <Ionicons name="download" size={18} color="#fff" style={{ marginRight: 8 }} />
-                <ThemedText style={styles.downloadAllButtonText}>
-                  Email All PDFs ({classData.length})
-                </ThemedText>
-              </View>
+            {!reportId && (
+              <CustomButton
+                title={loading ? "Analyzing Data..." : "Generate Insights"}
+                onPress={fetchReportData}
+                loading={loading}
+                disabled={!selectedClass}
+                variant="premium"
+                icon={<Ionicons name="analytics-outline" size={20} color={Colors.accent.navy} style={{ marginRight: 8 }} />}
+              />
             )}
-          </TouchableOpacity>
-          {downloadError && (
-            <ThemedText
-              style={[
-                styles.downloadStatusText,
-                downloadError.startsWith('✓') ? styles.downloadSuccess : styles.downloadWarning,
-              ]}
-            >
-              {downloadError}
-            </ThemedText>
+          </View>
+
+          {/* Bulk Actions */}
+          {mode === 'class' && reportId && !loading && classData.length > 0 && (
+            <CustomButton
+              title={downloadingAll ? `Emailing (${downloadProgress.current}/${downloadProgress.total})` : `Email All Reports (${classData.length})`}
+              onPress={emailAllPDFs}
+              loading={downloadingAll}
+              variant="premium"
+              style={styles.downloadAllButton}
+              icon={<Ionicons name="mail-unread-outline" size={24} color={Colors.accent.navy} style={{ marginRight: 12 }} />}
+            />
+          )}
+
+          {/* Main Content Area */}
+          {loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color={Colors.accent.gold} />
+              <ThemedText style={{ marginTop: 24, color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 2 }}>PREPARING REPORT DATA...</ThemedText>
+            </View>
+          ) : error ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+              <ThemedText style={styles.emptyTitle}>Analysis Interrupted</ThemedText>
+              <ThemedText style={styles.emptySubtitle}>{error}</ThemedText>
+              <CustomButton title="Retry Analysis" onPress={fetchReportData} style={{ marginTop: 20 }} />
+            </View>
+          ) : (
+            <View>
+              {mode === 'student' ? renderStudentReport() : renderClassReport()}
+            </View>
           )}
         </View>
+      </ScrollView>
+
+      {/* Auxiliary Components */}
+      {renderPortalModal()}
+      
+      {statusAlert.visible && (
+        <CustomAlert
+          type={statusAlert.type}
+          title={statusAlert.title}
+          message={statusAlert.message}
+          onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+          style={styles.alert}
+        />
       )}
-
-      {/* Report Content */}
-      {!loading && !error && (
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 30 }}>
-          {mode === 'student' ? renderStudentReport() : renderClassReport()}
-        </ScrollView>
-      )}
-
-      {/* Email Modal for Android/Web */}
-      <Modal
-        visible={emailModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setEmailModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <ThemedText style={styles.modalTitle}>Email Report Card</ThemedText>
-            <ThemedText style={styles.modalSubtitle}>
-              Enter email address to send the report card for {currentEmailRequest?.studentName}
-            </ThemedText>
-
-            <TextInput
-              style={styles.emailInput}
-              placeholder="Enter email address"
-              value={emailInput}
-              onChangeText={setEmailInput}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setEmailModalVisible(false)}
-              >
-                <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.sendButton]}
-                onPress={handleEmailModalSubmit}
-              >
-                <ThemedText style={styles.sendButtonText}>Send</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 20,
-    paddingHorizontal: 16,
-    gap: 16,
-  },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  headerSubtitle: { fontSize: 13, color: '#E3F2FD', marginTop: 4 },
-  filterContainer: { paddingHorizontal: 16, paddingVertical: 16, backgroundColor: '#f5f5f5' },
-  filterGroup: { marginBottom: 12 },
-  filterLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8, color: '#333' },
-  filterOptions: { flexDirection: 'row', gap: 8 },
-  filterButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  activeFilter: { backgroundColor: '#2196F3', borderColor: '#2196F3' },
-  filterButtonText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  activeFilterText: { color: '#fff' },
-  sessionPicker: { flexDirection: 'row', gap: 8 },
-  sessionOption: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  activeSession: { backgroundColor: '#2196F3', borderColor: '#2196F3' },
-  sessionText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  activeSessionText: { color: '#fff' },
-  sessionDropdownButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  sessionDropdownButtonText: { fontSize: 13, fontWeight: '600', color: '#333' },
-  loadResultsContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  loadResultsButton: {
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadResultsButtonText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  newReportButtonContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  newReportButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-    borderRadius: 8,
-    backgroundColor: '#FF9800',
-  },
-  newReportButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  content: { flex: 1, padding: 16 },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: { marginTop: 12, fontSize: 14, color: '#666' },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: { marginTop: 16, fontSize: 14, textAlign: 'center', color: '#F44336' },
-  retryButton: {
-    marginTop: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    backgroundColor: '#2196F3',
-    borderRadius: 8,
-  },
-  retryButtonText: { color: '#fff', fontWeight: '600' },
-  emptyContainer: { justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyText: { fontSize: 14, color: '#999', textAlign: 'center' },
+  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
+  hero: { height: 280, width: '100%' },
+  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', gap: 12 },
+  actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  heroContent: { marginTop: 'auto', marginBottom: 20 },
+  heroSubtitle: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
+  heroTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
-  // Student Report Styles
-  subjectCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  subjectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  subjectName: { fontSize: 15, fontWeight: '700', color: '#333' },
-  totalScoreBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    minWidth: 50,
-    alignItems: 'center',
-  },
-  totalScoreText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  scoresGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    backgroundColor: '#f9f9f9',
-    padding: 10,
-    borderRadius: 8,
-  },
-  scoreItem: { alignItems: 'center', flex: 1 },
-  scoreLabel: { fontSize: 11, fontWeight: '600', color: '#666', marginBottom: 4 },
-  scoreValue: { fontSize: 14, fontWeight: '700', color: '#2196F3' },
-  comparisonContainer: {
-    backgroundColor: '#f0f8ff',
-    padding: 10,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#2196F3',
-  },
-  comparisonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  comparisonLabel: { fontSize: 12, fontWeight: '600', color: '#555' },
-  comparisonValue: { fontSize: 13, fontWeight: '700', color: '#2196F3' },
+  contentWrapper: { paddingHorizontal: 24, marginTop: -30 },
+  glassCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: 24 },
+  label: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
+  
+  filterRow: { flexDirection: 'row', gap: 16, marginBottom: 20 },
+  filterItem: { flex: 1 },
+  termOption: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', flex: 1, alignItems: 'center' },
+  termOptionSelected: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
+  termText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  termTextSelected: { color: Colors.accent.navy },
 
-  // Class Report Styles
-  studentCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  studentHeader: { marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  studentNameContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rankBadge: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  rankText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  studentName: { fontSize: 15, fontWeight: '700', color: '#333' },
-  grandTotal: { fontSize: 12, color: '#666', marginTop: 2 },
-  subjectsContainer: { gap: 8 },
-  subjectRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-    padding: 10,
-    borderRadius: 8,
-  },
-  subjectInfo: { flex: 1 },
-  subjectNameSmall: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 2 },
-  scoreBreakdown: { fontSize: 11, color: '#666' },
-  subjectScoreContainer: { alignItems: 'center', gap: 4 },
-  subjectScoreBadge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6 },
-  subjectScoreText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  subjectAverage: { fontSize: 10, color: '#666' },
+  pickerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 16, paddingHorizontal: 16, height: 52, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
+  pickerText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  placeholderText: { color: 'rgba(255,255,255,0.3)', fontSize: 14, fontWeight: '600' },
+  
+  downloadAllButton: { marginBottom: 24, paddingVertical: 16 },
+  loaderContainer: { padding: 60, alignItems: 'center' },
+  
+  // Student View Styles
+  subjectCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+  subjectHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  subjectTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  scoreBadge: { backgroundColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: Colors.accent.gold },
+  scoreBadgeText: { color: Colors.accent.gold, fontWeight: '900', fontSize: 16 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  statItem: { width: (width - 108) / 5, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  statLabel: { fontSize: 9, fontWeight: '800', color: '#64748B', marginBottom: 4 },
+  statValue: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+  comparisonContainer: { paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', gap: 8 },
+  comparisonRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  comparisonLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '600' },
+  comparisonValue: { fontSize: 12, fontWeight: '800', color: Colors.accent.gold },
 
-  // Class Selector Styles
-  classSelectorContainer: {
-    padding: 16,
-    backgroundColor: '#f5f5f5',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  classSelectorLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 10,
-    color: '#333',
-  },
-  classSelectorButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 12,
-  },
-  classSelectorButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2196F3',
-    flex: 1,
-  },
-  loadReportButton: {
-    backgroundColor: '#2196F3',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  loadReportButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
+  // Class View Styles
+  studentCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+  studentHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 },
+  rankBadge: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
+  rankText: { fontSize: 18, fontWeight: '900' },
+  nameStack: { flex: 1, gap: 2 },
+  studentName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  totalPoints: { fontSize: 11, color: Colors.accent.gold, fontWeight: '900', letterSpacing: 0.5 },
+  subjectsContainer: { gap: 10, marginBottom: 20 },
+  subjectRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 16 },
+  subjectInfo: { flex: 1, gap: 2 },
+  subjectNameSmall: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  scoreBreakdown: { fontSize: 11, color: '#64748B', fontWeight: '600' },
+  subjectScoreContainer: { alignItems: 'flex-end', gap: 4 },
+  subjectScoreBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  subjectScoreText: { fontSize: 14, fontWeight: '900' },
+  subjectAverage: { fontSize: 10, color: '#64748B', fontWeight: '800' },
+  individualDownloadButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  individualDownloadButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  studentDownloadStatus: { fontSize: 11, fontWeight: '800', textAlign: 'center', marginTop: 8 },
 
-  // Dropdown Modal Styles
-  dropdownOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  dropdownModal: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '70%',
-    paddingBottom: 10,
-  },
-  dropdownHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  dropdownTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#333',
-  },
-  dropdownItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  dropdownItemSelected: {
-    backgroundColor: '#f0f8ff',
-  },
-  dropdownItemText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    flex: 1,
-  },
-  dropdownItemTextSelected: {
-    color: '#2196F3',
-    fontWeight: '700',
-  },
+  emptyState: { padding: 60, alignItems: 'center' },
+  emptyTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginTop: 24, marginBottom: 8 },
+  emptySubtitle: { color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 22 },
 
-  // Download All PDFs Styles
-  downloadAllContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  downloadAllButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  downloadAllButtonDisabled: {
-    backgroundColor: '#9CCC65',
-    opacity: 0.8,
-  },
-  downloadButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadProgressView: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadAllButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  downloadStatusText: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  downloadSuccess: {
-    color: '#4CAF50',
-  },
-  downloadWarning: {
-    color: '#F44336',
-  },
-
-  // Individual Student Download Styles
-  individualDownloadButton: {
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#2196F3',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadButtonDisabledIndividual: {
-    backgroundColor: '#90CAF9',
-    opacity: 0.8,
-  },
-  individualDownloadButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  studentDownloadStatus: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-    color: '#F44336',
-  },
-  downloadStatusSuccess: {
-    color: '#4CAF50',
-  },
-
-  // Student Selector Styles (for student mode filter selection)
-  studentSelectorContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: '#f0f7ff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#BBE5FF',
-  },
-  selectorTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 14,
-    color: '#1976D2',
-  },
-  loadStudentReportButton: {
-    marginTop: 14,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#2196F3',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  loadStudentReportButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.9)', justifyContent: 'center', padding: 24 },
+  modalContent: { backgroundColor: '#1E293B', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  modalTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
+  dropdownItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  dropdownItemSelected: { backgroundColor: 'rgba(250, 204, 21, 0.05)' },
+  dropdownItemText: { color: '#94A3B8', fontSize: 15, fontWeight: '600' },
+  dropdownItemTextSelected: { color: Colors.accent.gold, fontWeight: '800' },
+  emailInput: { backgroundColor: 'rgba(15, 23, 42, 0.5)', borderRadius: 16, padding: 16, color: '#FFFFFF', fontSize: 16, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  
+  alert: { marginTop: 20 },
 });
 

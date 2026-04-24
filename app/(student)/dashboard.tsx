@@ -55,8 +55,21 @@ export default function StudentDashboard() {
     const [selectedSession, setSelectedSession] = useState<string>('');
     const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
     const [enrollLoading, setEnrollLoading] = useState(false);
-    const [enrollError, setEnrollError] = useState('');
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
     const [editProfileVisible, setEditProfileVisible] = useState(false);
+    const [showSessionSelector, setShowSessionSelector] = useState(false);
+    const [showClassSelector, setShowClassSelector] = useState(false);
 
     useEffect(() => {
         loadStudentData();
@@ -101,7 +114,12 @@ export default function StudentDashboard() {
             }
         } catch (error) {
             console.error('Error loading student data:', error);
-            Alert.alert('System Error', 'Failed to synchronize profile data.');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'System Error',
+                message: 'Failed to synchronize profile data.'
+            });
         } finally {
             setLoading(false);
         }
@@ -119,14 +137,13 @@ export default function StudentDashboard() {
     };
 
     const handleLogout = async () => {
-        Alert.alert(
-            'Terminate Session',
-            'Are you sure you want to exit the premium portal?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Logout', onPress: performLogout, style: 'destructive' }
-            ]
-        );
+        setStatusAlert({
+            visible: true,
+            type: 'warning',
+            title: 'Terminate Session',
+            message: 'Are you sure you want to exit the premium portal?',
+            onConfirm: performLogout
+        });
     };
 
     const handleEditProfile = () => {
@@ -134,7 +151,6 @@ export default function StudentDashboard() {
     };
 
     const openEnrollmentModal = async () => {
-        setEnrollError('');
         setEnrollModalVisible(true);
         await fetchEnrollmentOptions();
     };
@@ -165,14 +181,23 @@ export default function StudentDashboard() {
                 setClasses(classData.data);
             }
         } catch (error) {
-            setEnrollError('Failed to load enrollment protocols');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Protocol Error',
+                message: 'Failed to load enrollment protocols'
+            });
         }
     };
 
     const handleSelfEnroll = async () => {
-        setEnrollError('');
         if (!selectedSession || !selectedClassId) {
-            setEnrollError('Select session and class to proceed.');
+            setStatusAlert({
+                visible: true,
+                type: 'warning',
+                title: 'Selection Required',
+                message: 'Select session and class to proceed.'
+            });
             return;
         }
 
@@ -197,14 +222,29 @@ export default function StudentDashboard() {
             const data = await response.json();
 
             if (data.success) {
-                Alert.alert('Protocol Success', 'Your enrollment has been registered.');
+                setStatusAlert({
+                    visible: true,
+                    type: 'success',
+                    title: 'Protocol Success',
+                    message: 'Your enrollment has been registered.'
+                });
                 setEnrollModalVisible(false);
                 onRefresh();
             } else {
-                setEnrollError(data.error || data.message || 'Enrollment failed');
+                setStatusAlert({
+                    visible: true,
+                    type: 'error',
+                    title: 'Enrollment Error',
+                    message: data.error || data.message || 'Enrollment failed'
+                });
             }
         } catch (error) {
-            setEnrollError('Network exception during enrollment.');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Connection Fault',
+                message: 'Network exception during enrollment.'
+            });
         } finally {
             setEnrollLoading(false);
         }
@@ -228,7 +268,12 @@ export default function StudentDashboard() {
             const url = `${API_BASE_URL}/api/students/me/enrollments/${sessionId}/report?enrollmentId=${enrollmentId}&accessToken=${encodeURIComponent(token || '')}`;
             await Linking.openURL(url);
         } catch (error) {
-            Alert.alert('Report Error', 'Unable to retrieve printable document.');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Report Error',
+                message: 'Unable to retrieve printable document.'
+            });
         }
     };
 
@@ -249,10 +294,17 @@ export default function StudentDashboard() {
                 style={{ flex: 1 }}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FACC15" />
-                }
             >
+                {statusAlert.visible && (
+                    <CustomAlert
+                        type={statusAlert.type}
+                        title={statusAlert.title}
+                        message={statusAlert.message}
+                        onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                        onConfirm={statusAlert.onConfirm}
+                        style={{ marginHorizontal: 24, marginVertical: 10 }}
+                    />
+                )}
                 {/* Hero Header */}
                 <ImageBackground
                     source={{ uri: 'https://images.unsplash.com/photo-1541339907198-e08756ebafe1?q=80&w=2070' }}
@@ -284,7 +336,7 @@ export default function StudentDashboard() {
                 </ImageBackground>
 
                 {/* Profile Snapshot */}
-                <View style={[styles.section, { marginTop: -40 }]}>
+                <View style={[styles.section, { marginTop: -25 }]}>
                     <View style={styles.glassCard}>
                         <View style={styles.profileSummary}>
                             <View style={styles.avatarLarge}>
@@ -336,27 +388,15 @@ export default function StudentDashboard() {
                         />
                         <CompactActionCard
                             icon="analytics"
-                            label="GRADES"
+                            label="REPORTS"
                             color="#3B82F6"
                             onPress={() => router.push('/(student)/grades')}
-                        />
-                        <CompactActionCard
-                            icon="book"
-                            label="COURSES"
-                            color="#10B981"
-                            onPress={() => Alert.alert('Notice', 'Course modules arriving soon.')}
-                        />
-                        <CompactActionCard
-                            icon="document-attach"
-                            label="TASKS"
-                            color="#8B5CF6"
-                            onPress={() => Alert.alert('Notice', 'Assignment dashboard pending.')}
                         />
                     </View>
                 </View>
 
                 {/* Enrollment Registry */}
-                <View style={styles.section}>
+                <View style={[styles.section, { marginBottom: 0 }]}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionLabel}>ACADEMIC REGISTRY</Text>
                         <TouchableOpacity onPress={onRefresh}>
@@ -372,7 +412,7 @@ export default function StudentDashboard() {
                         </View>
                     ) : (
                         enrollments.map((item, idx) => (
-                            <View key={idx} style={styles.registryItem}>
+                            <View key={idx} style={[styles.registryItem, idx === enrollments.length - 1 && { marginBottom: 0 }]}>
                                 <View style={styles.registryIcon}>
                                     <Ionicons name="ribbon" size={24} color="#FACC15" />
                                 </View>
@@ -382,11 +422,7 @@ export default function StudentDashboard() {
                                     <View style={styles.regActions}>
                                         <TouchableOpacity style={styles.regBtn} onPress={() => handleViewGrades(item)}>
                                             <Ionicons name="eye" size={14} color="#FACC15" />
-                                            <Text style={styles.regBtnText}>GRADES</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity style={[styles.regBtn, { marginLeft: 12 }]} onPress={() => handlePrintReport(item)}>
-                                            <Ionicons name="print" size={14} color="#3B82F6" />
-                                            <Text style={[styles.regBtnText, { color: '#3B82F6' }]}>REPORT</Text>
+                                            <Text style={styles.regBtnText}>VIEW GRADES</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -395,10 +431,12 @@ export default function StudentDashboard() {
                     )}
                 </View>
 
-                <View style={{ height: 100 }} />
+                {/* Flexible spacer to push footer to bottom if screen is short, but keeps it close otherwise */}
+                <View style={{ flex: 1 }} />
+                <View style={{ paddingBottom: 20, paddingTop: 10 }}>
+                    <Footer onLogout={handleLogout} />
+                </View>
             </ScrollView>
-
-            <Footer onLogout={handleLogout} />
 
             {/* Premium Enrollment Modal */}
             <Modal
@@ -421,50 +459,80 @@ export default function StudentDashboard() {
                         </View>
 
                         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-                            <Text style={styles.formLabel}>SELECT SESSION</Text>
-                            <View style={styles.selectorGrid}>
-                                {sessions.map((s, i) => (
-                                    <TouchableOpacity
-                                        key={i}
-                                        style={[styles.chip, selectedSession === (s.year_label || s.session_name) && styles.chipActive]}
-                                        onPress={() => setSelectedSession(s.year_label || s.session_name)}
-                                    >
-                                        <Text style={[styles.chipText, selectedSession === (s.year_label || s.session_name) && styles.chipTextActive]}>
-                                            {s.year_label || s.session_name}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
+                            <View style={{ marginBottom: 20 }}>
+                                <Text style={styles.formLabel}>ACADEMIC SESSION</Text>
+                                <TouchableOpacity 
+                                    style={styles.inputSelector} 
+                                    onPress={() => setShowSessionSelector(!showSessionSelector)}
+                                >
+                                    <Text style={styles.selectorText}>
+                                        {selectedSession || 'Select Session'}
+                                    </Text>
+                                    <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
+                                </TouchableOpacity>
+
+                                {showSessionSelector && (
+                                    <View style={styles.selectorList}>
+                                        <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                            {sessions.map((s, i) => (
+                                                <TouchableOpacity
+                                                    key={i}
+                                                    style={[styles.selectorItem, selectedSession === (s.year_label || s.session_name) && styles.selectorItemActive]}
+                                                    onPress={() => {
+                                                        setSelectedSession(s.year_label || s.session_name);
+                                                        setShowSessionSelector(false);
+                                                    }}
+                                                >
+                                                    <Text style={[styles.selectorItemText, selectedSession === (s.year_label || s.session_name) && styles.selectorItemTextActive]}>
+                                                        {s.year_label || s.session_name}
+                                                    </Text>
+                                                    {selectedSession === (s.year_label || s.session_name) && (
+                                                        <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            ))}
+                                        </ScrollView>
+                                    </View>
+                                )}
                             </View>
 
-                            <Text style={[styles.formLabel, { marginTop: 20 }]}>SELECT ACADEMIC CLASS</Text>
-                            <View style={styles.listSelector}>
-                                {classes.map((c, i) => (
-                                    <TouchableOpacity
-                                        key={i}
-                                        style={[styles.listItem, selectedClassId === c.id && styles.listItemActive]}
-                                        onPress={() => setSelectedClassId(c.id)}
-                                    >
-                                        <Ionicons
-                                            name={selectedClassId === c.id ? "radio-button-on" : "radio-button-off"}
-                                            size={20}
-                                            color={selectedClassId === c.id ? "#FACC15" : "#475569"}
-                                        />
-                                        <Text style={[styles.listText, selectedClassId === c.id && styles.listTextActive]}>
-                                            {c.display_name || c.class_name}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
+                            <View style={{ marginBottom: 20 }}>
+                                <Text style={styles.formLabel}>TARGET ACADEMIC CLASS</Text>
+                                <TouchableOpacity 
+                                    style={styles.inputSelector} 
+                                    onPress={() => setShowClassSelector(!showClassSelector)}
+                                >
+                                    <Text style={styles.selectorText}>
+                                        {classes.find((c: any) => c.id === selectedClassId)?.display_name || classes.find((c: any) => c.id === selectedClassId)?.class_name || 'Select Class'}
+                                    </Text>
+                                    <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
+                                </TouchableOpacity>
+
+                                {showClassSelector && (
+                                    <View style={styles.selectorList}>
+                                        <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                            {classes.map((c, i) => (
+                                                <TouchableOpacity
+                                                    key={i}
+                                                    style={[styles.selectorItem, selectedClassId === c.id && styles.selectorItemActive]}
+                                                    onPress={() => {
+                                                        setSelectedClassId(c.id);
+                                                        setShowClassSelector(false);
+                                                    }}
+                                                >
+                                                    <Text style={[styles.selectorItemText, selectedClassId === c.id && styles.selectorItemTextActive]}>
+                                                        {c.display_name || c.class_name}
+                                                    </Text>
+                                                    {selectedClassId === c.id && (
+                                                        <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            ))}
+                                        </ScrollView>
+                                    </View>
+                                )}
                             </View>
 
-                            {enrollError && (
-                                <CustomAlert
-                                    type="error"
-                                    title="Protocol Alert"
-                                    message={enrollError}
-                                    onClose={() => setEnrollError('')}
-                                    style={{ marginVertical: 20 }}
-                                />
-                            )}
 
                             <CustomButton
                                 title={enrollLoading ? "PROCESSING..." : "CONFIRM ENROLLMENT"}
@@ -515,7 +583,7 @@ const styles = StyleSheet.create({
     welcomeInfo: { marginTop: 30 },
     greeting: { color: '#FACC15', fontSize: 11, fontWeight: '900', letterSpacing: 3 },
     studentName: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 4 },
-    regBadge: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 10 },
+    regBadge: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 10, marginBottom: 5 },
     regText: { color: '#94A3B8', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
 
     section: { paddingHorizontal: 24, marginBottom: 30 },
@@ -539,8 +607,8 @@ const styles = StyleSheet.create({
     divider: { width: 1, height: '100%', backgroundColor: 'rgba(255,255,255,0.05)' },
 
     sectionLabel: { color: '#475569', fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 15 },
-    actionGrid: { flexDirection: 'row', justifyContent: 'space-between' },
-    compactCard: { width: '23%', alignItems: 'center' },
+    actionGrid: { flexDirection: 'row', gap: 15 },
+    compactCard: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', paddingVertical: 15, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
     compactIcon: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
     compactLabel: { color: '#94A3B8', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
 
@@ -565,17 +633,37 @@ const styles = StyleSheet.create({
     modalTitle: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1 },
     closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
 
-    formLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', letterSpacing: 2, marginBottom: 15 },
-    selectorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    chipActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)', borderColor: '#FACC15' },
-    chipText: { color: '#94A3B8', fontSize: 12, fontWeight: '800' },
-    chipTextActive: { color: '#FACC15' },
-
-    listSelector: { gap: 10 },
-    listItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-    listItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.05)', borderColor: 'rgba(250, 204, 21, 0.2)' },
-    listText: { color: '#64748B', fontSize: 14, fontWeight: '700', marginLeft: 12 },
-    listTextActive: { color: '#E2E8F0' },
+    inputSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 16,
+        paddingHorizontal: 20,
+        height: 56,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    selectorText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+    selectorList: {
+        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+        borderRadius: 20,
+        marginTop: 8,
+        padding: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        overflow: 'hidden',
+    },
+    selectorItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 12,
+    },
+    selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
+    selectorItemText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
+    selectorItemTextActive: { color: '#FACC15', fontWeight: '800' },
     modalSubmit: { marginTop: 30, height: 60, borderRadius: 18 },
 });

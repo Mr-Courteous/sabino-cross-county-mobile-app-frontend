@@ -56,7 +56,18 @@ export default function CompleteRegistrationScreen() {
 
   // BILLING STATE
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [billingError, setBillingError] = useState('');
+  const [statusAlert, setStatusAlert] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
 
   const fetchCountries = async () => {
     try {
@@ -91,9 +102,13 @@ export default function CompleteRegistrationScreen() {
           }
           setCurrentStep('payment');
         } else if (result.data?.paymentStatus === 'completed') {
-          Alert.alert("Already Active", "This school is already active. Please login.", [
-            { text: "Go to Login", onPress: () => router.replace('/(auth)') }
-          ]);
+          setStatusAlert({
+            visible: true,
+            type: 'info',
+            title: 'Already Active',
+            message: 'This school is already active. Please login.',
+            onConfirm: () => router.replace('/(auth)')
+          });
         }
       }
     } catch (err) {
@@ -111,7 +126,12 @@ export default function CompleteRegistrationScreen() {
         await Purchases.configure({ apiKey: REVENUECAT_GOOGLE_API_KEY });
       }
     } catch (e: any) {
-      setBillingError('Failed to connect to billing service.');
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Billing Service',
+        message: 'Failed to connect to billing service.'
+      });
     }
   };
 
@@ -183,7 +203,12 @@ export default function CompleteRegistrationScreen() {
 
   const handlePurchase = async () => {
     if (!isMobilePlatform) {
-      Alert.alert("Platform Not Supported", "Billing is only supported on mobile devices.");
+      setStatusAlert({
+        visible: true,
+        type: 'warning',
+        title: 'Platform Not Supported',
+        message: 'Billing is only supported on mobile devices.'
+      });
       return;
     }
 
@@ -199,15 +224,24 @@ export default function CompleteRegistrationScreen() {
       const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
 
       if (customerInfo.entitlements.active['Sabinoschool'] !== undefined) {
-        Alert.alert('Success', 'Account Activated!', [
-          { text: 'Continue', onPress: () => router.replace('/dashboard') }
-        ]);
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Success',
+          message: 'Account Activated!',
+          onConfirm: () => router.replace('/dashboard')
+        });
       } else {
         throw new Error('Purchase completed but no entitlement was granted.');
       }
     } catch (err: any) {
       if (!err.userCancelled) {
-        Alert.alert('Subscription Error', err.message || 'Payment failed');
+        setStatusAlert({
+          visible: true,
+          type: 'error',
+          title: 'Subscription Error',
+          message: err.message || 'Payment failed'
+        });
       }
     } finally {
       setIsProcessingPayment(false);
@@ -228,13 +262,16 @@ export default function CompleteRegistrationScreen() {
               contentContainerStyle={styles.scrollContainer}
               showsVerticalScrollIndicator={false}
           >
-            {checkingAccount ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FACC15" />
-                <Text style={styles.loadingText}>PREPARING PORTAL...</Text>
-              </View>
-            ) : (
-              <>
+              {statusAlert.visible && (
+                <CustomAlert
+                  type={statusAlert.type}
+                  title={statusAlert.title}
+                  message={statusAlert.message}
+                  onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                  onConfirm={statusAlert.onConfirm}
+                  style={{ marginBottom: 20 }}
+                />
+              )}
                 <View style={styles.header}>
                     <View style={styles.logoBadge}>
                         <Ionicons name="ribbon" size={24} color="#FACC15" />
@@ -389,16 +426,14 @@ export default function CompleteRegistrationScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-              </>
-            )}
+          </ScrollView>
 
             <View style={styles.footer}>
                 <Text style={styles.footerText}>THE GOLD STANDARD FOR ACADEMIC REPORTING</Text>
             </View>
-          </ScrollView>
-        </LinearGradient>
-      </ImageBackground>
-    </ThemedView>
+          </LinearGradient>
+        </ImageBackground>
+      </ThemedView>
   );
 }
 

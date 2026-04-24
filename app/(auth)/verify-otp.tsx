@@ -20,12 +20,28 @@ export default function VerifyOTPScreen() {
 
     const [otp, setOtp] = useState('');
     const [timeLeft, setTimeLeft] = useState(600);
-    const [error, setError] = useState('');
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
     const [verifying, setVerifying] = useState(false);
 
     useEffect(() => {
         if (timeLeft <= 0) {
-            setError('OTP has expired. Please request a new one.');
+            setStatusAlert({
+                visible: true,
+                type: 'warning',
+                title: 'Code Expired',
+                message: 'OTP has expired. Please request a new one.'
+            });
             return;
         }
 
@@ -44,17 +60,27 @@ export default function VerifyOTPScreen() {
 
     const handleVerifyOTP = async () => {
         if (!otp.trim()) {
-            setError('Please enter the OTP');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Input Required',
+                message: 'Please enter the OTP'
+            });
             return;
         }
 
         if (otp.length !== 6 || !/^\d+$/.test(otp)) {
-            setError('OTP must be 6 digits');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Invalid Format',
+                message: 'OTP must be 6 digits'
+            });
             return;
         }
 
         setVerifying(true);
-        setError('');
+        setStatusAlert({ ...statusAlert, visible: false });
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/verify-otp`, {
@@ -70,10 +96,20 @@ export default function VerifyOTPScreen() {
                     params: { email },
                 });
             } else {
-                setError(data.message || 'OTP verification failed');
+                setStatusAlert({
+                    visible: true,
+                    type: 'error',
+                    title: 'Verification Failed',
+                    message: data.message || 'OTP verification failed'
+                });
             }
         } catch (err) {
-            setError('Failed to verify OTP');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Connection Fault',
+                message: 'Failed to verify OTP'
+            });
         } finally {
             setVerifying(false);
         }
@@ -120,12 +156,13 @@ export default function VerifyOTPScreen() {
                                 <Text style={styles.infoValue}>{email}</Text>
                             </View>
 
-                            {error && (
+                            {statusAlert.visible && (
                                 <CustomAlert
-                                    type="error"
-                                    title="Security Error"
-                                    message={error}
-                                    onClose={() => setError('')}
+                                    type={statusAlert.type}
+                                    title={statusAlert.title}
+                                    message={statusAlert.message}
+                                    onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                                    onConfirm={statusAlert.onConfirm}
                                     style={{ marginBottom: 20 }}
                                 />
                             )}
@@ -137,7 +174,7 @@ export default function VerifyOTPScreen() {
                                 onChangeText={(text) => {
                                     const digitsOnly = text.replace(/\D/g, '').slice(0, 6);
                                     setOtp(digitsOnly);
-                                    setError('');
+                                    setStatusAlert({ ...statusAlert, visible: false });
                                 }}
                                 keyboardType="numeric"
                                 maxLength={6}

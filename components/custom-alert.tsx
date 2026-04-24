@@ -23,6 +23,8 @@ interface CustomAlertProps {
   title?: string;
   message: string;
   onClose?: () => void;
+  onConfirm?: () => void;
+  confirmLabel?: string;
   showCloseButton?: boolean;
   style?: ViewStyle;
   icon?: boolean;
@@ -40,6 +42,8 @@ export function CustomAlert({
   title,
   message,
   onClose,
+  onConfirm,
+  confirmLabel = 'Confirm',
   showCloseButton = true,
   style,
   icon = true,
@@ -48,45 +52,60 @@ export function CustomAlert({
 
   return (
     <View style={[styles.container, alertStyle.container, style]}>
-      <View style={styles.contentContainer}>
-        {icon && (
-          <Ionicons 
-            name={alertIcons[type]} 
-            size={24} 
-            color={alertStyle.text.color} 
-            style={styles.icon} 
-          />
-        )}
-        <View style={styles.textContainer}>
-          {title && (
+      <View style={{ flex: 1 }}>
+        <View style={styles.contentContainer}>
+          {icon && (
+            <Ionicons 
+              name={alertIcons[type]} 
+              size={24} 
+              color={alertStyle.text.color} 
+              style={styles.icon} 
+            />
+          )}
+          <View style={styles.textContainer}>
+            {title && (
+              <Text
+                style={[
+                  styles.title,
+                  { color: alertStyle.text.color },
+                ]}
+              >
+                {title}
+              </Text>
+            )}
             <Text
               style={[
-                styles.title,
+                styles.message,
                 { color: alertStyle.text.color },
               ]}
             >
-              {title}
+              {message}
             </Text>
-          )}
-          <Text
-            style={[
-              styles.message,
-              { color: alertStyle.text.color },
-            ]}
-          >
-            {message}
-          </Text>
-        </View>
-      </View>
+          </View>
 
-      {showCloseButton && onClose && (
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={onClose}
-        >
-          <Ionicons name="close" size={20} color={alertStyle.text.color} />
-        </TouchableOpacity>
-      )}
+          {showCloseButton && onClose && (
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={onClose}
+            >
+              <Ionicons name="close" size={20} color={alertStyle.text.color} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {onConfirm && (
+          <View style={styles.actionContainer}>
+            <TouchableOpacity
+              style={[styles.confirmButton, { backgroundColor: alertStyle.text.color + '15' }]}
+              onPress={onConfirm}
+            >
+              <Text style={[styles.confirmButtonText, { color: alertStyle.text.color }]}>
+                {confirmLabel}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -127,5 +146,22 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginLeft: Spacing.md,
     padding: Spacing.xs,
+  },
+  actionContainer: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    paddingTop: Spacing.md,
+  },
+  confirmButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+  },
+  confirmButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '700',
   },
 });

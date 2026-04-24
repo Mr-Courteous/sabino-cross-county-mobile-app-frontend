@@ -104,7 +104,7 @@ function FeatureCard({ icon, title, desc }: FeatureCardProps) {
 }
 
 const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: '#0F172A' },
+  mainWrapper: { flex: 1, backgroundColor: '#1e293b' },
   scrollContainer: { flexGrow: 1 },
 
   hero: { width: '100%', minHeight: 700, paddingBottom: 45 },
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     paddingBottom: 50
   },
   sectionLabel: { color: '#2563EB', fontSize: 12, fontWeight: '900', letterSpacing: 2.5, textAlign: 'center', marginBottom: 10 },
-  sectionTitle: { fontSize: 26, fontWeight: '900', color: '#0F172A', textAlign: 'center', marginBottom: 35, letterSpacing: -0.5 },
+  sectionTitle: { fontSize: 26, fontWeight: '900', color: '#1e293b', textAlign: 'center', marginBottom: 35, letterSpacing: -0.5 },
 
   featureGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   fCard: {
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   },
   loginOutlineText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 1 },
 
-  footer: { backgroundColor: '#0F172A', padding: 60, alignItems: 'center' },
+  footer: { backgroundColor: '#1e293b', padding: 60, alignItems: 'center' },
   footerBrand: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 6 },
   footerCopyright: { color: '#475569', fontSize: 10, fontWeight: '800', marginTop: 15, letterSpacing: 1 },
   footerDivider: { width: 50, height: 2, backgroundColor: '#FACC15', marginVertical: 25 },

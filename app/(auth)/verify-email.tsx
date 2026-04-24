@@ -21,7 +21,18 @@ export default function VerifyEmailScreen() {
     const [otpSent, setOtpSent] = useState(false);
     const [loading, setLoading] = useState(false);
     const [verifying, setVerifying] = useState(false);
-    const [error, setError] = useState('');
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
     const [timeLeft, setTimeLeft] = useState(600);
 
     useEffect(() => {
@@ -31,7 +42,12 @@ export default function VerifyEmailScreen() {
                 setTimeLeft((prev) => prev - 1);
             }, 1000);
         } else if (timeLeft <= 0) {
-            setError('OTP has expired. Please request a new one.');
+            setStatusAlert({
+                visible: true,
+                type: 'warning',
+                title: 'Code Expired',
+                message: 'OTP has expired. Please request a new one.'
+            });
         }
         return () => clearInterval(timer);
     }, [otpSent, timeLeft]);
@@ -44,12 +60,17 @@ export default function VerifyEmailScreen() {
 
     const handleSendOTP = async () => {
         if (!email.trim() || !email.includes('@')) {
-            setError('Please enter a valid school email address');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Validation Error',
+                message: 'Please enter a valid school email address'
+            });
             return;
         }
 
         setLoading(true);
-        setError('');
+        setStatusAlert({ ...statusAlert, visible: false });
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/otp`, {
@@ -60,10 +81,13 @@ export default function VerifyEmailScreen() {
 
             const result = await response.json();
             if (response.status === 409) {
-                Alert.alert('Already Registered', 'This email is already registered. Go to login?', [
-                    { text: 'Cancel' },
-                    { text: 'Login', onPress: () => router.replace('/(auth)') }
-                ]);
+                setStatusAlert({
+                    visible: true,
+                    type: 'info',
+                    title: 'Already Registered',
+                    message: 'This email is already registered. Go to login?',
+                    onConfirm: () => router.replace('/(auth)')
+                });
                 return;
             }
 
@@ -71,10 +95,20 @@ export default function VerifyEmailScreen() {
                 setOtpSent(true);
                 setTimeLeft(600);
             } else {
-                setError(result.message || result.error || 'Failed to send OTP');
+                setStatusAlert({
+                    visible: true,
+                    type: 'error',
+                    title: 'Dispatch Error',
+                    message: result.message || result.error || 'Failed to send OTP'
+                });
             }
         } catch (err) {
-            setError('An unexpected error occurred');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Protocol Error',
+                message: 'An unexpected error occurred'
+            });
         } finally {
             setLoading(false);
         }
@@ -82,12 +116,17 @@ export default function VerifyEmailScreen() {
 
     const handleVerifyOTP = async () => {
         if (otp.length !== 6) {
-            setError('Please enter the 6-digit code');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Input Required',
+                message: 'Please enter the 6-digit code'
+            });
             return;
         }
 
         setVerifying(true);
-        setError('');
+        setStatusAlert({ ...statusAlert, visible: false });
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/verify-otp`, {
@@ -103,10 +142,20 @@ export default function VerifyEmailScreen() {
                     params: { email },
                 });
             } else {
-                setError(data.message || 'OTP verification failed');
+                setStatusAlert({
+                    visible: true,
+                    type: 'error',
+                    title: 'Verification Failed',
+                    message: data.message || 'OTP verification failed'
+                });
             }
         } catch (err) {
-            setError('Failed to verify OTP');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Connection Fault',
+                message: 'Failed to verify OTP'
+            });
         } finally {
             setVerifying(false);
         }
@@ -137,12 +186,13 @@ export default function VerifyEmailScreen() {
                         </View>
 
                         <View style={styles.card}>
-                            {error && (
+                            {statusAlert.visible && (
                                 <CustomAlert
-                                    type="error"
-                                    title="Security Error"
-                                    message={error}
-                                    onClose={() => setError('')}
+                                    type={statusAlert.type}
+                                    title={statusAlert.title}
+                                    message={statusAlert.message}
+                                    onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                                    onConfirm={statusAlert.onConfirm}
                                     style={{ marginBottom: 20 }}
                                 />
                             )}
@@ -151,7 +201,7 @@ export default function VerifyEmailScreen() {
                                 label="School Email Address *"
                                 placeholder="admin@school.com"
                                 value={email}
-                                onChangeText={(text) => { setEmail(text); setError(''); }}
+                                onChangeText={(text) => { setEmail(text); setStatusAlert({ ...statusAlert, visible: false }); }}
                                 editable={!loading && !otpSent}
                                 keyboardType="email-address"
                                 containerStyle={styles.inputContainer}
@@ -169,7 +219,7 @@ export default function VerifyEmailScreen() {
                                         label="Verification Code *"
                                         placeholder="000000"
                                         value={otp}
-                                        onChangeText={(text) => { setOtp(text.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                                        onChangeText={(text) => { setOtp(text.replace(/\D/g, '').slice(0, 6)); setStatusAlert({ ...statusAlert, visible: false }); }}
                                         editable={!verifying}
                                         keyboardType="numeric"
                                         maxLength={6}

@@ -96,7 +96,23 @@ export default function StudentGrades() {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
 
     // Error Display
-    const [error, setError] = useState<{title: string, message: string} | null>(null);
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
+
+    // Dropdown States
+    const [showSessionSelector, setShowSessionSelector] = useState(false);
+    const [showEnrollmentSelector, setShowEnrollmentSelector] = useState(false);
+    const [showTermSelector, setShowTermSelector] = useState(false);
 
     // Email modal state
     const [emailModalVisible, setEmailModalVisible] = useState(false);
@@ -114,7 +130,6 @@ export default function StudentGrades() {
 
     const fetchInitialData = async () => {
         setLoading(true);
-        setError(null);
         try {
             const token = await getToken();
             if (!token) {
@@ -138,7 +153,12 @@ export default function StudentGrades() {
                 throw new Error(sessData.error || 'Failed to load academic sessions');
             }
         } catch (err: any) {
-            setError({ title: 'System Offline', message: err.message || 'Failed to initialize academic portal' });
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'System Offline',
+                message: err.message || 'Failed to initialize academic portal'
+            });
         } finally {
             setLoading(false);
         }
@@ -169,12 +189,17 @@ export default function StudentGrades() {
 
     const fetchGrades = async () => {
         if (!selectedEnrollment) {
-            Alert.alert('Selection Required', 'Select a class enrollment to view records.');
+            setStatusAlert({
+                visible: true,
+                type: 'warning',
+                title: 'Selection Required',
+                message: 'Select a class enrollment to view records.'
+            });
             return;
         }
 
         setFetchingGrades(true);
-        setError(null);
+        setStatusAlert({ ...statusAlert, visible: false });
         try {
             const token = await getToken();
             const sessionIdToUse = selectedEnrollment?.session_id || selectedSessionId;
@@ -192,13 +217,20 @@ export default function StudentGrades() {
             } else {
                 setGrades([]);
                 setSummary(null);
-                setError({ 
-                    title: 'No Data Records', 
-                    message: data.message || data.error || 'No scores recorded for this academic term.' 
+                setStatusAlert({
+                    visible: true,
+                    type: 'info',
+                    title: 'No Data Records',
+                    message: data.message || data.error || 'No scores recorded for this academic term.'
                 });
             }
         } catch (err: any) {
-            setError({ title: 'Connection Fault', message: 'Unable to synchronize with the academic database.' });
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Connection Fault',
+                message: 'Unable to synchronize with the academic database.'
+            });
         } finally {
             setFetchingGrades(false);
         }
@@ -253,13 +285,23 @@ export default function StudentGrades() {
                 throw new Error(result.error || 'Dispatch failure');
             }
         } catch (err: any) {
-            Alert.alert('Dispatch Error', err.message || 'Failed to transmit report via secure channel');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Dispatch Error',
+                message: err.message || 'Failed to transmit report via secure channel'
+            });
         }
     }, [selectedEnrollment, selectedSessionId, selectedTerm]);
 
     const handleEmailModalSubmit = async () => {
         if (!emailInput.trim() || !emailInput.includes('@')) {
-            Alert.alert('Validation Error', 'Enter a valid digital address.');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Validation Error',
+                message: 'Enter a valid digital address.'
+            });
             return;
         }
         setEmailModalVisible(false);
@@ -279,7 +321,7 @@ export default function StudentGrades() {
                     { text: 'Cancel', style: 'cancel' },
                     {
                         text: 'Transmit',
-                        onPress: async (email) => {
+                        onPress: async (email: string | undefined) => {
                             if (!email || !email.includes('@')) return;
                             setDownloading(true);
                             await sendEmailReport(email.trim());
@@ -319,7 +361,7 @@ export default function StudentGrades() {
                 style={styles.hero}
             >
                 <LinearGradient
-                    colors={['rgba(15, 23, 42, 0.7)', Colors.navy.dark]}
+                    colors={['rgba(15, 23, 42, 0.7)', Colors.accent.navy]}
                     style={styles.heroOverlay}
                 >
                     <View style={styles.header}>
@@ -343,13 +385,14 @@ export default function StudentGrades() {
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FACC15" />}
             >
-                {/* Custom Alert for errors */}
-                {error && (
+                {/* Custom Alert for status updates */}
+                {statusAlert.visible && (
                     <CustomAlert
-                        type="error"
-                        title={error.title}
-                        message={error.message}
-                        onClose={() => setError(null)}
+                        type={statusAlert.type}
+                        title={statusAlert.title}
+                        message={statusAlert.message}
+                        onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                        onConfirm={statusAlert.onConfirm}
                         style={styles.alert}
                     />
                 )}
@@ -358,59 +401,115 @@ export default function StudentGrades() {
                 <View style={styles.card}>
                     <Text style={styles.cardLabel}>ACADEMIC PARAMETERS</Text>
                     
-                    <Text style={styles.filterTitle}>Session</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
-                        {sessions.map((sess) => (
-                            <TouchableOpacity
-                                key={sess.id}
-                                style={[styles.pill, selectedSessionId === sess.id && styles.pillActive]}
-                                onPress={() => handleSessionChange(sess.id)}
-                            >
-                                <Text style={[styles.pillText, selectedSessionId === sess.id && styles.pillTextActive]}>
-                                    {sess.year_label}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
+                    <Text style={styles.filterTitle}>Academic Session</Text>
+                    <TouchableOpacity 
+                        style={styles.inputSelector} 
+                        onPress={() => setShowSessionSelector(!showSessionSelector)}
+                    >
+                        <Text style={styles.selectorText}>
+                            {sessions.find(s => s.id === selectedSessionId)?.year_label || 'Select Session'}
+                        </Text>
+                        <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
+                    </TouchableOpacity>
+
+                    {showSessionSelector && (
+                        <View style={styles.selectorList}>
+                            <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                {sessions.map((sess) => (
+                                    <TouchableOpacity
+                                        key={sess.id}
+                                        style={[styles.selectorItem, selectedSessionId === sess.id && styles.selectorItemActive]}
+                                        onPress={() => {
+                                            handleSessionChange(sess.id);
+                                            setShowSessionSelector(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.selectorItemText, selectedSessionId === sess.id && styles.selectorItemTextActive]}>
+                                            {sess.year_label}
+                                        </Text>
+                                        {selectedSessionId === sess.id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
 
                     <Text style={styles.filterTitle}>Enrollment</Text>
                     {fetchingMetadata ? (
                         <ActivityIndicator size="small" color="#FACC15" style={styles.inlineLoader} />
                     ) : enrollments.length > 0 ? (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
-                            {enrollments.map((enr) => (
-                                <TouchableOpacity
-                                    key={enr.enrollment_id}
-                                    style={[styles.classPill, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.classPillActive]}
-                                    onPress={() => handleEnrollmentChange(enr)}
-                                >
-                                    <Ionicons
-                                        name="school-outline"
-                                        size={14}
-                                        color={selectedEnrollment?.enrollment_id === enr.enrollment_id ? "#0F172A" : "#FACC15"}
-                                    />
-                                    <Text style={[styles.classPillText, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.classPillTextActive]}>
-                                        {enr.class_name}
+                        <>
+                            <TouchableOpacity 
+                                style={styles.inputSelector} 
+                                onPress={() => setShowEnrollmentSelector(!showEnrollmentSelector)}
+                            >
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <Ionicons name="school-outline" size={18} color={Colors.accent.gold} />
+                                    <Text style={styles.selectorText}>
+                                        {selectedEnrollment?.class_name || 'Select Enrollment'}
                                     </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
+                                </View>
+                                <Ionicons name={showEnrollmentSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
+                            </TouchableOpacity>
+
+                            {showEnrollmentSelector && (
+                                <View style={styles.selectorList}>
+                                    <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                        {enrollments.map((enr) => (
+                                            <TouchableOpacity
+                                                key={enr.enrollment_id}
+                                                style={[styles.selectorItem, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.selectorItemActive]}
+                                                onPress={() => {
+                                                    handleEnrollmentChange(enr);
+                                                    setShowEnrollmentSelector(false);
+                                                }}
+                                            >
+                                                <Text style={[styles.selectorItemText, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.selectorItemTextActive]}>
+                                                    {enr.class_name}
+                                                </Text>
+                                                {selectedEnrollment?.enrollment_id === enr.enrollment_id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+                        </>
                     ) : (
                         <Text style={styles.emptyFilterText}>No active enrollments for this session</Text>
                     )}
 
                     <Text style={styles.filterTitle}>Terminal Period</Text>
-                    <View style={styles.termGrid}>
-                        {[1, 2, 3].map((t) => (
-                            <TouchableOpacity
-                                key={t}
-                                style={[styles.termOption, selectedTerm === t && styles.termActive]}
-                                onPress={() => handleTermChange(t)}
-                            >
-                                <Text style={[styles.termText, selectedTerm === t && styles.termTextActive]}>TERM {t}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
+                    <TouchableOpacity 
+                        style={styles.inputSelector} 
+                        onPress={() => setShowTermSelector(!showTermSelector)}
+                    >
+                        <Text style={styles.selectorText}>
+                            TERM {selectedTerm}
+                        </Text>
+                        <Ionicons name={showTermSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
+                    </TouchableOpacity>
+
+                    {showTermSelector && (
+                        <View style={styles.selectorList}>
+                            <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                {[1, 2, 3].map((t) => (
+                                    <TouchableOpacity
+                                        key={t}
+                                        style={[styles.selectorItem, selectedTerm === t && styles.selectorItemActive]}
+                                        onPress={() => {
+                                            handleTermChange(t);
+                                            setShowTermSelector(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.selectorItemText, selectedTerm === t && styles.selectorItemTextActive]}>
+                                            TERM {t}
+                                        </Text>
+                                        {selectedTerm === t && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
 
                     <CustomButton
                         title={fetchingGrades ? "SYNCHRONIZING..." : "RETRIEVE RECORDS"}
@@ -436,7 +535,16 @@ export default function StudentGrades() {
                         <Text style={styles.sectionLabel}>SUBJECT BREAKDOWN</Text>
                         <View style={styles.gradesList}>
                             {grades.map((grade, idx) => {
-                                const total = Number(grade.student_total ?? grade.total_score) || 0;
+                                const caTotal = Number(grade.ca1_score || 0) + 
+                                               Number(grade.ca2_score || 0) + 
+                                               Number(grade.ca3_score || 0) + 
+                                               Number(grade.ca4_score || 0);
+                                const examScore = Number(grade.exam_score || 0);
+                                const manualTotal = caTotal + examScore;
+                                
+                                // Prioritize API total if it's non-zero, otherwise use manual sum
+                                const total = Number(grade.student_total ?? grade.total_score) || manualTotal;
+                                
                                 const classAvg = grade.class_average != null ? Number(grade.class_average) : null;
                                 const letterGrade = getLetterGrade(total);
                                 const isAbove = classAvg != null ? total >= classAvg : true;
@@ -465,8 +573,8 @@ export default function StudentGrades() {
                                         </View>
 
                                         <View style={styles.scoreBars}>
-                                            <ScoreBar label="Continuous Assessment" value={Number(grade.ca1_score || 0) + Number(grade.ca2_score || 0) + Number(grade.ca3_score || 0) + Number(grade.ca4_score || 0)} max={40} />
-                                            <ScoreBar label="Terminal Examination" value={Number(grade.exam_score || 0)} max={60} />
+                                            <ScoreBar label="Continuous Assessment" value={caTotal} max={40} />
+                                            <ScoreBar label="Terminal Examination" value={examScore} max={60} />
                                         </View>
 
                                         <View style={styles.totalRow}>
@@ -577,9 +685,9 @@ function ScoreBar({ label, value, max }: any) {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: Colors.navy.dark },
-    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.navy.dark },
-    loadingText: { color: Colors.gold.main, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+    container: { flex: 1, backgroundColor: Colors.accent.navy },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent.navy },
+    loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
     
     hero: { height: 280, width: '100%' },
     heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
@@ -587,7 +695,7 @@ const styles = StyleSheet.create({
     backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
     headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
     heroContent: { marginTop: 'auto', marginBottom: 30 },
-    heroSubtitle: { color: Colors.gold.main, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
     heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
     scrollView: { flex: 1, marginTop: -30 },
@@ -596,24 +704,56 @@ const styles = StyleSheet.create({
 
     card: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: 24 },
     cardLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 20 },
-    filterTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', marginBottom: 12, marginTop: 16 },
-    pillScroll: { flexDirection: 'row', marginBottom: 4 },
-    pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-    pillActive: { backgroundColor: Colors.gold.main + '20', borderColor: Colors.gold.main },
+    filterTitle: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, marginTop: 24, textTransform: 'uppercase' },
+    
+    inputSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 16,
+        paddingHorizontal: 20,
+        height: 60,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    selectorText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+    
+    selectorList: {
+        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+        borderRadius: 20,
+        marginTop: 8,
+        padding: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        overflow: 'hidden',
+    },
+    selectorItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderRadius: 12,
+    },
+    selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
+    selectorItemText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+    selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
+
+    pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
+    pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
+    pillActive: { backgroundColor: Colors.accent.gold + '20', borderColor: Colors.accent.gold },
     pillText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-    pillTextActive: { color: Colors.gold.main, fontWeight: '800' },
+    pillTextActive: { color: Colors.accent.gold, fontWeight: '800' },
     
     classPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-    classPillActive: { backgroundColor: Colors.gold.main, borderColor: Colors.gold.main },
+    classPillActive: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
     classPillText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
-    classPillTextActive: { color: Colors.navy.dark, fontWeight: '800' },
+    classPillTextActive: { color: Colors.accent.navy, fontWeight: '800' },
     emptyFilterText: { color: '#475569', fontSize: 12, fontStyle: 'italic', marginVertical: 8 },
 
-    termGrid: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-    termOption: { flex: 1, paddingVertical: 14, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-    termActive: { backgroundColor: Colors.gold.main + '20', borderColor: Colors.gold.main },
-    termText: { color: '#94A3B8', fontSize: 12, fontWeight: '800' },
-    termTextActive: { color: Colors.gold.main },
+    inlineLoader: { marginVertical: 10, alignSelf: 'flex-start' },
+
     searchBtn: { height: 56 },
 
     summaryGrid: { flexDirection: 'row', gap: 12, marginBottom: 32 },
@@ -622,7 +762,7 @@ const styles = StyleSheet.create({
     metricValue: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
     metricLabel: { color: '#64748B', fontSize: 10, fontWeight: '700', marginTop: 2 },
 
-    sectionLabel: { color: Colors.gold.main, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 20, textAlign: 'center' },
+    sectionLabel: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 20, textAlign: 'center' },
     gradesList: { gap: 16, marginBottom: 30 },
     gradeCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
     gradeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
@@ -655,7 +795,7 @@ const styles = StyleSheet.create({
     emptyTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
     emptyDesc: { color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 22, paddingHorizontal: 40 },
 
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 24 },
     modalContent: { width: '100%', backgroundColor: '#1E293B', borderRadius: 32, padding: 32, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
     modalTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
     modalSubtitle: { color: '#94A3B8', fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
@@ -663,7 +803,7 @@ const styles = StyleSheet.create({
     modalActions: { flexDirection: 'row', gap: 12 },
     modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)' },
     modalCancelText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-    modalSubmit: { flex: 2, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.gold.main },
-    modalSubmitText: { color: Colors.navy.dark, fontSize: 14, fontWeight: '900' },
+    modalSubmit: { flex: 2, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold },
+    modalSubmitText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
     successIcon: { alignItems: 'center', marginBottom: 20 },
 });

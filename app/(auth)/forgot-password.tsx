@@ -18,16 +18,32 @@ export default function SchoolForgotPasswordScreen() {
 
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+    const [statusAlert, setStatusAlert] = useState<{
+        visible: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        type: 'info',
+        title: '',
+        message: '',
+    });
 
     const handleSendOTP = async () => {
         if (!email.trim() || !email.includes('@')) {
-            setError('Please enter a valid school email address');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Validation Error',
+                message: 'Please enter a valid school email address'
+            });
             return;
         }
 
         setLoading(true);
-        setError('');
+        setStatusAlert({ ...statusAlert, visible: false });
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/forgot-password`, {
@@ -44,10 +60,20 @@ export default function SchoolForgotPasswordScreen() {
                     params: { email: email.trim() }
                 });
             } else {
-                setError(result.message || result.error || 'Failed to send reset code');
+                setStatusAlert({
+                    visible: true,
+                    type: 'error',
+                    title: 'Dispatch Error',
+                    message: result.message || result.error || 'Failed to send reset code'
+                });
             }
         } catch (err) {
-            setError('An unexpected error occurred');
+            setStatusAlert({
+                visible: true,
+                type: 'error',
+                title: 'Protocol Error',
+                message: 'An unexpected error occurred'
+            });
         } finally {
             setLoading(false);
         }
@@ -82,12 +108,13 @@ export default function SchoolForgotPasswordScreen() {
                                 <Ionicons name="key" size={32} color="#FACC15" />
                             </View>
 
-                            {error && (
+                            {statusAlert.visible && (
                                 <CustomAlert
-                                    type="error"
-                                    title="Security Error"
-                                    message={error}
-                                    onClose={() => setError('')}
+                                    type={statusAlert.type}
+                                    title={statusAlert.title}
+                                    message={statusAlert.message}
+                                    onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+                                    onConfirm={statusAlert.onConfirm}
                                     style={{ marginBottom: 20 }}
                                 />
                             )}
@@ -97,7 +124,7 @@ export default function SchoolForgotPasswordScreen() {
                                 placeholder="enter@email.com"
                                 keyboardType="email-address"
                                 value={email}
-                                onChangeText={(text) => { setEmail(text); setError(''); }}
+                                onChangeText={(text) => { setEmail(text); setStatusAlert({ ...statusAlert, visible: false }); }}
                                 editable={!loading}
                                 containerStyle={styles.inputContainer}
                             />
