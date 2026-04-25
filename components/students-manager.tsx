@@ -395,7 +395,7 @@ export default function StudentsManager() {
                 <Text style={styles.modalSubtitle}>System-level database entry</Text>
               </View>
               <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={24} color="#FFFFFF" />
+                <Ionicons name="close" size={24} color={Colors.accent.gold} />
               </TouchableOpacity>
             </View>
 
