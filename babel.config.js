@@ -4,7 +4,8 @@ module.exports = function(api) {
   // We apply transform-remove-console globally so that ZERO console.logs 
   // or console.error statements leak into the production bundle
   const plugins = [
-    ['transform-remove-console', { exclude: [] }]  // Excludes nothing, removes everything
+    ['transform-remove-console', { exclude: ['error', 'warn'] }], // Allow error/warn for debugging
+    'react-native-reanimated/plugin'
   ];
 
   return {

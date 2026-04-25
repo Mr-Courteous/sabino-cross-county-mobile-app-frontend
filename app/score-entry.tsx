@@ -2,10 +2,8 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  Text,
   ActivityIndicator,
   ScrollView,
-  Alert,
   Platform,
   FlatList,
   KeyboardAvoidingView,
@@ -13,6 +11,7 @@ import {
   Dimensions,
   Modal,
   StyleSheet,
+  TouchableWithoutFeedback
 } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import * as SecureStore from 'expo-secure-store';
@@ -24,18 +23,17 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
-import { router } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { getStorageItem as getToken } from '@/utils/storage';
 import { useAppColors } from '@/hooks/use-app-colors';
 
 // ── Responsive helpers ────────────────────────────────────────────────
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const IS_SMALL = SCREEN_WIDTH < 380;   // e.g. SE, Moto G, Galaxy A series
-// frozen student-name column
+const IS_TINY = SCREEN_WIDTH < 320;
+const IS_SMALL = SCREEN_WIDTH < 380;
 const FROZEN_COL_W  = IS_SMALL ? 110 : 150;
-// each subject group (6 cells × cell width + padding)
-const CELL_W        = IS_SMALL ? 40  : 46;
-const SUBJECT_COL_W = CELL_W * 6 + 28;   // 6 cells + left-padding + gap
+const CELL_W        = IS_TINY ? 34 : (IS_SMALL ? 40 : 46);
+const SUBJECT_COL_W = CELL_W * 6 + 28;
 // ─────────────────────────────────────────────────────────────────────
 
 interface Subject {
@@ -70,8 +68,10 @@ interface StudentMatrixRow {
 }
 
 export default function ScoreEntryScreen() {
+  const router = useRouter();
   const C = useAppColors();
   const styles = useMemo(() => makeStyles(C), [C.scheme]);
+  
   // Authentication & Token
   const [token, setToken] = useState<string>('');
   const [countryId, setCountryId] = useState<number | null>(null);
@@ -86,15 +86,10 @@ export default function ScoreEntryScreen() {
   // Selection State
   const [selectedSession, setSelectedSession] = useState<string>('');
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
-  const [showSessionDropdown, setShowSessionDropdown] = useState(false);
   const [selectedTerm, setSelectedTerm] = useState<string>('First');
   const [selectedTermId, setSelectedTermId] = useState<number>(1);
-  const [showTermDropdown, setShowTermDropdown] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
-  const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
-  const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
-  const [classSearchFilter, setClassSearchFilter] = useState('');
   const [subjectSearchQuery, setSubjectSearchQuery] = useState('');
   const [searchingSubjects, setSearchingSubjects] = useState(false);
   const [activeModal, setActiveModal] = useState<'session' | 'term' | 'class' | 'subject' | 'subjects-sheet' | null>(null);
@@ -118,36 +113,28 @@ export default function ScoreEntryScreen() {
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [savingScores, setSavingScores] = useState(false);
   const [initialError, setInitialError] = useState('');
-  const [sheetError, setSheetError] = useState('');
   const [scoreErrors, setScoreErrors] = useState<{ [key: string]: string }>({});
-  const [saveSuccess, setSaveSuccess] = useState('');
-  const [saveError, setSaveError] = useState('');
 
   const terms = ['First', 'Second', 'Third'];
 
-  // Debounced subject search
   useEffect(() => {
     const timer = setTimeout(() => {
       if (subjectSearchQuery.trim()) {
         searchSubjects(subjectSearchQuery);
       }
-    }, 500); // 500ms debounce
-
+    }, 500);
     return () => clearTimeout(timer);
   }, [subjectSearchQuery]);
 
-  // Map term name to ID
   useEffect(() => {
     const termIndex = terms.indexOf(selectedTerm);
     setSelectedTermId(termIndex + 1);
   }, [selectedTerm]);
 
-  // Initialize - Load token, classes, subjects, sessions
   useEffect(() => {
     initializeScreen();
   }, []);
 
-  // Load score sheet when class and subjects are selected
   useEffect(() => {
     if (selectedClass && selectedSessionId && selectedTermId && selectedSheetSubjects.length > 0) {
       loadScoringMatrix(selectedClass.id);
@@ -164,39 +151,28 @@ export default function ScoreEntryScreen() {
       let tokenValue = '';
       let countryIdValue: number | null = null;
       let schoolIdValue: number | null = null;
-
-      // Step 1: Retrieve userData from SecureStore/localStorage
       let userData: any = null;
 
       if (Platform.OS !== 'web') {
         try {
-          // Mobile: Try SecureStore first
           const userDataString = await SecureStore.getItemAsync('userData');
           if (userDataString) {
             userData = JSON.parse(userDataString);
-            console.log('✓ userData loaded from SecureStore:', userData);
           }
         } catch (secureStoreError) {
-          console.warn('SecureStore access failed, falling back to localStorage:', secureStoreError);
-          // Fallback to localStorage for web
           const userDataString = localStorage.getItem('userData');
           if (userDataString) {
             userData = JSON.parse(userDataString);
-            console.log('✓ userData loaded from localStorage:', userData);
           }
         }
       } else {
-        // Web: Use localStorage
         const userDataString = localStorage.getItem('userData');
         if (userDataString) {
           userData = JSON.parse(userDataString);
-          console.log('✓ userData loaded from localStorage:', userData);
         }
       }
 
-      // Step 2: Extract token and countryId from userData
       if (userData) {
-        // Token might be stored separately or in userData
         if (Platform.OS !== 'web') {
           try {
             tokenValue = (await SecureStore.getItemAsync('userToken')) || '';
@@ -207,44 +183,28 @@ export default function ScoreEntryScreen() {
           tokenValue = localStorage.getItem('userToken') || '';
         }
 
-        // Extract countryId from user object (prefer from userData.countryId, fallback to userData.user.countryId)
         if (userData.countryId) {
           countryIdValue = parseInt(userData.countryId);
-          console.log('✓ countryId extracted from userData.countryId:', countryIdValue);
         } else if (userData.user?.countryId) {
           countryIdValue = parseInt(userData.user.countryId);
-          console.log('✓ countryId extracted from userData.user.countryId:', countryIdValue);
         }
 
-        // Extract schoolId (prefer from userData.schoolId, fallback to userData.user.schoolId)
         if (userData.schoolId) {
           schoolIdValue = userData.schoolId;
         } else if (userData.user?.schoolId) {
           schoolIdValue = userData.user.schoolId;
         }
-
-        console.log('Extracted values - Token:', tokenValue ? '✓' : '✗', 'CountryId:', countryIdValue, 'SchoolId:', schoolIdValue);
       }
 
-      // Step 3: Validate that we have required data
       if (!tokenValue) {
         setInitialError('Authentication failed: No token found. Please login again.');
         return;
       }
 
-      // if (!countryIdValue || countryIdValue === 0) {
-      //   setInitialError('Country context missing. Please login again.');
-      //   return;
-      // }
-
-      // Step 4: Store in component state
       setToken(tokenValue);
       setCountryId(countryIdValue);
       setSchoolId(schoolIdValue);
 
-      console.log('✓ Initialization complete. Fetching data...');
-
-      // Step 5: Fetch data - only if we have valid token
       if (tokenValue) {
         await Promise.all([
           fetchClasses(tokenValue),
@@ -254,9 +214,7 @@ export default function ScoreEntryScreen() {
       }
 
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
-      setInitialError(errorMessage);
-      console.error('Initialize error:', err);
+      setInitialError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoadingInitial(false);
     }
@@ -264,175 +222,79 @@ export default function ScoreEntryScreen() {
 
   const fetchClasses = async (tokenValue: string) => {
     try {
-      if (!tokenValue) {
-        console.warn('⚠️ fetchClasses: Missing token');
-        return;
-      }
-
-      console.log(`📥 Fetching classes`);
-      const response = await fetch(
-        `${API_BASE_URL}/api/classes`,
-        {
-          headers: {
-            'Authorization': `Bearer ${tokenValue}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`❌ Classes fetch failed with status ${response.status}:`, response.statusText);
-        const errorData = await response.json();
-        console.error('Error details:', errorData);
-        return;
-      }
-
+      const response = await fetch(`${API_BASE_URL}/api/classes`, {
+        headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
+      });
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
-        console.log(`✓ Classes loaded: ${data.data.length} classes`);
         setClasses(data.data);
-      } else {
-        console.warn('⚠️ Unexpected response format for classes:', data);
       }
     } catch (err) {
-      console.error('❌ Classes fetch error:', err);
+      console.error('Classes fetch error:', err);
     }
   };
 
   const fetchSubjects = async (tokenValue: string) => {
     try {
-      if (!tokenValue) {
-        console.warn('⚠️ fetchSubjects: Missing token');
-        return;
-      }
-
-      console.log(`📥 Fetching subjects`);
-      const response = await fetch(
-        `${API_BASE_URL}/api/classes/subjects`,
-        {
-          headers: {
-            'Authorization': `Bearer ${tokenValue}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`❌ Subjects fetch failed with status ${response.status}:`, response.statusText);
-        const errorData = await response.json();
-        console.error('Error details:', errorData);
-        return;
-      }
-
+      const response = await fetch(`${API_BASE_URL}/api/classes/subjects`, {
+        headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
+      });
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
-        console.log(`✓ Subjects loaded: ${data.data.length} subjects`);
         setSubjects(data.data);
-      } else {
-        console.warn('⚠️ Unexpected response format for subjects:', data);
       }
     } catch (err) {
-      console.error('❌ Subjects fetch error:', err);
+      console.error('Subjects fetch error:', err);
     }
   };
 
-  // Debounced subject search function
   const searchSubjects = async (keyword: string) => {
     if (!keyword.trim()) {
       setSubjects([]);
       return;
     }
-
     try {
       setSearchingSubjects(true);
-      console.log(`🔍 Searching subjects with keyword: ${keyword}`);
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/subjects/search?keyword=${encodeURIComponent(keyword)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`❌ Subject search failed with status ${response.status}`);
-        return;
-      }
-
+      const response = await fetch(`${API_BASE_URL}/api/subjects/search?keyword=${encodeURIComponent(keyword)}`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
-        console.log(`✓ Found ${data.data.length} subjects`);
         setSubjects(data.data);
-      } else {
-        console.warn('⚠️ Unexpected response format for subject search:', data);
       }
     } catch (err) {
-      console.error('❌ Subject search error:', err);
+      console.error('Subject search error:', err);
     } finally {
       setSearchingSubjects(false);
     }
   };
 
-  const fetchAcademicSessions = async (
-    tokenValue: string
-  ) => {
+  const fetchAcademicSessions = async (tokenValue: string) => {
     try {
-      if (!tokenValue) {
-        console.warn('⚠️ fetchAcademicSessions: Missing token');
-        return;
-      }
-
-      console.log(`📥 Fetching academic sessions`);
-      const response = await fetch(
-        `${API_BASE_URL}/api/academic-sessions`,
-        {
-          headers: {
-            'Authorization': `Bearer ${tokenValue}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`❌ Academic sessions fetch failed with status ${response.status}:`, response.statusText);
-        const errorData = await response.json();
-        console.error('Error details:', errorData);
-        return;
-      }
-
+      const response = await fetch(`${API_BASE_URL}/api/academic-sessions`, {
+        headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
+      });
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
         const sessions = data.data.map((s: any) => ({
           id: s.id,
           session_name: s.session_name || s.name
         }));
-        console.log(`✓ Academic sessions loaded: ${sessions.length} sessions`);
         setAcademicSessions(sessions);
         if (sessions.length > 0) {
           setSelectedSession(sessions[0].session_name);
           setSelectedSessionId(sessions[0].id);
         }
-      } else {
-        console.warn('⚠️ Unexpected response format for academic sessions:', data);
       }
     } catch (err) {
-      console.error('❌ Academic sessions fetch error:', err);
+      console.error('Academic sessions fetch error:', err);
     }
   };
 
   const loadScoringMatrix = async (classId: number) => {
     if (!token || !selectedSessionId || !selectedTermId || selectedSheetSubjects.length === 0) return;
-
     try {
-      setSavingScores(false);
       setLoadingSheet(true);
-      setSheetError('');
- 
-      console.log(`📥 Loading matrix for classId=${classId}, subjects=${selectedSheetSubjects.length}`);
- 
       const promises = selectedSheetSubjects.map(sub => 
         fetch(
           `${API_BASE_URL}/api/scores/sheet?classId=${classId}&subjectId=${sub.id}&sessionId=${selectedSessionId}&termId=${selectedTermId}`,
@@ -480,8 +342,6 @@ export default function ScoreEntryScreen() {
 
       setMatrixData(allRows);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Error loading matrix';
-      setSheetError(errorMessage);
       console.error('Matrix load err:', err);
     } finally {
       setLoadingSheet(false);
@@ -542,8 +402,7 @@ export default function ScoreEntryScreen() {
     const ca3 = typeof score.ca3 === 'string' ? parseFloat(score.ca3) || 0 : score.ca3 || 0;
     const ca4 = typeof score.ca4 === 'string' ? parseFloat(score.ca4) || 0 : score.ca4 || 0;
     const exam = typeof score.exam === 'string' ? parseFloat(score.exam) || 0 : score.exam || 0;
-
-    return ca1 + ca2 + ca3 + ca4 + exam;
+    return (ca1 as number) + (ca2 as number) + (ca3 as number) + (ca4 as number) + (exam as number);
   };
 
   const validateAllScores = (): boolean => {
@@ -580,22 +439,11 @@ export default function ScoreEntryScreen() {
   };
 
   const handleSaveAllScores = async () => {
-    setSaveSuccess('');
-    setSaveError('');
-
-    if (!validateAllScores()) {
-      setSaveError('Please fix all score errors before saving');
-      return;
-    }
-
-    if (matrixData.length === 0) {
-      setSaveError('Please load scoring sheet first');
-      return;
-    }
+    if (!validateAllScores()) return;
+    if (matrixData.length === 0) return;
 
     try {
       setSavingScores(true);
-
       const scoresPayload: any[] = [];
       matrixData.forEach(row => {
          selectedSheetSubjects.forEach(sub => {
@@ -617,66 +465,31 @@ export default function ScoreEntryScreen() {
       });
 
       if (scoresPayload.length === 0) {
-        setStatusAlert({
-          visible: true,
-          type: 'error',
-          title: 'Missing Data',
-          message: 'Please enter at least one score before saving.'
-        });
+        setStatusAlert({ visible: true, type: 'error', title: 'Missing Data', message: 'Enter at least one score.' });
         return;
       }
 
-      console.log(`📤 Saving ${scoresPayload.length} scores...`);
-
       const response = await fetch(`${API_BASE_URL}/api/scores/record`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          scores: scoresPayload,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ scores: scoresPayload }),
       });
 
       const data = await response.json();
-
       if (response.ok && data.success) {
-        setStatusAlert({
-          visible: true,
-          type: 'success',
-          title: 'System Updated',
-          message: `${data.count} score(s) record(s) have been successfully uploaded.`
-        });
-        
+        setStatusAlert({ visible: true, type: 'success', title: 'System Updated', message: `${data.count} score(s) saved.` });
         setTimeout(() => setStatusAlert(prev => ({ ...prev, visible: false })), 3000);
-
-        setTimeout(() => {
-          if (selectedClass) {
-            loadScoringMatrix(selectedClass.id);
-          }
-        }, 500);
-
-        setTimeout(() => setSaveSuccess(''), 4000);
+        if (selectedClass) loadScoringMatrix(selectedClass.id);
       } else {
-        setStatusAlert({
-          visible: true,
-          type: 'error',
-          title: 'Update Failed',
-          message: data.message || data.error || 'The system was unable to save the score records.'
-        });
+        setStatusAlert({ visible: true, type: 'error', title: 'Update Failed', message: data.message || 'Unable to save scores.' });
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred while saving scores';
       console.error('Save scores error:', err);
-      setSaveError(errorMessage);
-      setSaveSuccess('');
     } finally {
       setSavingScores(false);
     }
   };
 
-  // Show loading screen while initializing
   if (loadingInitial) {
     return (
       <View style={[styles.mainWrapper, { backgroundColor: C.background, justifyContent: 'center', alignItems: 'center' }]}>
@@ -689,7 +502,6 @@ export default function ScoreEntryScreen() {
   const renderDropdownModal = () => {
     if (!activeModal) return null;
 
-    // Content for the Score Sheet Subject Selector (Multi-Select)
     if (activeModal === 'subjects-sheet') {
       return (
         <Modal
@@ -703,21 +515,21 @@ export default function ScoreEntryScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <View>
                   <ThemedText style={styles.modalTitle}>Load Score Sheet</ThemedText>
-                  <ThemedText style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Select subjects to load scores for all students</ThemedText>
+                  <ThemedText style={{ color: C.textSecondary, fontSize: 12 }}>Select subjects to load scores for all students</ThemedText>
                 </View>
                 <TouchableOpacity onPress={() => setActiveModal(null)}>
-                  <Ionicons name="close-circle" size={32} color="rgba(255,255,255,0.2)" />
+                  <Ionicons name="close-circle" size={32} color={C.textMuted} />
                 </TouchableOpacity>
               </View>
 
               <View style={[styles.pickerButton, { marginBottom: 16 }]}>
-                <Ionicons name="search" size={20} color="rgba(255,255,255,0.4)" />
+                <Ionicons name="search" size={20} color={C.textMuted} />
                 <TextInput
                   style={[styles.pickerText, { flex: 1, marginLeft: 12 }]}
                   placeholder="Search subjects..."
                   value={subjectSearchQuery}
                   onChangeText={setSubjectSearchQuery}
-                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  placeholderTextColor={C.textMuted}
                 />
               </View>
               
@@ -741,7 +553,7 @@ export default function ScoreEntryScreen() {
                         <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText]}>
                           {item.name}
                         </ThemedText>
-                        <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : 'rgba(255,255,255,0.1)', backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+                        <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
                           {isSelected && <Ionicons name="checkmark" size={16} color={Colors.accent.navy} />}
                         </View>
                       </View>
@@ -751,7 +563,7 @@ export default function ScoreEntryScreen() {
                 contentContainerStyle={{ paddingBottom: 20 }}
               />
 
-              <View style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+              <View style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: C.divider }}>
                 <CustomButton 
                   title={`Load ${selectedSheetSubjects.length} Subject${selectedSheetSubjects.length !== 1 ? 's' : ''}`}
                   onPress={() => setActiveModal(null)}
@@ -765,7 +577,6 @@ export default function ScoreEntryScreen() {
       );
     }
 
-    // Standard dropdown logic
     let data: any[] = [];
     let title = '';
     let currentSelection: any = null;
@@ -803,7 +614,7 @@ export default function ScoreEntryScreen() {
 
     return (
       <Modal
-        visible={!!activeModal}
+        visible={activeModal !== null}
         transparent
         animationType="slide"
         onRequestClose={() => setActiveModal(null)}
@@ -813,416 +624,311 @@ export default function ScoreEntryScreen() {
           activeOpacity={1} 
           onPress={() => setActiveModal(null)}
         >
-          <View style={[styles.modalContent, { backgroundColor: C.modalBg, borderColor: C.cardBorder }]}>
-            <ThemedText style={styles.modalTitle}>{title}</ThemedText>
-            
-            {activeModal === 'subject' && (
-              <View style={[styles.pickerButton, { marginBottom: 16 }]}>
-                <Ionicons name="search" size={20} color="rgba(255,255,255,0.4)" />
-                <TextInput
-                  style={[styles.pickerText, { flex: 1, marginLeft: 12 }]}
-                  placeholder="Search subjects..."
-                  value={subjectSearchQuery}
-                  onChangeText={setSubjectSearchQuery}
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                />
-              </View>
-            )}
-
-            <FlatList
-              data={data}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={({ item }) => {
-                const isSelected = activeModal === 'term' ? currentSelection === item.name : currentSelection === item.id;
-                return (
-                  <TouchableOpacity
-                    style={[styles.dropdownItem, isSelected && styles.selectedItem]}
-                    onPress={() => {
-                      onSelect(item);
-                      setActiveModal(null);
-                    }}
-                  >
-                    <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText]}>
-                      {item.session_name || item.name || item.display_name}
-                    </ThemedText>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </View>
+          <TouchableWithoutFeedback>
+            <View style={[
+              styles.bottomSheet, 
+              { backgroundColor: C.modalBg, borderColor: C.cardBorder }
+            ]}>
+              <View style={styles.sheetHandle} />
+              <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+              <FlatList
+                data={data}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={({ item }) => {
+                  const isSelected = (activeModal === 'term' ? item.name === currentSelection : item.id === currentSelection);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.dropdownItem, isSelected && styles.selectedItem]}
+                      onPress={() => {
+                        onSelect(item);
+                        setActiveModal(null);
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
+                        <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText]}>
+                          {item.display_name || item.session_name || item.name}
+                        </ThemedText>
+                        <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+                          {isSelected && <Ionicons name="checkmark" size={14} color={Colors.accent.navy} />}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+                contentContainerStyle={{ paddingBottom: 40 }}
+              />
+            </View>
+          </TouchableWithoutFeedback>
         </TouchableOpacity>
       </Modal>
     );
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.mainWrapper, { backgroundColor: C.background }]}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Hero Header */}
-          <ImageBackground
-            source={{ uri: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=2070' }}
-            style={styles.hero}
+      <ThemedView style={styles.mainWrapper}>
+        <ImageBackground
+          source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
+          style={styles.hero}
+        >
+          <LinearGradient
+            colors={['transparent', C.isDark ? Colors.accent.navy : C.background]}
+            style={styles.heroOverlay}
           >
-            <LinearGradient
-              colors={['transparent', Colors.accent.navy]}
-              style={styles.heroOverlay}
-            >
-              <View style={styles.header}>
-                <TouchableOpacity 
-                  style={styles.backButton}
-                  onPress={() => router.back()}
-                >
-                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-                <View style={styles.headerActions}>
-                  <TouchableOpacity style={styles.actionIcon}>
-                    <Ionicons name="help-circle-outline" size={24} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.heroContent}>
-                <ThemedText style={styles.heroSubtitle}>ACADEMIC PERFORMANCE</ThemedText>
-                <ThemedText style={styles.heroMainTitle}>Score Entry</ThemedText>
-              </View>
-            </LinearGradient>
-          </ImageBackground>
-
-          {/* Filter Section */}
-          <View style={[styles.filterSection]}>
-            <View style={[styles.glassCard, { backgroundColor: C.card, borderColor: C.cardBorder }]}>
-              <View style={styles.filterGroup}>
-                <ThemedText style={styles.filterLabel}>Academic Session</ThemedText>
-                <TouchableOpacity
-                  style={[styles.pickerButton, { backgroundColor: C.pickerButton, borderColor: C.inputBorder }]}
-                  onPress={() => setActiveModal('session')}
-                >
-                  <ThemedText style={selectedSession ? styles.pickerText : styles.placeholderText}>
-                    {selectedSession || 'Choose Session'}
-                  </ThemedText>
-                  <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 16 }}>
-                <View style={[styles.filterGroup, { flex: 1 }]}>
-                  <ThemedText style={styles.filterLabel}>Term</ThemedText>
-                  <TouchableOpacity
-                    style={[styles.pickerButton, { backgroundColor: C.pickerButton, borderColor: C.inputBorder }]}
-                    onPress={() => setActiveModal('term')}
-                  >
-                    <ThemedText style={styles.pickerText}>{selectedTerm}</ThemedText>
-                    <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={[styles.filterGroup, { flex: 1.5 }]}>
-                  <ThemedText style={styles.filterLabel}>Class</ThemedText>
-                  <TouchableOpacity
-                    style={[styles.pickerButton, { backgroundColor: C.pickerButton, borderColor: C.inputBorder }]}
-                    onPress={() => setActiveModal('class')}
-                  >
-                    <ThemedText style={selectedClass ? styles.pickerText : styles.placeholderText}>
-                      {selectedClass?.display_name || 'Select Class'}
-                    </ThemedText>
-                    <Ionicons name="chevron-down" size={20} color={Colors.accent.gold} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={{ marginBottom: 16, marginTop: 8 }}>
-                <CustomButton
-                  title={selectedSheetSubjects.length > 0 ? `Manage Subjects (${selectedSheetSubjects.length} loaded)` : "Load Score Sheet"}
-                  onPress={() => setActiveModal('subjects-sheet')}
-                  disabled={!selectedClass}
-                  variant="outline"
-                  icon={<Ionicons name="document-text-outline" size={20} color={Colors.accent.gold} style={{ marginRight: 12 }} />}
-                />
-                {!selectedClass && (
-                  <ThemedText style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, textAlign: 'center', marginTop: 8 }}>
-                    Please select a class first to load score sheet
-                  </ThemedText>
-                )}
-                {selectedSheetSubjects.length > 0 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                    {selectedSheetSubjects.map(sub => (
-                      <TouchableOpacity 
-                        key={sub.id}
-                        style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, flexDirection: 'row', alignItems: 'center' }}
-                        onPress={() => setSelectedSheetSubjects(prev => prev.filter(s => s.id !== sub.id))}
-                      >
-                        <ThemedText style={{ color: Colors.accent.gold, fontSize: 12 }}>{sub.name}</ThemedText>
-                        <Ionicons name="close" size={14} color={Colors.accent.gold} style={{ marginLeft: 6 }} />
-                      </TouchableOpacity>
-                    ))}
-                    {/* Add Subject chip — always at the end of the row */}
-                    <TouchableOpacity
-                      style={{ backgroundColor: 'rgba(250, 204, 21, 0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(250, 204, 21, 0.3)', borderStyle: 'dashed' }}
-                      onPress={() => setActiveModal('subjects-sheet')}
-                    >
-                      <Ionicons name="add" size={14} color={Colors.accent.gold} />
-                      <ThemedText style={{ color: Colors.accent.gold, fontSize: 12, marginLeft: 4, fontWeight: '700' }}>Add Subject</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={24} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
+              </TouchableOpacity>
+              <ThemedText style={styles.headerTitle}>Academic Registry</ThemedText>
+              <View style={{ width: 44 }} />
             </View>
-          </View>
 
-          {/* Stacked Student Cards */}
-          <View style={{ paddingHorizontal: IS_SMALL ? 12 : 20, paddingTop: 12, paddingBottom: 120 }}>
+            <View style={styles.heroContent}>
+              <ThemedText style={styles.heroSubtitle}>DATA ARCHITECTURE</ThemedText>
+              <ThemedText style={styles.heroTitle}>Score Management</ThemedText>
+            </View>
+          </LinearGradient>
+        </ImageBackground>
 
-            {/* ── Sheet loading spinner ── */}
-            {loadingSheet && (
-              <View style={{ alignItems: 'center', paddingVertical: 48, gap: 14 }}>
+        <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false}>
+          <View style={styles.contentWrapper}>
+            <View style={styles.glassCard}>
+              <View style={styles.filterGrid}>
+                <View style={styles.gridItem}>
+                  <ThemedText style={styles.label}>SESSION</ThemedText>
+                  <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('session')}>
+                    <ThemedText style={styles.miniPickerText} numberOfLines={1}>{selectedSession || 'Select'}</ThemedText>
+                    <Ionicons name="calendar-outline" size={14} color={Colors.accent.gold} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.gridItem}>
+                  <ThemedText style={styles.label}>TERM</ThemedText>
+                  <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('term')}>
+                    <ThemedText style={styles.miniPickerText}>{selectedTerm}</ThemedText>
+                    <Ionicons name="time-outline" size={14} color={Colors.accent.gold} />
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.gridItem, { flex: 1.5 }]}>
+                  <ThemedText style={styles.label}>CLASS</ThemedText>
+                  <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('class')}>
+                    <ThemedText style={selectedClass ? styles.miniPickerText : styles.placeholderText} numberOfLines={1}>
+                      {selectedClass ? selectedClass.display_name : 'Choose...'}
+                    </ThemedText>
+                    <Ionicons name="school-outline" size={14} color={Colors.accent.gold} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={{ marginBottom: 24 }}>
+                <ThemedText style={styles.label}>SUBJECT PAYLOAD CONFIGURATION</ThemedText>
+                <TouchableOpacity 
+                  style={[styles.payloadButton, { borderColor: selectedSheetSubjects.length > 0 ? Colors.accent.gold : C.inputBorder }]} 
+                  onPress={() => setActiveModal('subjects-sheet')}
+                >
+                  <View style={styles.payloadIconBox}>
+                    <Ionicons name="layers" size={20} color={selectedSheetSubjects.length > 0 ? Colors.accent.gold : C.textMuted} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={selectedSheetSubjects.length > 0 ? styles.pickerText : styles.placeholderText}>
+                      {selectedSheetSubjects.length > 0 
+                        ? `${selectedSheetSubjects.length} Subjects Loaded` 
+                        : 'Tap to load score sheet...'}
+                    </ThemedText>
+                    <ThemedText style={{ color: C.textMuted, fontSize: 10, fontWeight: '600' }}>Select multiple subjects for bulk entry</ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              <CustomButton
+                title={savingScores ? "Updating Records..." : "Save All Scores"}
+                onPress={handleSaveAllScores}
+                loading={savingScores}
+                variant="premium"
+                disabled={matrixData.length === 0}
+              />
+            </View>
+
+            {loadingSheet ? (
+              <View style={styles.loaderContainer}>
                 <ActivityIndicator size="large" color={Colors.accent.gold} />
-                <ThemedText style={{ color: Colors.accent.gold, fontSize: IS_SMALL ? 10 : 11, fontWeight: '800', letterSpacing: 2 }}>LOADING SCORE SHEET...</ThemedText>
+                <ThemedText style={styles.loaderText}>SYNCHRONIZING SCORING MATRIX...</ThemedText>
               </View>
-            )}
-
-            {/* ── Sheet error banner ── */}
-            {!loadingSheet && sheetError !== '' && (
-              <View style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', padding: 16, marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Ionicons name="alert-circle" size={20} color="#EF4444" />
-                <ThemedText style={{ color: '#EF4444', fontSize: 13, fontWeight: '600', flex: 1 }}>{sheetError}</ThemedText>
-              </View>
-            )}
-
-            {/* ── Initial error banner ── */}
-            {!loadingSheet && initialError !== '' && (
-              <View style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', padding: 16, marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Ionicons name="warning" size={20} color="#EF4444" />
-                <ThemedText style={{ color: '#EF4444', fontSize: 13, fontWeight: '600', flex: 1 }}>{initialError}</ThemedText>
-              </View>
-            )}
-
-            {!loadingSheet && matrixData.length > 0 ? (
-              matrixData.map(row => (
-                <View key={row.enrollment_id} style={{
-                  backgroundColor: C.card,
-                  borderRadius: 20,
-                  borderWidth: 1,
-                  borderColor: C.cardBorder,
-                  marginBottom: 14,
-                  overflow: 'hidden',
-                }}>
-                  {/* ── Student Header ── */}
-                  <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 14,
-                    borderBottomWidth: 1,
-                    borderBottomColor: C.divider,
-                    backgroundColor: C.isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                  }}>
-                    <View style={[styles.avatar, { width: 38, height: 38, borderRadius: 12 }]}>
-                      <ThemedText style={[styles.avatarText, { fontSize: 14 }]}>
-                        {row.first_name[0]}{row.last_name[0]}
-                      </ThemedText>
+            ) : matrixData.length > 0 ? (
+              <View style={styles.matrixContainer}>
+                {matrixData.map((row, idx) => (
+                  <View key={row.enrollment_id} style={styles.studentCard}>
+                    <View style={styles.studentHeader}>
+                      <View style={styles.avatarMini}>
+                        <ThemedText style={styles.avatarText}>{(row.first_name?.[0] || '') + (row.last_name?.[0] || '')}</ThemedText>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={styles.studentNameText}>
+                          {row.first_name} {row.last_name}
+                        </ThemedText>
+                        <ThemedText style={styles.studentIdText}>ID: {row.student_id}</ThemedText>
+                      </View>
+                      <View style={styles.totalBadgeMini}>
+                        <ThemedText style={styles.totalTextMini}>
+                          {selectedSheetSubjects.reduce((acc, sub) => acc + calculateTotal(row.scores[sub.id]), 0)}
+                        </ThemedText>
+                        <ThemedText style={styles.totalLabelMini}>AVG</ThemedText>
+                      </View>
                     </View>
-                    <View style={{ marginLeft: 12, flex: 1 }}>
-                      <ThemedText style={[styles.studentName, { fontSize: 15 }]} numberOfLines={1} ellipsizeMode="tail">
-                        {row.first_name} {row.last_name}
-                      </ThemedText>
-                      <ThemedText style={styles.studentId}>ID: {row.student_id}</ThemedText>
+
+                    <View style={styles.subjectsList}>
+                      {selectedSheetSubjects.map(sub => {
+                        const score = row.scores[sub.id];
+                        const total = calculateTotal(score);
+                        return (
+                          <View key={sub.id} style={styles.subjectBlock}>
+                            <View style={styles.subjectTitleRow}>
+                              <Ionicons name="book-outline" size={14} color={Colors.accent.gold} />
+                              <ThemedText style={styles.subjectNameText}>{sub.name.toUpperCase()}</ThemedText>
+                              <View style={styles.totalIndicator}>
+                                <ThemedText style={[styles.totalValueText, { color: total > 0 ? Colors.accent.gold : C.textMuted }]}>{total}%</ThemedText>
+                              </View>
+                            </View>
+
+                            <View style={styles.scoreGrid}>
+                              {['ca1', 'ca2', 'ca3', 'ca4'].map(ca => {
+                                const error = scoreErrors[`${row.enrollment_id}-${sub.id}-${ca}`];
+                                return (
+                                  <View key={ca} style={styles.scoreInputGroup}>
+                                    <ThemedText style={styles.scoreLabel}>{ca.toUpperCase()}</ThemedText>
+                                    <TextInput
+                                      style={[styles.scoreInput, error ? styles.inputError : null]}
+                                      keyboardType="numeric"
+                                      value={String(score ? score[ca as keyof SubjectScore] || '' : '')}
+                                      onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, ca, val)}
+                                      placeholder="0"
+                                      placeholderTextColor={C.textMuted}
+                                      maxLength={4}
+                                    />
+                                  </View>
+                                );
+                              })}
+                              
+                              <View style={[styles.scoreInputGroup, { flex: 1.5 }]}>
+                                <ThemedText style={[styles.scoreLabel, { color: Colors.accent.gold }]}>EXAM</ThemedText>
+                                <TextInput
+                                  style={[styles.scoreInput, styles.examInput, scoreErrors[`${row.enrollment_id}-${sub.id}-exam`] ? styles.inputError : null]}
+                                  keyboardType="numeric"
+                                  value={String(score ? score.exam || '' : '')}
+                                  onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, 'exam', val)}
+                                  placeholder="0"
+                                  placeholderTextColor={C.textMuted}
+                                  maxLength={4}
+                                />
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
                     </View>
                   </View>
-
-                  {/* ── Subject Rows ── */}
-                  {selectedSheetSubjects.map((sub, subIdx) => {
-                    const score = row.scores[sub.id] || { score_id: null, ca1: '', ca2: '', ca3: '', ca4: '', exam: '' };
-                    const total = calculateTotal(score);
-                    const hasError = ['ca1','ca2','ca3','ca4','exam'].some(
-                      f => scoreErrors[`${row.enrollment_id}-${sub.id}-${f}`]
-                    );
-                    return (
-                      <View key={sub.id} style={{
-                        padding: 12,
-                        borderBottomWidth: subIdx < selectedSheetSubjects.length - 1 ? 1 : 0,
-                        borderBottomColor: 'rgba(255,255,255,0.05)',
-                      }}>
-                        {/* Subject name + total badge */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                          <ThemedText style={{ color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 0.5, flexShrink: 1, marginRight: 8 }} numberOfLines={1}>
-                            {sub.name}
-                          </ThemedText>
-                          <View style={{ backgroundColor: total > 0 ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: total > 0 ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.08)' }}>
-                            <ThemedText style={{ fontSize: 13, fontWeight: '900', color: total > 0 ? '#22C55E' : 'rgba(255,255,255,0.3)' }}>
-                              {total > 0 ? total.toFixed(0) : '—'} / 100
-                            </ThemedText>
-                          </View>
-                        </View>
-
-                        {/* Input grid: two rows of labels + inputs */}
-                        <View style={{ gap: 8 }}>
-                          {/* Row 1: CA1  CA2  CA3  CA4 */}
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
-                            {(['ca1','ca2','ca3','ca4'] as const).map(f => (
-                              <View key={f} style={{ flex: 1, alignItems: 'center' }}>
-                                <ThemedText style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontWeight: '800', letterSpacing: 1, marginBottom: 4 }}>
-                                  {f.toUpperCase()}
-                                </ThemedText>
-                                <TextInput
-                                  style={[styles.stackInput, scoreErrors[`${row.enrollment_id}-${sub.id}-${f}`] && styles.errorInput]}
-                                  keyboardType="decimal-pad"
-                                  placeholder="—"
-                                  placeholderTextColor="rgba(255,255,255,0.15)"
-                                  value={String(score[f as keyof SubjectScore] ?? '')}
-                                  onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, f, val)}
-                                />
-                                {scoreErrors[`${row.enrollment_id}-${sub.id}-${f}`] ? (
-                                  <ThemedText style={{ fontSize: 8, color: '#EF4444', marginTop: 2 }}>Max 10</ThemedText>
-                                ) : null}
-                              </View>
-                            ))}
-                          </View>
-
-                          {/* Row 2: EXAM (wider) */}
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
-                            <View style={{ flex: 2, alignItems: 'center' }}>
-                              <ThemedText style={{ fontSize: 9, color: 'rgba(34,197,94,0.7)', fontWeight: '800', letterSpacing: 1, marginBottom: 4 }}>
-                                EXAM
-                              </ThemedText>
-                              <TextInput
-                                style={[styles.stackInput, { borderColor: 'rgba(34,197,94,0.25)', width: '100%' }, scoreErrors[`${row.enrollment_id}-${sub.id}-exam`] && styles.errorInput]}
-                                keyboardType="decimal-pad"
-                                placeholder="—"
-                                placeholderTextColor="rgba(255,255,255,0.15)"
-                                value={String(score.exam ?? '')}
-                                onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, 'exam', val)}
-                              />
-                              {scoreErrors[`${row.enrollment_id}-${sub.id}-exam`] ? (
-                                <ThemedText style={{ fontSize: 8, color: '#EF4444', marginTop: 2 }}>Max 60</ThemedText>
-                              ) : null}
-                            </View>
-                            {/* spacer to keep EXAM on the left half */}
-                            <View style={{ flex: 2 }} />
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              ))
+                ))}
+              </View>
             ) : (
-              !loadingSheet && sheetError === '' && initialError === '' && (
-                <View style={styles.emptyState}>
-                  <Ionicons name="document-text-outline" size={64} color="rgba(255,255,255,0.1)" />
-                  <ThemedText style={styles.emptyTitle}>No Records Loaded</ThemedText>
-                  <ThemedText style={styles.emptySubtitle}>
-                    Select a class and subjects, then tap "Load Score Sheet" to begin entering scores
-                  </ThemedText>
-                </View>
-              )
+              <View style={styles.emptyState}>
+                <Ionicons name="layers-outline" size={64} color={C.textMuted} />
+                <ThemedText style={styles.emptyTitle}>Matrix Offline</ThemedText>
+                <ThemedText style={styles.emptySubtitle}>Select a class and at least one subject payload to initialize the scoring matrix.</ThemedText>
+              </View>
             )}
           </View>
         </ScrollView>
 
-        {/* Floating Save Button */}
-        {matrixData.length > 0 && (
-          <View style={styles.floatingActions}>
-            <CustomButton
-              title={savingScores ? "Saving..." : "Save All Scores"}
-              onPress={handleSaveAllScores}
-              loading={savingScores}
-              variant="premium"
-              style={{ height: 60, borderRadius: 20 }}
-              icon={<Ionicons name="save-outline" size={24} color={Colors.accent.navy} style={{ marginRight: 10 }} />}
-            />
-          </View>
-        )}
-
-        {/* Modals */}
         {renderDropdownModal()}
-
-        {/* Global Status Overlay */}
+        
         {statusAlert.visible && (
-          <CustomAlert 
-            type={statusAlert.type} 
-            title={statusAlert.title} 
-            message={statusAlert.message} 
+          <CustomAlert
+            type={statusAlert.type}
+            title={statusAlert.title}
+            message={statusAlert.message}
             onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-            onConfirm={statusAlert.onConfirm}
-            confirmLabel={statusAlert.confirmLabel}
+            style={styles.alert}
           />
         )}
-      </View>
+      </ThemedView>
     </KeyboardAvoidingView>
   );
 }
 
 function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
   return StyleSheet.create({
-    mainWrapper:     { flex: 1 },
-    scrollContent:   { paddingBottom: 120 },
+    mainWrapper: { flex: 1, backgroundColor: C.background },
+    hero: { height: IS_TINY ? 180 : 260, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: IS_TINY ? 16 : 24, paddingTop: IS_TINY ? 40 : 60 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: IS_TINY ? 10 : 20 },
+    backButton: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: C.text, fontSize: IS_TINY ? 14 : 16, fontWeight: '800', letterSpacing: 0.5 },
+    heroContent: { marginTop: 'auto', marginBottom: 20 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: IS_TINY ? 9 : 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
+    heroTitle: { color: C.text, fontSize: IS_TINY ? 24 : 32, fontWeight: '900', letterSpacing: -1 },
 
-    // ── Hero ──────────────────────────────────────────────────────────
-    hero:            { height: IS_SMALL ? 200 : 260, width: '100%' },
-    heroOverlay:     { flex: 1, paddingHorizontal: IS_SMALL ? 16 : 24, paddingTop: IS_SMALL ? 44 : 60 },
-    header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: IS_SMALL ? 12 : 20 },
-    backButton:      { width: 40, height: 40, borderRadius: 12, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
-    headerActions:   { flexDirection: 'row', gap: 8 },
-    actionIcon:      { width: 40, height: 40, borderRadius: 12, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
-    heroContent:     { marginTop: 'auto', marginBottom: IS_SMALL ? 14 : 20 },
-    heroSubtitle:    { color: Colors.accent.gold, fontSize: IS_SMALL ? 9 : 11, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
-    heroMainTitle:   { color: C.isDark ? '#FFFFFF' : '#0F172A', fontSize: IS_SMALL ? 26 : 32, fontWeight: '900', letterSpacing: -1 },
+    contentWrapper: { paddingHorizontal: IS_TINY ? 12 : 20, marginTop: IS_TINY ? -20 : -30, paddingBottom: 100 },
+    glassCard: { backgroundColor: C.card, borderRadius: IS_TINY ? 24 : 32, padding: IS_TINY ? 16 : 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 20 },
+    label: { color: C.textLabel, fontSize: IS_TINY ? 8 : 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 10 },
+    
+    filterRow: { flexDirection: 'row', gap: 16, marginBottom: 20 },
+    filterItem: { flex: 1 },
+    pickerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 16, height: 52, borderWidth: 1, borderColor: C.inputBorder },
+    pickerText: { color: C.inputText, fontSize: 14, fontWeight: '700' },
+    placeholderText: { color: C.textMuted, fontSize: 14, fontWeight: '600' },
+    
+    loaderContainer: { padding: 60, alignItems: 'center' },
+    loaderText: { marginTop: 24, color: C.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+    
+    filterGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+    gridItem: { minWidth: IS_TINY ? '45%' : 90, flex: 1, gap: 6 },
+    miniPicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 10, paddingHorizontal: 10, height: 40, borderWidth: 1, borderColor: C.inputBorder },
+    miniPickerText: { color: C.inputText, fontSize: IS_TINY ? 10 : 12, fontWeight: '700' },
+    
+    payloadButton: { flexDirection: 'row', alignItems: 'center', gap: IS_TINY ? 10 : 16, backgroundColor: C.inputBg, borderRadius: 16, padding: IS_TINY ? 12 : 16, borderWidth: 1, borderColor: C.inputBorder },
+    payloadIconBox: { width: IS_TINY ? 36 : 44, height: IS_TINY ? 36 : 44, borderRadius: 12, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
 
-    // ── Filters ───────────────────────────────────────────────────────
-    filterSection:   { paddingHorizontal: IS_SMALL ? 12 : 20, paddingTop: IS_SMALL ? 16 : 24, paddingBottom: 12 },
-    glassCard:       { backgroundColor: C.card, borderRadius: 20, padding: IS_SMALL ? 14 : 20, borderWidth: 1, borderColor: C.cardBorder },
-    filterGroup:     { marginBottom: IS_SMALL ? 14 : 20 },
-    filterLabel:     { color: C.textLabel, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: IS_SMALL ? 8 : 12, textTransform: 'uppercase' },
+    matrixContainer: { gap: 16 },
+    studentCard: { backgroundColor: C.card, borderRadius: IS_TINY ? 20 : 28, padding: IS_TINY ? 12 : 16, borderWidth: 1, borderColor: C.cardBorder, overflow: 'hidden' },
+    studentHeader: { flexDirection: 'row', alignItems: 'center', gap: IS_TINY ? 8 : 12, marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.divider },
+    avatarMini: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+    avatarText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
+    studentNameText: { color: Colors.accent.gold, fontSize: IS_TINY ? 14 : 16, fontWeight: '900', letterSpacing: 0.2 },
+    studentIdText: { color: C.textSecondary, fontSize: IS_TINY ? 9 : 11, fontWeight: '600', marginTop: 1 },
+    totalBadgeMini: { backgroundColor: Colors.accent.gold + '15', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignItems: 'center', minWidth: 40 },
+    totalTextMini: { color: Colors.accent.gold, fontSize: IS_TINY ? 11 : 13, fontWeight: '900' },
+    totalLabelMini: { color: Colors.accent.gold, fontSize: 7, fontWeight: '800' },
 
-    pickerButton:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 14, paddingHorizontal: 14, height: IS_SMALL ? 46 : 52, borderWidth: 1, borderColor: C.inputBorder },
-    pickerText:      { color: C.text, fontSize: IS_SMALL ? 13 : 14, fontWeight: '600', flexShrink: 1, marginRight: 6 },
-    placeholderText: { color: C.placeholder, fontSize: IS_SMALL ? 13 : 14, fontWeight: '600', flexShrink: 1, marginRight: 6 },
+    subjectsList: { gap: IS_TINY ? 16 : 20 },
+    subjectBlock: { gap: 8 },
+    subjectTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    subjectNameText: { color: C.textSecondary, fontSize: IS_TINY ? 9 : 11, fontWeight: '900', letterSpacing: 0.5, flex: 1 },
+    totalIndicator: { backgroundColor: C.actionItemBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+    totalValueText: { fontSize: IS_TINY ? 9 : 11, fontWeight: '900' },
 
-    // ── Matrix table ──────────────────────────────────────────────────
-    listContent:          { paddingTop: 12, paddingBottom: 120 },
-    table:                { backgroundColor: C.card, borderRadius: 20, padding: IS_SMALL ? 10 : 16, borderWidth: 1, borderColor: C.cardBorder, marginLeft: IS_SMALL ? 12 : 20 },
-    tableRow:             { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.divider, paddingVertical: IS_SMALL ? 8 : 12 },
+    scoreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: IS_TINY ? 6 : 8 },
+    scoreInputGroup: { flex: 1, minWidth: IS_TINY ? 40 : 45, gap: 2 },
+    scoreLabel: { fontSize: IS_TINY ? 7 : 9, fontWeight: '800', color: C.textMuted, textAlign: 'center' },
+    scoreInput: { height: IS_TINY ? 36 : 42, backgroundColor: C.inputBg, borderRadius: 10, textAlign: 'center', color: C.inputText, fontSize: IS_TINY ? 12 : 14, fontWeight: '800', borderWidth: 1, borderColor: C.inputBorder },
+    examInput: { borderColor: Colors.accent.gold + '40', backgroundColor: Colors.accent.gold + '05' },
+    inputError: { borderColor: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.05)' },
 
-    frozenColHeader:      { width: FROZEN_COL_W, justifyContent: 'center' },
-    frozenCol:            { width: FROZEN_COL_W, justifyContent: 'center' },
-    tableHeaderText:      { color: C.textLabel, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' },
+    emptyState: { padding: 60, alignItems: 'center' },
+    emptyTitle: { color: C.text, fontSize: 20, fontWeight: '900', marginTop: 24, marginBottom: 8 },
+    emptySubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
 
-    subjectColGroup:      { width: SUBJECT_COL_W, borderLeftWidth: 1, borderLeftColor: C.border, paddingLeft: 10 },
-    tableHeaderSubject:   { fontSize: IS_SMALL ? 11 : 13, fontWeight: '800', color: Colors.accent.gold, marginBottom: 6, textAlign: 'center' },
-    subHeaders:           { flexDirection: 'row', justifyContent: 'space-between', paddingRight: 4 },
-    subHeader:            { fontSize: 8, color: C.textLabel, fontWeight: '800', width: CELL_W, textAlign: 'center' },
-
-    subjectColGroupData:  { width: SUBJECT_COL_W, borderLeftWidth: 1, borderLeftColor: C.border, paddingLeft: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingRight: 4 },
-    tableInput:           { width: CELL_W, height: IS_SMALL ? 36 : 40, backgroundColor: C.inputBg, borderRadius: 8, color: C.inputText, textAlign: 'center', fontSize: IS_SMALL ? 11 : 13, fontWeight: '700', borderWidth: 1, borderColor: C.inputBorder },
-    errorInput:           { borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)' },
-    stackInput:           { width: '100%', height: IS_SMALL ? 40 : 44, backgroundColor: C.inputBg, borderRadius: 10, color: C.inputText, textAlign: 'center', fontSize: IS_SMALL ? 14 : 15, fontWeight: '700', borderWidth: 1, borderColor: C.inputBorder },
-    tableTotal:           { width: CELL_W, height: IS_SMALL ? 36 : 40, backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)' },
-    tableTotalText:       { fontSize: IS_SMALL ? 11 : 13, color: '#22C55E', fontWeight: '900' },
-
-    avatar:               { backgroundColor: C.isDark ? 'rgba(255,255,255,0.05)' : '#E8EEF4', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
-    avatarText:           { color: Colors.accent.gold, fontWeight: '800' },
-    studentName:          { fontSize: IS_SMALL ? 11 : 13, fontWeight: '800', color: C.text, marginBottom: 2 },
-    studentId:            { fontSize: IS_SMALL ? 9 : 10, color: C.textSecondary, fontWeight: '600' },
-
-    // ── Floating / Alerts ─────────────────────────────────────────────
-    floatingActions:      { position: 'absolute', bottom: 24, left: IS_SMALL ? 12 : 20, right: IS_SMALL ? 12 : 20, gap: 10 },
-    alertOverlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: IS_SMALL ? 16 : 24 },
-
-    // ── Modals ────────────────────────────────────────────────────────
-    modalOverlay:    { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: IS_SMALL ? 12 : 20 },
-    modalContent:    { backgroundColor: C.modalBg, borderRadius: IS_SMALL ? 24 : 32, padding: IS_SMALL ? 16 : 24, maxHeight: '85%', borderWidth: 1, borderColor: C.cardBorder },
-    modalTitle:      { color: C.text, fontSize: IS_SMALL ? 17 : 20, fontWeight: '900', marginBottom: IS_SMALL ? 14 : 20, textAlign: 'center' },
-    dropdownItem:    { paddingVertical: IS_SMALL ? 12 : 16, borderBottomWidth: 1, borderBottomColor: C.divider, paddingHorizontal: 4 },
-    dropdownItemText:{ color: C.text, fontSize: IS_SMALL ? 14 : 15, fontWeight: '600' },
-    selectedItem:    { backgroundColor: 'rgba(250,204,21,0.1)', borderRadius: 10 },
-    selectedItemText:{ color: Colors.accent.gold },
-
-    // ── Empty state ───────────────────────────────────────────────────
-    emptyState:      { padding: IS_SMALL ? 28 : 40, alignItems: 'center', marginTop: IS_SMALL ? 24 : 40 },
-    emptyTitle:      { color: C.text, fontSize: IS_SMALL ? 16 : 18, fontWeight: '800', marginTop: 16, marginBottom: 8 },
-    emptySubtitle:   { color: C.textSecondary, fontSize: IS_SMALL ? 12 : 13, textAlign: 'center', lineHeight: 20 },
+    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
+    bottomSheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, borderTopWidth: 1, maxHeight: '80%' },
+    sheetHandle: { width: 40, height: 4, backgroundColor: C.divider, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+    modalTitle: { color: C.text, fontSize: 20, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
+    dropdownItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, marginBottom: 6 },
+    selectedItem: { backgroundColor: Colors.accent.gold + '10' },
+    dropdownItemText: { color: C.textSecondary, fontSize: 15, fontWeight: '600' },
+    selectedItemText: { color: Colors.accent.gold, fontWeight: '800' },
+    
+    alert: { position: 'absolute', top: 60, left: 20, right: 20, zIndex: 9999 }
   });
 }

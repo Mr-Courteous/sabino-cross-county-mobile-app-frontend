@@ -86,6 +86,17 @@ export default function StudentDashboard() {
     const [showSessionSelector, setShowSessionSelector] = useState(false);
     const [showClassSelector, setShowClassSelector] = useState(false);
 
+    // Modal Feedback State (Standard React State)
+    const [enrollError, setEnrollError] = useState<string | null>(null);
+    const [enrollSuccess, setEnrollSuccess] = useState(false);
+
+    useEffect(() => {
+        if (!enrollModalVisible) {
+            setEnrollError(null);
+            setEnrollSuccess(false);
+        }
+    }, [enrollModalVisible]);
+
     useEffect(() => {
         loadStudentData();
         fetchMyEnrollments();
@@ -196,27 +207,18 @@ export default function StudentDashboard() {
                 setClasses(classData.data);
             }
         } catch (error) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'Protocol Error',
-                message: 'Failed to load enrollment protocols'
-            });
+            setEnrollError('Failed to load enrollment protocols. Check connection.');
         }
     };
 
     const handleSelfEnroll = async () => {
         if (!selectedSession || !selectedClassId) {
-            setStatusAlert({
-                visible: true,
-                type: 'warning',
-                title: 'Selection Required',
-                message: 'Select session and class to proceed.'
-            });
+            setEnrollError('Select session and class to proceed.');
             return;
         }
 
         setEnrollLoading(true);
+        setEnrollError(null);
         try {
             const token = Platform.OS === 'web'
                 ? localStorage.getItem('studentToken')
@@ -237,29 +239,14 @@ export default function StudentDashboard() {
             const data = await response.json();
 
             if (data.success) {
-                setStatusAlert({
-                    visible: true,
-                    type: 'success',
-                    title: 'Protocol Success',
-                    message: 'Your enrollment has been registered.'
-                });
-                setEnrollModalVisible(false);
+                setEnrollSuccess(true);
+                setEnrollError(null);
                 onRefresh();
             } else {
-                setStatusAlert({
-                    visible: true,
-                    type: 'error',
-                    title: 'Enrollment Error',
-                    message: data.error || data.message || 'Enrollment failed'
-                });
+                setEnrollError(data.error || data.message || 'Enrollment Sequence Failed');
             }
         } catch (error) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'Connection Fault',
-                message: 'Network exception during enrollment.'
-            });
+            setEnrollError('Fatal Network Interruption');
         } finally {
             setEnrollLoading(false);
         }
@@ -275,6 +262,8 @@ export default function StudentDashboard() {
         try {
             const enrollmentId = enrollment.enrollment_id || enrollment.id;
             const sessionId = enrollment.session_id || enrollment.academic_session_id;
+
+
 
             const token = Platform.OS === 'web'
                 ? localStorage.getItem('studentToken')
@@ -322,12 +311,12 @@ export default function StudentDashboard() {
                 )}
                 {/* Hero Header */}
                 <ImageBackground
-                    source={{ uri: 'https://images.unsplash.com/photo-1541339907198-e08756ebafe1?q=80&w=2070' }}
+                    source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
                     style={styles.heroHeader}
                     imageStyle={{ borderBottomLeftRadius: 40, borderBottomRightRadius: 40 }}
                 >
                     <LinearGradient
-                        colors={['rgba(15, 23, 42, 0.4)', 'rgba(15, 23, 42, 0.95)']}
+                        colors={C.isDark ? ['rgba(15, 23, 42, 0.4)', 'rgba(15, 23, 42, 0.95)'] : ['rgba(255, 255, 255, 0.2)', 'rgba(255, 255, 255, 0.95)']}
                         style={styles.heroOverlay}
                     >
                         <View style={styles.topRow}>
@@ -470,97 +459,127 @@ export default function StudentDashboard() {
                         style={[styles.modalContent, { backgroundColor: C.modalBg }]}
                     >
                         <View style={styles.modalIndictor} />
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>SELF ENROLLMENT</Text>
-                            <TouchableOpacity onPress={() => setEnrollModalVisible(false)} style={styles.closeBtn}>
-                                <Ionicons name="close" size={24} color="#fff" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-                            <View style={{ marginBottom: 20 }}>
-                                <Text style={styles.formLabel}>ACADEMIC SESSION</Text>
+                        
+                        {enrollSuccess ? (
+                            <View style={styles.successContainer}>
+                                <View style={styles.successIconCircle}>
+                                    <Ionicons name="checkmark-done-circle" size={80} color="#10B981" />
+                                </View>
+                                <Text style={styles.successTitle}>PROTOCOL FINALIZED</Text>
+                                <Text style={styles.successDesc}>Your academic enrollment has been securely registered in the registry.</Text>
+                                
                                 <TouchableOpacity 
-                                    style={styles.inputSelector} 
-                                    onPress={() => setShowSessionSelector(!showSessionSelector)}
+                                    style={styles.doneBtn} 
+                                    onPress={() => setEnrollModalVisible(false)}
                                 >
-                                    <Text style={styles.selectorText}>
-                                        {selectedSession || 'Select Session'}
-                                    </Text>
-                                    <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
+                                    <Text style={styles.doneBtnText}>CLOSE & REFRESH</Text>
                                 </TouchableOpacity>
+                            </View>
+                        ) : (
+                            <>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>SELF ENROLLMENT</Text>
+                                    <TouchableOpacity onPress={() => setEnrollModalVisible(false)} style={styles.closeBtn}>
+                                        <Ionicons name="close" size={24} color="#fff" />
+                                    </TouchableOpacity>
+                                </View>
 
-                                {showSessionSelector && (
-                                    <View style={styles.selectorList}>
-                                        <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                                            {sessions.map((s, i) => (
-                                                <TouchableOpacity
-                                                    key={i}
-                                                    style={[styles.selectorItem, selectedSession === (s.year_label || s.session_name) && styles.selectorItemActive]}
-                                                    onPress={() => {
-                                                        setSelectedSession(s.year_label || s.session_name);
-                                                        setShowSessionSelector(false);
-                                                    }}
-                                                >
-                                                    <Text style={[styles.selectorItemText, selectedSession === (s.year_label || s.session_name) && styles.selectorItemTextActive]}>
-                                                        {s.year_label || s.session_name}
-                                                    </Text>
-                                                    {selectedSession === (s.year_label || s.session_name) && (
-                                                        <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
-                                                    )}
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
+                                {enrollError && (
+                                    <View style={styles.errorBanner}>
+                                        <Ionicons name="alert-circle" size={20} color="#fff" />
+                                        <Text style={styles.errorBannerText}>{enrollError}</Text>
+                                        <TouchableOpacity onPress={() => setEnrollError(null)}>
+                                            <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.7)" />
+                                        </TouchableOpacity>
                                     </View>
                                 )}
-                            </View>
 
-                            <View style={{ marginBottom: 20 }}>
-                                <Text style={styles.formLabel}>TARGET ACADEMIC CLASS</Text>
-                                <TouchableOpacity 
-                                    style={styles.inputSelector} 
-                                    onPress={() => setShowClassSelector(!showClassSelector)}
-                                >
-                                    <Text style={styles.selectorText}>
-                                        {classes.find((c: any) => c.id === selectedClassId)?.display_name || classes.find((c: any) => c.id === selectedClassId)?.class_name || 'Select Class'}
-                                    </Text>
-                                    <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
-                                </TouchableOpacity>
+                                <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                                    <View style={{ marginBottom: 20 }}>
+                                        <Text style={styles.formLabel}>ACADEMIC SESSION</Text>
+                                        <TouchableOpacity 
+                                            style={styles.inputSelector} 
+                                            onPress={() => setShowSessionSelector(!showSessionSelector)}
+                                        >
+                                            <Text style={styles.selectorText}>
+                                                {selectedSession || 'Select Session'}
+                                            </Text>
+                                            <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
+                                        </TouchableOpacity>
 
-                                {showClassSelector && (
-                                    <View style={styles.selectorList}>
-                                        <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                                            {classes.map((c, i) => (
-                                                <TouchableOpacity
-                                                    key={i}
-                                                    style={[styles.selectorItem, selectedClassId === c.id && styles.selectorItemActive]}
-                                                    onPress={() => {
-                                                        setSelectedClassId(c.id);
-                                                        setShowClassSelector(false);
-                                                    }}
-                                                >
-                                                    <Text style={[styles.selectorItemText, selectedClassId === c.id && styles.selectorItemTextActive]}>
-                                                        {c.display_name || c.class_name}
-                                                    </Text>
-                                                    {selectedClassId === c.id && (
-                                                        <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
-                                                    )}
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
+                                        {showSessionSelector && (
+                                            <View style={styles.selectorList}>
+                                                <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                                    {sessions.map((s, i) => (
+                                                        <TouchableOpacity
+                                                            key={i}
+                                                            style={[styles.selectorItem, selectedSession === (s.year_label || s.session_name) && styles.selectorItemActive]}
+                                                            onPress={() => {
+                                                                setSelectedSession(s.year_label || s.session_name);
+                                                                setShowSessionSelector(false);
+                                                            }}
+                                                        >
+                                                            <Text style={[styles.selectorItemText, selectedSession === (s.year_label || s.session_name) && styles.selectorItemTextActive]}>
+                                                                {s.year_label || s.session_name}
+                                                            </Text>
+                                                            {selectedSession === (s.year_label || s.session_name) && (
+                                                                <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
+                                                            )}
+                                                        </TouchableOpacity>
+                                                    ))}
+                                                </ScrollView>
+                                            </View>
+                                        )}
                                     </View>
-                                )}
-                            </View>
+
+                                    <View style={{ marginBottom: 20 }}>
+                                        <Text style={styles.formLabel}>TARGET ACADEMIC CLASS</Text>
+                                        <TouchableOpacity 
+                                            style={styles.inputSelector} 
+                                            onPress={() => setShowClassSelector(!showClassSelector)}
+                                        >
+                                            <Text style={styles.selectorText}>
+                                                {classes.find((c: any) => c.id === selectedClassId)?.display_name || classes.find((c: any) => c.id === selectedClassId)?.class_name || 'Select Class'}
+                                            </Text>
+                                            <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
+                                        </TouchableOpacity>
+
+                                        {showClassSelector && (
+                                            <View style={styles.selectorList}>
+                                                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                                    {classes.map((c, i) => (
+                                                        <TouchableOpacity
+                                                            key={i}
+                                                            style={[styles.selectorItem, selectedClassId === c.id && styles.selectorItemActive]}
+                                                            onPress={() => {
+                                                                setSelectedClassId(c.id);
+                                                                setShowClassSelector(false);
+                                                            }}
+                                                        >
+                                                            <Text style={[styles.selectorItemText, selectedClassId === c.id && styles.selectorItemTextActive]}>
+                                                                {c.display_name || c.class_name}
+                                                            </Text>
+                                                            {selectedClassId === c.id && (
+                                                                <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
+                                                            )}
+                                                        </TouchableOpacity>
+                                                    ))}
+                                                </ScrollView>
+                                            </View>
+                                        )}
+                                    </View>
 
 
-                            <CustomButton
-                                title={enrollLoading ? "PROCESSING..." : "CONFIRM ENROLLMENT"}
-                                onPress={handleSelfEnroll}
-                                loading={enrollLoading}
-                                variant="premium"
-                                style={styles.modalSubmit}
-                            />
-                        </ScrollView>
+                                    <CustomButton
+                                        title={enrollLoading ? "PROCESSING..." : "CONFIRM ENROLLMENT"}
+                                        onPress={handleSelfEnroll}
+                                        loading={enrollLoading}
+                                        variant="premium"
+                                        style={styles.modalSubmit}
+                                    />
+                                </ScrollView>
+                            </>
+                        )}
                     </View>
                 </View>
             </Modal>
@@ -637,7 +656,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         emptyDesc: { color: C.textSecondary, fontSize: 11, textAlign: 'center', marginTop: 6, fontWeight: '600' },
 
         modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
-        modalContent: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, height: '85%' },
+        modalContent: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, height: '85%', overflow: 'hidden' },
         modalIndictor: { width: 40, height: 5, backgroundColor: C.divider, borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
         modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
         modalTitle: { color: C.text, fontSize: 20, fontWeight: '900', letterSpacing: 1 },
@@ -676,5 +695,64 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         selectorItemText: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
         selectorItemTextActive: { color: '#FACC15', fontWeight: '800' },
         modalSubmit: { marginTop: 30, height: 60, borderRadius: 18 },
+        errorBanner: {
+            backgroundColor: '#EF4444',
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 16,
+            borderRadius: 16,
+            marginBottom: 24,
+            gap: 12,
+        },
+        errorBannerText: {
+            color: '#fff',
+            fontSize: 13,
+            fontWeight: '800',
+            flex: 1,
+        },
+        successContainer: {
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+        },
+        successIconCircle: {
+            width: 120,
+            height: 120,
+            borderRadius: 60,
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginBottom: 24,
+        },
+        successTitle: {
+            color: C.text,
+            fontSize: 22,
+            fontWeight: '900',
+            letterSpacing: 1,
+            marginBottom: 12,
+        },
+        successDesc: {
+            color: C.textSecondary,
+            fontSize: 14,
+            textAlign: 'center',
+            lineHeight: 22,
+            marginBottom: 40,
+            fontWeight: '600',
+        },
+        doneBtn: {
+            backgroundColor: '#10B981',
+            paddingHorizontal: 40,
+            paddingVertical: 18,
+            borderRadius: 20,
+            width: '100%',
+            alignItems: 'center',
+        },
+        doneBtnText: {
+            color: '#fff',
+            fontSize: 15,
+            fontWeight: '900',
+            letterSpacing: 1,
+        },
     });
 }

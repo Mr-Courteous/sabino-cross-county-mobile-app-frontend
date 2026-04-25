@@ -1,11 +1,13 @@
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ImageBackground, Dimensions } from 'react-native';
-import { useState, useMemo } from 'react';
+import { ScrollView, StyleSheet, TouchableOpacity, View, ImageBackground, Dimensions } from 'react-native';
+import { useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppColors } from '@/hooks/use-app-colors';
 import { Colors } from '@/constants/design-system';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 
 const { width } = Dimensions.get('window');
 
@@ -21,14 +23,14 @@ export default function HomePage() {
         <View style={styles.iconCircle}>
           <Ionicons name={icon} size={24} color={C.isDark ? "#1E293B" : "#2563EB"} />
         </View>
-        <Text style={styles.fTitle}>{title}</Text>
-        <Text style={styles.fDesc}>{desc}</Text>
+        <ThemedText style={styles.fTitle}>{title}</ThemedText>
+        <ThemedText style={styles.fDesc}>{desc}</ThemedText>
       </View>
     );
   }
 
   return (
-    <View style={styles.mainWrapper}>
+    <ThemedView style={styles.mainWrapper}>
       <StatusBar style={C.isDark ? "light" : "dark"} />
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
@@ -37,21 +39,21 @@ export default function HomePage() {
           style={styles.hero}
         >
           <LinearGradient
-            colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']}
+            colors={C.isDark ? ['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)'] : ['rgba(255, 255, 255, 0.4)', 'rgba(248, 250, 252, 0.98)']}
             style={styles.overlay}
           >
             <View style={styles.logoBadge}>
-              <Ionicons name="ribbon" size={22} color="#FACC15" />
-              <Text style={styles.logoText}>SABINO SCHOOL</Text>
+              <Ionicons name="ribbon" size={22} color={Colors.accent.gold} />
+              <ThemedText style={styles.logoText}>SABINO SCHOOL</ThemedText>
             </View>
 
             {/* ULTRA BOLD HEADER */}
-            <Text style={styles.title}>EXCELLENCE{'\n'}IN EVERY{'\n'}RESULT</Text>
+            <ThemedText style={styles.title}>EXCELLENCE{'\n'}IN EVERY{'\n'}RESULT</ThemedText>
             <View style={styles.goldBar} />
 
-            <Text style={styles.tagline}>
+            <ThemedText style={styles.tagline}>
               Empowering schools with precision tracking and professional digital identity.
-            </Text>
+            </ThemedText>
 
             <View style={styles.buttonRow}>
               <TouchableOpacity
@@ -59,7 +61,7 @@ export default function HomePage() {
                 style={styles.ctaButton}
                 onPress={() => router.push('/(auth)/verify-email')}
               >
-                <Text style={styles.ctaButtonText}>CREATE NEW ACCOUNT</Text>
+                <ThemedText style={styles.ctaButtonText}>CREATE NEW ACCOUNT</ThemedText>
                 <Ionicons name="arrow-forward-circle" size={24} color="#fff" style={{ marginLeft: 10 }} />
               </TouchableOpacity>
 
@@ -69,15 +71,15 @@ export default function HomePage() {
                 onPress={() => router.push('/(student)' as any)}
               >
                 <Ionicons name="person-outline" size={20} color="#2563EB" style={{ marginRight: 8 }} />
-                <Text style={styles.studentLoginText}>STUDENTS' LOGIN</Text>
+                <ThemedText style={styles.studentLoginText}>STUDENTS' LOGIN</ThemedText>
               </TouchableOpacity>
             </View>
           </LinearGradient>
         </ImageBackground>
 
         <View style={styles.content}>
-          <Text style={styles.sectionLabel}>CORE FEATURES</Text>
-          <Text style={styles.sectionTitle}>Precision Tools for Educators</Text>
+          <ThemedText style={styles.sectionLabel}>CORE FEATURES</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Precision Tools for Educators</ThemedText>
 
           <View style={styles.featureGrid}>
             <FeatureCard icon="stats-chart" title="Smart Analytics" desc="Instant ranking & class positions." />
@@ -87,25 +89,25 @@ export default function HomePage() {
           </View>
 
           <TouchableOpacity style={styles.loginOutline} onPress={() => router.push('/(auth)')}>
-            <Text style={styles.loginOutlineText}>ALREADY REGISTERED? SIGN IN</Text>
+            <ThemedText style={styles.loginOutlineText}>ALREADY REGISTERED? SIGN IN</ThemedText>
           </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerBrand}>SABINO SCHOOL</Text>
-          <Text style={styles.footerCopyright}>THE GOLD STANDARD FOR ACADEMIC REPORTING</Text>
+          <ThemedText style={styles.footerBrand}>SABINO SCHOOL</ThemedText>
+          <ThemedText style={styles.footerCopyright}>THE GOLD STANDARD FOR ACADEMIC REPORTING</ThemedText>
           <View style={styles.footerDivider} />
-          <Text style={styles.footerYear}>© 2026 SABINO SYSTEMS GLOBAL</Text>
+          <ThemedText style={styles.footerYear}>© 2026 SABINO SYSTEMS GLOBAL</ThemedText>
         </View>
 
       </ScrollView>
-    </View>
+    </ThemedView>
   );
 }
 
 function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
   return StyleSheet.create({
-    mainWrapper: { flex: 1, backgroundColor: C.isDark ? '#1e293b' : '#F8FAFC' },
+    mainWrapper: { flex: 1, backgroundColor: C.background },
     scrollContainer: { flexGrow: 1 },
 
     hero: { width: '100%', minHeight: 700, paddingBottom: 45 },
@@ -114,28 +116,27 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     logoBadge: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.08)',
+      backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
       paddingHorizontal: 16,
       paddingVertical: 10,
       borderRadius: 12,
       marginBottom: 25,
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.1)'
+      borderColor: C.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
     },
-    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+    logoText: { color: Colors.accent.gold, fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
 
-    // BOLDER TITLE STYLES
     title: {
       fontSize: 40,
       fontWeight: '700',
-      color: '#fff',
+      color: C.isDark ? '#fff' : Colors.accent.navy,
       textAlign: 'center',
       lineHeight: 48,
       letterSpacing: -1
     },
-    goldBar: { width: 80, height: 6, backgroundColor: '#FACC15', borderRadius: 3, marginVertical: 20 },
+    goldBar: { width: 80, height: 6, backgroundColor: Colors.accent.gold, borderRadius: 3, marginVertical: 20 },
 
-    tagline: { fontSize: 16, color: '#94A3B8', textAlign: 'center', paddingHorizontal: 10, lineHeight: 26, fontWeight: '500' },
+    tagline: { fontSize: 16, color: C.textSecondary, textAlign: 'center', paddingHorizontal: 10, lineHeight: 26, fontWeight: '500' },
 
     ctaButton: {
       flexDirection: 'row',
@@ -221,7 +222,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     footer: { backgroundColor: C.isDark ? '#0F172A' : '#F1F5F9', padding: 60, alignItems: 'center' },
     footerBrand: { color: C.text, fontSize: 24, fontWeight: '900', letterSpacing: 6 },
     footerCopyright: { color: C.textMuted, fontSize: 10, fontWeight: '800', marginTop: 15, letterSpacing: 1 },
-    footerDivider: { width: 50, height: 2, backgroundColor: '#FACC15', marginVertical: 25 },
+    footerDivider: { width: 50, height: 2, backgroundColor: Colors.accent.gold, marginVertical: 25 },
     footerYear: { color: C.textLabel, fontSize: 10, fontWeight: 'bold' }
   });
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -20,6 +20,7 @@ import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/design-system';
+import { useAppColors } from '@/hooks/use-app-colors';
 
 export default function StudentLogin() {
     const router = useRouter();
@@ -79,11 +80,11 @@ export default function StudentLogin() {
     return (
         <ThemedView style={{ flex: 1, backgroundColor: C.background }}>
             <ImageBackground
-                source={{ uri: 'https://images.unsplash.com/photo-1523240693567-520c80c8966e?q=80&w=2070' }}
+                source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
                 style={styles.hero}
             >
                 <LinearGradient
-                    colors={['rgba(10, 15, 30, 0.7)', 'rgba(15, 23, 42, 0.95)']}
+                    colors={C.isDark ? ['rgba(15, 23, 42, 0.4)', 'rgba(15, 23, 42, 0.95)'] : ['rgba(255, 255, 255, 0.2)', 'rgba(255, 255, 255, 0.95)']}
                     style={styles.overlay}
                 >
                     <ScrollView
@@ -91,13 +92,19 @@ export default function StudentLogin() {
                         showsVerticalScrollIndicator={false}
                     >
                         <View style={styles.header}>
+                            <TouchableOpacity 
+                                style={styles.backBtn}
+                                onPress={() => router.back()}
+                            >
+                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                            </TouchableOpacity>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="ribbon" size={24} color="#FACC15" />
-                                <Text style={styles.logoText}>STUDENT PORTAL</Text>
+                                <Ionicons name="school-outline" size={24} color="#FACC15" />
+                                <Text style={styles.logoText}>STUDENT ACCESS</Text>
                             </View>
                             <Text style={styles.title}>Welcome Back</Text>
                             <View style={styles.goldBar} />
-                            <Text style={styles.subtitle}>ACCESS YOUR ACADEMIC PROGRESS</Text>
+                            <Text style={styles.subtitle}>Enter your academic credentials</Text>
                         </View>
 
                         <View style={styles.card}>
@@ -163,13 +170,6 @@ export default function StudentLogin() {
                             >
                                 <Text style={styles.registerText}>CREATE INDIVIDUAL ACCOUNT</Text>
                             </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.backButton}
-                                onPress={() => router.back()}
-                            >
-                                <Text style={styles.backText}>← RETURN TO MAIN PAGE</Text>
-                            </TouchableOpacity>
                         </View>
 
                         <View style={styles.footer}>
@@ -188,7 +188,19 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         overlay: { flex: 1, paddingHorizontal: 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
 
-        header: { alignItems: 'center', marginBottom: 40 },
+        header: { alignItems: 'center', marginBottom: 30 },
+        backBtn: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 44,
+            height: 44,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 22,
+            zIndex: 10
+        },
         logoBadge: {
             flexDirection: 'row',
             alignItems: 'center',

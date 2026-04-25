@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
-    Text,
     TextInput,
     TouchableOpacity,
     StyleSheet,
@@ -18,6 +17,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { useAppColors } from '@/hooks/use-app-colors';
+import { ThemedText } from './themed-text';
 
 const { width } = Dimensions.get('window');
 
@@ -184,11 +184,16 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
     const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
     return (
-        <Modal visible={visible} animationType="slide" transparent>
+        <Modal 
+            visible={visible} 
+            animationType="slide" 
+            transparent
+            onRequestClose={onClose}
+        >
             <View style={styles.modalBackdrop}>
                 <View style={styles.modalCard}>
                     <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Edit Profile</Text>
+                        <ThemedText style={styles.modalTitle}>Edit Profile</ThemedText>
                         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                             <Ionicons name="close" size={24} color={C.textSecondary} />
                         </TouchableOpacity>
@@ -197,7 +202,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                     {error && (
                         <View style={styles.errorBanner}>
                             <Ionicons name="alert-circle" size={20} color="#EF4444" />
-                            <Text style={styles.errorText}>{error}</Text>
+                            <ThemedText style={styles.errorText}>{error}</ThemedText>
                         </View>
                     )}
 
@@ -209,20 +214,20 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                     <Image source={{ uri: form.photo }} style={styles.avatar} />
                                 ) : (
                                     <View style={styles.avatarPlaceholder}>
-                                        <Text style={styles.avatarText}>
+                                        <ThemedText style={styles.avatarText}>
                                             {form.firstName ? form.firstName[0] : ''}{form.lastName ? form.lastName[0] : ''}
-                                        </Text>
+                                        </ThemedText>
                                     </View>
                                 )}
                                 <View style={styles.editIconBadge}>
-                                    <Ionicons name="camera" size={16} color={C.scheme === 'dark' ? '#0F172A' : '#FFFFFF'} />
+                                    <Ionicons name="camera" size={16} color={C.isDark ? '#0F172A' : '#FFFFFF'} />
                                 </View>
                             </TouchableOpacity>
-                            <Text style={styles.photoInfo}>Tap to change photo</Text>
+                            <ThemedText style={styles.photoInfo}>Tap to change photo</ThemedText>
                         </View>
 
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>FIRST NAME</Text>
+                            <ThemedText style={styles.label}>FIRST NAME</ThemedText>
                             <TextInput 
                                 style={styles.input} 
                                 value={form.firstName} 
@@ -233,7 +238,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                         </View>
 
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>LAST NAME</Text>
+                            <ThemedText style={styles.label}>LAST NAME</ThemedText>
                             <TextInput 
                                 style={styles.input} 
                                 value={form.lastName} 
@@ -244,7 +249,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                         </View>
 
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>PHONE NUMBER</Text>
+                            <ThemedText style={styles.label}>PHONE NUMBER</ThemedText>
                             <TextInput 
                                 style={styles.input} 
                                 value={form.phone} 
@@ -256,7 +261,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                         </View>
 
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>GENDER</Text>
+                            <ThemedText style={styles.label}>GENDER</ThemedText>
                             <View style={styles.genderRow}>
                                 {['Male', 'Female'].map((g) => (
                                     <TouchableOpacity 
@@ -264,14 +269,14 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                         style={[styles.genderBtn, form.gender === g && styles.activeGender]} 
                                         onPress={() => setForm({...form, gender: g})}
                                     >
-                                        <Text style={[styles.genderText, form.gender === g && styles.activeGenderText]}>{g}</Text>
+                                        <ThemedText style={[styles.genderText, form.gender === g && styles.activeGenderText]}>{g}</ThemedText>
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         </View>
 
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>DATE OF BIRTH (YEAR - MONTH - DAY)</Text>
+                            <ThemedText style={styles.label}>DATE OF BIRTH (YEAR - MONTH - DAY)</ThemedText>
                             <View style={styles.dobRow}>
                                 <View style={styles.dobPart}>
                                     <ScrollView style={styles.dobScroll} nestedScrollEnabled>
@@ -281,7 +286,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                                 style={[styles.dobItem, dobParts.year === y && styles.activeDobItem]}
                                                 onPress={() => setDobParts({...dobParts, year: y})}
                                             >
-                                                <Text style={[styles.dobItemText, dobParts.year === y && styles.activeDobItemText]}>{y}</Text>
+                                                <ThemedText style={[styles.dobItemText, dobParts.year === y && styles.activeDobItemText]}>{y}</ThemedText>
                                             </TouchableOpacity>
                                         ))}
                                     </ScrollView>
@@ -294,7 +299,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                                 style={[styles.dobItem, dobParts.month === m && styles.activeDobItem]}
                                                 onPress={() => setDobParts({...dobParts, month: m})}
                                             >
-                                                <Text style={[styles.dobItemText, dobParts.month === m && styles.activeDobItemText]}>{m}</Text>
+                                                <ThemedText style={[styles.dobItemText, dobParts.month === m && styles.activeDobItemText]}>{m}</ThemedText>
                                             </TouchableOpacity>
                                         ))}
                                     </ScrollView>
@@ -307,7 +312,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                                 style={[styles.dobItem, dobParts.day === d && styles.activeDobItem]}
                                                 onPress={() => setDobParts({...dobParts, day: d})}
                                             >
-                                                <Text style={[styles.dobItemText, dobParts.day === d && styles.activeDobItemText]}>{d}</Text>
+                                                <ThemedText style={[styles.dobItemText, dobParts.day === d && styles.activeDobItemText]}>{d}</ThemedText>
                                             </TouchableOpacity>
                                         ))}
                                     </ScrollView>
@@ -321,9 +326,9 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                             disabled={loading}
                         >
                             {loading ? (
-                                <ActivityIndicator color={C.scheme === 'dark' ? '#0F172A' : '#FFFFFF'} />
+                                <ActivityIndicator color={C.isDark ? '#0F172A' : '#FFFFFF'} />
                             ) : (
-                                <Text style={styles.saveButtonText}>Update Profile</Text>
+                                <ThemedText style={styles.saveButtonText}>Update Profile</ThemedText>
                             )}
                         </TouchableOpacity>
                         
@@ -335,7 +340,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
     );
 }
 
-const makeStyles = (C: any) => StyleSheet.create({
+const makeStyles = (C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) => StyleSheet.create({
     modalBackdrop: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -400,13 +405,13 @@ const makeStyles = (C: any) => StyleSheet.create({
         height: 100,
         borderRadius: 50,
         borderWidth: 3,
-        borderColor: C.primary,
+        borderColor: C.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
     },
     avatarPlaceholder: {
         width: 100,
         height: 100,
         borderRadius: 50,
-        backgroundColor: C.primary,
+        backgroundColor: C.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 3,
@@ -415,13 +420,13 @@ const makeStyles = (C: any) => StyleSheet.create({
     avatarText: {
         fontSize: 32,
         fontWeight: '900',
-        color: '#0F172A',
+        color: C.text,
     },
     editIconBadge: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        backgroundColor: C.primary,
+        backgroundColor: C.isDark ? '#FFFFFF' : '#0F172A',
         width: 32,
         height: 32,
         borderRadius: 16,
@@ -448,7 +453,7 @@ const makeStyles = (C: any) => StyleSheet.create({
         opacity: 0.7,
     },
     input: {
-        backgroundColor: C.scheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+        backgroundColor: C.isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
         borderWidth: 1,
         borderColor: C.border,
         borderRadius: 16,
@@ -464,21 +469,21 @@ const makeStyles = (C: any) => StyleSheet.create({
         flex: 1,
         padding: 16,
         borderRadius: 16,
-        backgroundColor: C.scheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+        backgroundColor: C.isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: C.border,
     },
     activeGender: {
-        backgroundColor: C.primary + '15',
-        borderColor: C.primary,
+        backgroundColor: C.isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+        borderColor: C.text,
     },
     genderText: {
         color: C.textSecondary,
         fontWeight: '700',
     },
     activeGenderText: {
-        color: C.primary,
+        color: C.text,
     },
     dobRow: {
         flexDirection: 'row',
@@ -487,7 +492,7 @@ const makeStyles = (C: any) => StyleSheet.create({
     },
     dobPart: {
         flex: 1,
-        backgroundColor: C.scheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+        backgroundColor: C.isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
         borderRadius: 16,
         borderWidth: 1,
         borderColor: C.border,
@@ -503,7 +508,7 @@ const makeStyles = (C: any) => StyleSheet.create({
         borderBottomColor: C.border + '30',
     },
     activeDobItem: {
-        backgroundColor: C.scheme === 'dark' ? C.primary : '#0F172A',
+        backgroundColor: C.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
     },
     dobItemText: {
         color: C.text,
@@ -511,23 +516,23 @@ const makeStyles = (C: any) => StyleSheet.create({
         fontWeight: '600',
     },
     activeDobItemText: {
-        color: C.scheme === 'dark' ? '#0F172A' : '#FFFFFF',
+        color: C.text,
         fontWeight: '900',
     },
     saveButton: {
-        backgroundColor: C.primary,
+        backgroundColor: C.isDark ? '#FFFFFF' : '#0F172A',
         borderRadius: 16,
         padding: 20,
         alignItems: 'center',
         marginTop: 20,
-        shadowColor: C.primary,
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 5,
     },
     saveButtonText: {
-        color: '#0F172A',
+        color: C.isDark ? '#0F172A' : '#FFFFFF',
         fontSize: 18,
         fontWeight: '900',
     },

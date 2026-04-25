@@ -72,7 +72,7 @@ export default function RegisterScreen() {
                                 <Text style={styles.loginLabel}>Already have an account?</Text>
                                 <CustomButton
                                     title="BACK TO LOGIN"
-                                    onPress={() => router.push('/(auth)')}
+                                    onPress={() => router.push('/(auth)/verify-email')}
                                     variant="outline"
                                     style={styles.outlineButton}
                                     textStyle={{ color: '#fff', fontWeight: '800' }}
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 30 },
     
     loginSection: { alignItems: 'center' },
-    loginLabel: { color: '#64748B', fontSize: 13, marginBottom: 15, fontWeight: '600' },
+    loginLabel: { color: '#2563EB', fontSize: 13, marginBottom: 15, fontWeight: '600' },
     outlineButton: { borderColor: '#2563EB', borderWidth: 2, borderRadius: 15, width: '100%' },
     
     footer: { marginTop: 40, alignItems: 'center' },

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
-    Text,
     TouchableOpacity,
     StyleSheet,
     ActivityIndicator,
@@ -9,7 +8,6 @@ import {
     Platform,
     Alert,
     RefreshControl,
-    Linking,
     Dimensions,
     Modal,
     TextInput,
@@ -24,6 +22,7 @@ import { Colors } from '@/constants/design-system';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
 import { useAppColors } from '@/hooks/use-app-colors';
 
 const { width } = Dimensions.get('window');
@@ -352,7 +351,7 @@ export default function StudentGrades() {
         return (
             <ThemedView style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={Colors.accent.gold} />
-                <Text style={styles.loadingText}>SYNCHRONIZING ACADEMIC RECORDS...</Text>
+                <ThemedText style={styles.loadingText}>SYNCHRONIZING ACADEMIC RECORDS...</ThemedText>
             </ThemedView>
         );
     }
@@ -362,8 +361,8 @@ export default function StudentGrades() {
                 <View style={[styles.metricIcon, { backgroundColor: color + '15' }]}>
                     <Ionicons name={icon as any} size={18} color={color} />
                 </View>
-                <Text style={styles.metricValue}>{value}</Text>
-                <Text style={styles.metricLabel}>{label}</Text>
+                <ThemedText style={styles.metricValue}>{value}</ThemedText>
+                <ThemedText style={styles.metricLabel}>{label}</ThemedText>
             </View>
         );
 
@@ -372,8 +371,8 @@ export default function StudentGrades() {
             return (
                 <View style={styles.scoreBarContainer}>
                     <View style={styles.scoreBarHeader}>
-                        <Text style={styles.scoreBarLabel}>{label}</Text>
-                        <Text style={styles.scoreBarValue}>{value}/{max}</Text>
+                        <ThemedText style={styles.scoreBarLabel}>{label}</ThemedText>
+                        <ThemedText style={styles.scoreBarValue}>{value}/{max}</ThemedText>
                     </View>
                     <View style={styles.progressBar}>
                         <LinearGradient
@@ -399,15 +398,15 @@ export default function StudentGrades() {
                 >
                     <View style={styles.header}>
                         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+                            <Ionicons name="chevron-back" size={24} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Academic Performance</Text>
+                        <ThemedText style={styles.headerTitle}>Academic Performance</ThemedText>
                         <View style={{ width: 44 }} />
                     </View>
 
                     <View style={styles.heroContent}>
-                        <Text style={styles.heroSubtitle}>PROXIMITY TO EXCELLENCE</Text>
-                        <Text style={styles.heroMainTitle}>Academic Records</Text>
+                        <ThemedText style={styles.heroSubtitle}>PROXIMITY TO EXCELLENCE</ThemedText>
+                        <ThemedText style={styles.heroMainTitle}>Academic Records</ThemedText>
                     </View>
                 </LinearGradient>
             </ImageBackground>
@@ -432,16 +431,16 @@ export default function StudentGrades() {
 
                 {/* Filter Section */}
                 <View style={styles.card}>
-                    <Text style={styles.cardLabel}>ACADEMIC PARAMETERS</Text>
+                    <ThemedText style={styles.cardLabel}>ACADEMIC PARAMETERS</ThemedText>
                     
-                    <Text style={styles.filterTitle}>Academic Session</Text>
+                    <ThemedText style={styles.filterTitle}>Academic Session</ThemedText>
                     <TouchableOpacity 
                         style={styles.inputSelector} 
                         onPress={() => setShowSessionSelector(!showSessionSelector)}
                     >
-                        <Text style={styles.selectorText}>
+                        <ThemedText style={styles.selectorText}>
                             {sessions.find(s => s.id === selectedSessionId)?.year_label || 'Select Session'}
-                        </Text>
+                        </ThemedText>
                         <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
                     </TouchableOpacity>
 
@@ -457,9 +456,9 @@ export default function StudentGrades() {
                                             setShowSessionSelector(false);
                                         }}
                                     >
-                                        <Text style={[styles.selectorItemText, selectedSessionId === sess.id && styles.selectorItemTextActive]}>
+                                        <ThemedText style={[styles.selectorItemText, selectedSessionId === sess.id && styles.selectorItemTextActive]}>
                                             {sess.year_label}
-                                        </Text>
+                                        </ThemedText>
                                         {selectedSessionId === sess.id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
                                     </TouchableOpacity>
                                 ))}
@@ -467,7 +466,7 @@ export default function StudentGrades() {
                         </View>
                     )}
 
-                    <Text style={styles.filterTitle}>Enrollment</Text>
+                    <ThemedText style={styles.filterTitle}>Enrollment</ThemedText>
                     {fetchingMetadata ? (
                         <ActivityIndicator size="small" color="#FACC15" style={styles.inlineLoader} />
                     ) : enrollments.length > 0 ? (
@@ -478,9 +477,9 @@ export default function StudentGrades() {
                             >
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                                     <Ionicons name="school-outline" size={18} color={Colors.accent.gold} />
-                                    <Text style={styles.selectorText}>
+                                    <ThemedText style={styles.selectorText}>
                                         {selectedEnrollment?.class_name || 'Select Enrollment'}
-                                    </Text>
+                                    </ThemedText>
                                 </View>
                                 <Ionicons name={showEnrollmentSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
                             </TouchableOpacity>
@@ -497,9 +496,9 @@ export default function StudentGrades() {
                                                     setShowEnrollmentSelector(false);
                                                 }}
                                             >
-                                                <Text style={[styles.selectorItemText, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.selectorItemTextActive]}>
+                                                <ThemedText style={[styles.selectorItemText, selectedEnrollment?.enrollment_id === enr.enrollment_id && styles.selectorItemTextActive]}>
                                                     {enr.class_name}
-                                                </Text>
+                                                </ThemedText>
                                                 {selectedEnrollment?.enrollment_id === enr.enrollment_id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
                                             </TouchableOpacity>
                                         ))}
@@ -508,17 +507,17 @@ export default function StudentGrades() {
                             )}
                         </>
                     ) : (
-                        <Text style={styles.emptyFilterText}>No active enrollments for this session</Text>
+                        <ThemedText style={styles.emptyFilterText}>No active enrollments for this session</ThemedText>
                     )}
 
-                    <Text style={styles.filterTitle}>Terminal Period</Text>
+                    <ThemedText style={styles.filterTitle}>Terminal Period</ThemedText>
                     <TouchableOpacity 
                         style={styles.inputSelector} 
                         onPress={() => setShowTermSelector(!showTermSelector)}
                     >
-                        <Text style={styles.selectorText}>
+                        <ThemedText style={styles.selectorText}>
                             TERM {selectedTerm}
-                        </Text>
+                        </ThemedText>
                         <Ionicons name={showTermSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
                     </TouchableOpacity>
 
@@ -534,9 +533,9 @@ export default function StudentGrades() {
                                             setShowTermSelector(false);
                                         }}
                                     >
-                                        <Text style={[styles.selectorItemText, selectedTerm === t && styles.selectorItemTextActive]}>
+                                        <ThemedText style={[styles.selectorItemText, selectedTerm === t && styles.selectorItemTextActive]}>
                                             TERM {t}
-                                        </Text>
+                                        </ThemedText>
                                         {selectedTerm === t && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
                                     </TouchableOpacity>
                                 ))}
@@ -564,7 +563,7 @@ export default function StudentGrades() {
                             </View>
                         )}
 
-                        <Text style={styles.sectionLabel}>SUBJECT BREAKDOWN</Text>
+                        <ThemedText style={styles.sectionLabel}>SUBJECT BREAKDOWN</ThemedText>
                         <View style={styles.gradesList}>
                             {grades.map((grade, idx) => {
                                 const caTotal = Number(grade.ca1_score || 0) + 
@@ -585,22 +584,22 @@ export default function StudentGrades() {
                                     <View key={idx} style={styles.gradeCard}>
                                         <View style={styles.gradeHeader}>
                                             <View style={styles.subjectInfo}>
-                                                <Text style={styles.subjectName}>{grade.subject_name || 'Generic Subject'}</Text>
+                                                <ThemedText style={styles.subjectName}>{grade.subject_name || 'Generic Subject'}</ThemedText>
                                                  <View style={styles.comparisonRow}>
-                                                    <Text style={styles.avgText}>Class Avg: {classAvg != null ? `${classAvg.toFixed(0)}%` : 'N/A'}</Text>
+                                                    <ThemedText style={styles.avgText}>Class Avg: {classAvg != null ? `${classAvg.toFixed(0)}%` : 'N/A'}</ThemedText>
                                                     {classAvg != null && (
                                                         <View style={[styles.statusBadge, { backgroundColor: isAbove ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
                                                             <Ionicons name={isAbove ? 'trending-up' : 'trending-down'} size={12} color={isAbove ? '#10B981' : '#EF4444'} />
-                                                            <Text style={[styles.statusText, { color: isAbove ? '#10B981' : '#EF4444' }]}>
+                                                            <ThemedText style={[styles.statusText, { color: isAbove ? '#10B981' : '#EF4444' }]}>
                                                                 {Math.abs(total - classAvg).toFixed(0)}%
-                                                            </Text>
+                                                            </ThemedText>
                                                         </View>
                                                     )}
                                                 </View>
                                             </View>
                                             <View style={[styles.gradeCircle, { borderColor: letterGrade.color }]}>
-                                                <Text style={[styles.gradeLetter, { color: letterGrade.color }]}>{letterGrade.label}</Text>
-                                                <Text style={[styles.gradeDesc, { color: letterGrade.color }]}>{letterGrade.desc}</Text>
+                                                <ThemedText style={[styles.gradeLetter, { color: letterGrade.color }]}>{letterGrade.label}</ThemedText>
+                                                <ThemedText style={[styles.gradeDesc, { color: letterGrade.color }]}>{letterGrade.desc}</ThemedText>
                                             </View>
                                         </View>
 
@@ -610,8 +609,8 @@ export default function StudentGrades() {
                                         </View>
 
                                         <View style={styles.totalRow}>
-                                            <Text style={styles.totalLabel}>CUMULATIVE SCORE</Text>
-                                            <Text style={[styles.totalValue, { color: letterGrade.color }]}>{total}%</Text>
+                                            <ThemedText style={styles.totalLabel}>CUMULATIVE SCORE</ThemedText>
+                                            <ThemedText style={[styles.totalValue, { color: letterGrade.color }]}>{total}%</ThemedText>
                                         </View>
                                     </View>
                                 );
@@ -631,25 +630,30 @@ export default function StudentGrades() {
                     !fetchingGrades && (
                         <View style={styles.emptyState}>
                             <View style={styles.emptyIconContainer}>
-                                <Ionicons name="document-text-outline" size={48} color="#475569" />
+                                <Ionicons name="document-text-outline" size={48} color={C.textMuted} />
                             </View>
-                            <Text style={styles.emptyTitle}>Secure Records Portal</Text>
-                            <Text style={styles.emptyDesc}>Select academic parameters above to decrypt and view performance analytics.</Text>
+                            <ThemedText style={styles.emptyTitle}>Secure Records Portal</ThemedText>
+                            <ThemedText style={styles.emptyDesc}>Select academic parameters above to decrypt and view performance analytics.</ThemedText>
                         </View>
                     )
                 )}
             </ScrollView>
 
             {/* Email Input Modal */}
-            <Modal visible={emailModalVisible} transparent animationType="fade">
+            <Modal 
+                visible={emailModalVisible} 
+                transparent 
+                animationType="fade"
+                onRequestClose={() => setEmailModalVisible(false)}
+            >
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
-                        <Text style={styles.modalTitle}>Secure Dispatch</Text>
-                        <Text style={styles.modalSubtitle}>Enter destination address for academic credentials</Text>
+                        <ThemedText style={styles.modalTitle}>Secure Dispatch</ThemedText>
+                        <ThemedText style={styles.modalSubtitle}>Enter destination address for academic credentials</ThemedText>
                         <TextInput
                             style={styles.modalInput}
                             placeholder="recipient@institution.edu"
-                            placeholderTextColor="#64748B"
+                            placeholderTextColor={C.textMuted}
                             value={emailInput}
                             onChangeText={setEmailInput}
                             keyboardType="email-address"
@@ -657,10 +661,10 @@ export default function StudentGrades() {
                         />
                         <View style={styles.modalActions}>
                             <TouchableOpacity style={styles.modalCancel} onPress={() => setEmailModalVisible(false)}>
-                                <Text style={styles.modalCancelText}>Cancel</Text>
+                                <ThemedText style={styles.modalCancelText}>Cancel</ThemedText>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.modalSubmit} onPress={handleEmailModalSubmit}>
-                                <Text style={styles.modalSubmitText}>Transmit</Text>
+                                <ThemedText style={styles.modalSubmitText}>Transmit</ThemedText>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -668,14 +672,19 @@ export default function StudentGrades() {
             </Modal>
 
             {/* Success Modal */}
-            <Modal visible={showSuccessModal} transparent animationType="fade">
+            <Modal 
+                visible={showSuccessModal} 
+                transparent 
+                animationType="fade"
+                onRequestClose={() => setShowSuccessModal(false)}
+            >
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
                         <View style={styles.successIcon}>
                             <Ionicons name="checkmark-circle" size={64} color="#10B981" />
                         </View>
-                        <Text style={styles.modalTitle}>Transmission Success</Text>
-                        <Text style={styles.modalSubtitle}>Official records have been verified and transmitted to the requested destination.</Text>
+                        <ThemedText style={styles.modalTitle}>Transmission Success</ThemedText>
+                        <ThemedText style={styles.modalSubtitle}>Official records have been verified and transmitted to the requested destination.</ThemedText>
                         <CustomButton title="ACKNOWLEDGE" onPress={() => setShowSuccessModal(false)} variant="premium" />
                     </View>
                 </View>
@@ -788,25 +797,24 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
 
         totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: C.divider },
         totalLabel: { color: C.textSecondary, fontSize: 11, fontWeight: '800' },
-        totalValue: { fontSize: 24, fontWeight: '900' },
+        totalValue: { fontSize: 20, fontWeight: '900' },
+        dispatchBtn: { height: 56, marginTop: 10 },
 
-        dispatchBtn: { height: 60, borderRadius: 20 },
+        emptyState: { padding: 40, alignItems: 'center', backgroundColor: C.card, borderRadius: 32, borderWidth: 1, borderColor: C.cardBorder },
+        emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+        emptyTitle: { color: C.text, fontSize: 18, fontWeight: '800', marginBottom: 10 },
+        emptyDesc: { color: C.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 20 },
 
-        emptyState: { alignItems: 'center', marginTop: 60, gap: 16 },
-        emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
-        emptyTitle: { color: C.text, fontSize: 20, fontWeight: '900' },
-        emptyDesc: { color: C.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22, paddingHorizontal: 40 },
-
-        modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
-        modalContent: { width: '100%', borderRadius: 32, padding: 32, borderWidth: 1, borderColor: C.cardBorder },
-        modalTitle: { color: C.text, fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
-        modalSubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 24 },
-        modalInput: { backgroundColor: C.inputBg, borderRadius: 16, padding: 16, color: C.inputText, fontSize: 16, marginBottom: 20, borderWidth: 1, borderColor: C.inputBorder },
-        modalActions: { flexDirection: 'row', gap: 12 },
-        modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: C.actionIconWrap },
-        modalCancelText: { color: C.textSecondary, fontWeight: '700' },
-        modalSubmit: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold },
-        modalSubmitText: { color: Colors.accent.navy, fontWeight: '900' },
-        successIcon: { alignItems: 'center', marginBottom: 20 },
+        modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+        modalContent: { width: '100%', borderRadius: 32, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: C.cardBorder },
+        modalTitle: { color: C.text, fontSize: 24, fontWeight: '900', marginBottom: 12 },
+        modalSubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+        modalInput: { width: '100%', height: 60, backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 20, color: C.inputText, fontSize: 16, borderWidth: 1, borderColor: C.inputBorder, marginBottom: 24 },
+        modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+        modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderSize: 1, borderColor: C.divider },
+        modalCancelText: { color: C.textSecondary, fontSize: 15, fontWeight: '700' },
+        modalSubmit: { flex: 2, height: 56, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center', borderRadius: 16 },
+        modalSubmitText: { color: Colors.accent.navy, fontSize: 15, fontWeight: '800' },
+        successIcon: { marginBottom: 24 }
     });
 }

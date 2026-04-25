@@ -5,6 +5,7 @@ import { Platform, ActivityIndicator, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ThemeProvider } from '@/contexts/theme-context';
 import { getUserTypeFromToken } from '@/utils/jwt-decoder';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
   const [isSignedIn, setIsSignedIn] = useState(false);
@@ -22,13 +23,10 @@ export default function RootLayout() {
           : localStorage.getItem('userToken');
 
         if (token) {
-          // console.log('✅ Token found, decoding...');
           const type = getUserTypeFromToken(token);
           setUserType(type);
           setIsSignedIn(true);
-          // console.log(`🎯 User type detected: ${type}`);
         } else {
-          // console.log('❌ No token found');
           setIsSignedIn(false);
           setUserType(null);
         }
@@ -46,7 +44,6 @@ export default function RootLayout() {
     if (isLoading) return;
 
     const performRedirect = async () => {
-      // Re-fetch token to handle the transition from login -> dashboard
       const token = Platform.OS !== 'web'
         ? await SecureStore.getItemAsync('userToken')
         : localStorage.getItem('userToken');
@@ -55,34 +52,26 @@ export default function RootLayout() {
       const inAuthGroup = !segments.length || currentRoot === '(auth)' || currentRoot === 'index';
       const inStudentGroup = currentRoot === '(student)';
 
-      // Allow student login and registration routes without token
       const isPublicStudentRoute = inStudentGroup && (!segments[1] || ['verify-email', 'verify-otp', 'register'].includes(segments[1]));
 
       const inDashboard = currentRoot === 'dashboard' || (inStudentGroup && segments[1] === 'dashboard');
 
       if (!token) {
-        // If no token, allow public routes, otherwise redirect to home
         if (!inAuthGroup && !isPublicStudentRoute) {
-          // console.log('🔄 No token found, redirecting to home');
           router.replace('/' as any);
         }
         return;
       }
 
-      // Decode token to determine user type
       const detectedUserType = getUserTypeFromToken(token);
-      // console.log(`🔍 Current route: ${currentRoot}, Detected user type: ${detectedUserType}`);
 
-      // Handle student routing
       if (detectedUserType === 'student') {
         if (!inStudentGroup) {
-          // console.log('🚀 Routing student to /(student)/dashboard');
           router.replace('/(student)/dashboard' as any);
         }
         return;
       }
 
-      // Handle school routing
       if (detectedUserType === 'school') {
         const isResetRoute = currentRoot === '(auth)' && ['forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1] as string);
         if (inStudentGroup || (inAuthGroup && !isResetRoute)) {
@@ -92,7 +81,6 @@ export default function RootLayout() {
         return;
       }
 
-      // Invalid token - redirect to auth
       if (!inAuthGroup) {
         console.log('⚠️ Invalid or unrecognized token, redirecting to home');
         router.replace('/' as any);
@@ -100,7 +88,7 @@ export default function RootLayout() {
     };
 
     performRedirect();
-  }, [isLoading, segments]); // Re-run when URL segments change
+  }, [isLoading, segments]);
 
   if (isLoading) {
     return (
@@ -111,21 +99,22 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(student)" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="dashboard" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="register-student" options={{ headerShown: true, title: 'Register' }} />
-        <Stack.Screen name="students_list" options={{ headerShown: true, title: 'Students' }} />
-        <Stack.Screen name="score-entry" options={{ headerShown: true }} />
-        <Stack.Screen name="report-cards" options={{ headerShown: true }} />
-        <Stack.Screen name="report-view" options={{ headerShown: true, title: 'Report Card' }} />
-        <Stack.Screen name="preferences" options={{ headerShown: true, title: 'Preferences' }} />
-
-      </Stack>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(student)" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="dashboard" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="register-student" options={{ headerShown: true, title: 'Register' }} />
+          <Stack.Screen name="students_list" options={{ headerShown: true, title: 'Students' }} />
+          <Stack.Screen name="score-entry" options={{ headerShown: true }} />
+          <Stack.Screen name="report-cards" options={{ headerShown: true }} />
+          <Stack.Screen name="report-view" options={{ headerShown: true, title: 'Report Card' }} />
+          <Stack.Screen name="preferences" options={{ headerShown: true, title: 'Preferences' }} />
+        </Stack>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

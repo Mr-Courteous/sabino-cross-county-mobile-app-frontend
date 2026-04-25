@@ -147,29 +147,23 @@ export default function ReportViewScreen() {
   const fetchClasses = async () => {
     try {
       const token = await getToken();
-      console.log('📥 Fetching classes from /api/reports/list/classes');
       const response = await fetch(`${API_BASE_URL}/api/reports/list/classes`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ Classes API failed with status ${response.status}:`, errorText);
         setError(`Failed to load classes: ${response.status}`);
         return;
       }
       
       const json = await response.json();
-      console.log('📊 Classes API Response:', json);
       if (json.success && json.data) {
-        console.log(`✓ Loaded ${json.data.length} classes:`, json.data);
         setClasses(json.data);
       } else {
-        console.warn('⚠️ Unexpected response format:', json);
         setError(json.error || 'Failed to load classes');
       }
     } catch (err) {
-      console.error('❌ Error fetching classes:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch classes');
     }
   };
@@ -216,7 +210,6 @@ export default function ReportViewScreen() {
         setError(json.error || 'Failed to load report data');
       }
     } catch (err) {
-      console.error('Fetch Error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
@@ -228,22 +221,17 @@ export default function ReportViewScreen() {
     setStudentDownloadError(prev => ({ ...prev, [enrollmentId]: '' }));
 
     try {
-      const token = await getToken();
-
-      // Android/Web/iOS: Use premium portal modal
       setCurrentEmailRequest({ enrollmentId, studentName });
       setEmailInput('');
       setActivePortalModal('email');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Email setup failed';
-      console.error(`Error setting up email for ${studentName}:`, err);
       setStudentDownloadError(prev => ({ ...prev, [enrollmentId]: errorMsg }));
     } finally {
       setDownloadingStudentId(null);
     }
   };
 
-  // Helper function to send email report
   const sendEmailReport = async (enrollmentId: number, term: string, sessionId: string, email: string, token: string) => {
     const emailUrl = `${API_BASE_URL}/api/reports/email/official-report/${enrollmentId}`;
     const response = await fetch(emailUrl, {
@@ -266,7 +254,6 @@ export default function ReportViewScreen() {
     }
   };
 
-  // Handle email modal submission
   const handleEmailModalSubmit = async () => {
     if (!currentEmailRequest || !emailInput.trim()) {
       setStatusAlert({
@@ -323,7 +310,6 @@ export default function ReportViewScreen() {
         setStudentDownloadError(prev => ({ ...prev, [currentEmailRequest.enrollmentId]: '✓ Emailed' }));
       }
     } catch (emailError) {
-      console.error('Email error:', emailError);
       setStatusAlert({
         visible: true,
         type: 'error',
@@ -365,7 +351,6 @@ export default function ReportViewScreen() {
           await sendEmailReport(student.enrollment_id, selectedTerm, selectedSession, email, token);
           successCount++;
         } catch (err) {
-          console.error(`Error emailing PDF for ${student.name}:`, err);
           failedCount++;
         }
         setDownloadProgress({ current: i + 1, total: classData.length });
@@ -400,10 +385,10 @@ export default function ReportViewScreen() {
   };
 
   const getPerformanceColor = (student: number, classAvg: number): string => {
-    if (student >= classAvg * 1.1) return '#4CAF50'; // 10% above average - Green
-    if (student >= classAvg) return '#2196F3'; // Above average - Blue
-    if (student >= classAvg * 0.9) return '#FF9800'; // Within 10% below - Orange
-    return '#F44336'; // Below average - Red
+    if (student >= classAvg * 1.1) return '#4CAF50';
+    if (student >= classAvg) return '#2196F3';
+    if (student >= classAvg * 0.9) return '#FF9800';
+    return '#F44336';
   };
 
 
@@ -411,7 +396,7 @@ export default function ReportViewScreen() {
     if (studentData.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={64} color="rgba(255,255,255,0.1)" />
+          <Ionicons name="document-text-outline" size={64} color={C.textMuted} />
           <ThemedText style={styles.emptyTitle}>No Records Found</ThemedText>
           <ThemedText style={styles.emptySubtitle}>No academic performance data is available for this student in the selected term.</ThemedText>
         </View>
@@ -480,7 +465,7 @@ export default function ReportViewScreen() {
     if (classData.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <Ionicons name="people-outline" size={64} color="rgba(255,255,255,0.1)" />
+          <Ionicons name="people-outline" size={64} color={C.textMuted} />
           <ThemedText style={styles.emptyTitle}>Class List Empty</ThemedText>
           <ThemedText style={styles.emptySubtitle}>No records found for the selected class and session.</ThemedText>
         </View>
@@ -492,7 +477,7 @@ export default function ReportViewScreen() {
         {classData.map((student, studentIndex) => (
           <View key={studentIndex} style={styles.studentCard}>
             <View style={styles.studentHeader}>
-              <View style={[styles.rankBadge, { backgroundColor: Colors.accent.gold, borderColor: 'rgba(255,255,255,0.1)' }]}>
+              <View style={[styles.rankBadge, { backgroundColor: Colors.accent.gold, borderColor: C.cardBorder }]}>
                 <Ionicons name="person" size={14} color="#1E293B" />
               </View>
               <View style={styles.nameStack}>
@@ -529,7 +514,7 @@ export default function ReportViewScreen() {
                 <ActivityIndicator size="small" color={Colors.accent.gold} />
               ) : (
                 <>
-                  <Ionicons name="mail-outline" size={18} color="#FFFFFF" />
+                  <Ionicons name="mail-outline" size={18} color={C.text} />
                   <ThemedText style={styles.individualDownloadButtonText}>Email Report</ThemedText>
                 </>
               )}
@@ -566,18 +551,23 @@ export default function ReportViewScreen() {
 
     if (activePortalModal === 'email') {
       return (
-        <Modal visible transparent animationType="fade">
+        <Modal 
+          visible 
+          transparent 
+          animationType="fade"
+          onRequestClose={() => setActivePortalModal(null)}
+        >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
               <ThemedText style={styles.modalTitle}>Email Report Card</ThemedText>
-              <ThemedText style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 24, textAlign: 'center' }}>
+              <ThemedText style={{ color: C.textSecondary, fontSize: 13, marginBottom: 24, textAlign: 'center' }}>
                 Enter the recipient email address for {currentEmailRequest?.studentName}'s official report.
               </ThemedText>
               
               <TextInput
                 style={styles.emailInput}
                 placeholder="recipient@example.com"
-                placeholderTextColor="rgba(255,255,255,0.2)"
+                placeholderTextColor={C.textMuted}
                 value={emailInput}
                 onChangeText={setEmailInput}
                 keyboardType="email-address"
@@ -588,7 +578,7 @@ export default function ReportViewScreen() {
                 <CustomButton 
                   title="Cancel" 
                   onPress={() => setActivePortalModal(null)} 
-                  style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)' }} 
+                  style={{ flex: 1, backgroundColor: C.actionItemBg }} 
                 />
                 <CustomButton 
                   title="Send Now" 
@@ -615,7 +605,7 @@ export default function ReportViewScreen() {
           activeOpacity={1} 
           onPress={() => setActivePortalModal(null)}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
             <ThemedText style={styles.modalTitle}>{title}</ThemedText>
             <FlatList
               data={data}
@@ -644,13 +634,12 @@ export default function ReportViewScreen() {
   return (
     <ThemedView style={styles.mainWrapper}>
       <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false}>
-        {/* Premium Hero Header */}
         <ImageBackground
           source={{ uri: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070' }}
           style={styles.hero}
         >
           <LinearGradient
-            colors={['transparent', Colors.accent.navy]}
+            colors={['transparent', C.isDark ? Colors.accent.navy : C.background]}
             style={styles.heroOverlay}
           >
             <View style={styles.header}>
@@ -658,7 +647,7 @@ export default function ReportViewScreen() {
                 style={styles.backButton}
                 onPress={() => router.back()}
               >
-                <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                <Ionicons name="arrow-back" size={24} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
               </TouchableOpacity>
               <View style={styles.headerActions}>
                 <TouchableOpacity 
@@ -671,7 +660,7 @@ export default function ReportViewScreen() {
                     setError('');
                   }}
                 >
-                  <Ionicons name="refresh" size={22} color="#FFFFFF" />
+                  <Ionicons name="refresh" size={22} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -685,7 +674,6 @@ export default function ReportViewScreen() {
           </LinearGradient>
         </ImageBackground>
 
-        {/* Dynamic Filters Section */}
         <View style={styles.contentWrapper}>
           <View style={styles.glassCard}>
             <View style={styles.filterRow}>
@@ -745,7 +733,6 @@ export default function ReportViewScreen() {
             )}
           </View>
 
-          {/* Bulk Actions */}
           {mode === 'class' && reportId && !loading && classData.length > 0 && (
             <CustomButton
               title={downloadingAll ? `Emailing (${downloadProgress.current}/${downloadProgress.total})` : `Email All Reports (${classData.length})`}
@@ -757,11 +744,10 @@ export default function ReportViewScreen() {
             />
           )}
 
-          {/* Main Content Area */}
           {loading ? (
             <View style={styles.loaderContainer}>
               <ActivityIndicator size="large" color={Colors.accent.gold} />
-              <ThemedText style={{ marginTop: 24, color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 2 }}>PREPARING REPORT DATA...</ThemedText>
+              <ThemedText style={{ marginTop: 24, color: C.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2 }}>PREPARING REPORT DATA...</ThemedText>
             </View>
           ) : error ? (
             <View style={styles.emptyState}>
@@ -778,7 +764,6 @@ export default function ReportViewScreen() {
         </View>
       </ScrollView>
 
-      {/* Auxiliary Components */}
       {renderPortalModal()}
       
       {statusAlert.visible && (
@@ -805,7 +790,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
     heroContent: { marginTop: 'auto', marginBottom: 20 },
     heroSubtitle: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
-    heroTitle: { color: C.isDark ? '#FFFFFF' : '#0F172A', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+    heroTitle: { color: C.text, fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
     contentWrapper: { paddingHorizontal: 24, marginTop: -30 },
     glassCard: { backgroundColor: C.card, borderRadius: 32, padding: 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 24 },
@@ -825,7 +810,6 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     downloadAllButton: { marginBottom: 24, paddingVertical: 16 },
     loaderContainer: { padding: 60, alignItems: 'center' },
     
-    // Student View Styles
     subjectCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: C.cardBorder },
     subjectHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
     subjectTitle: { fontSize: 18, fontWeight: '800', color: C.text },
@@ -840,11 +824,9 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     comparisonLabel: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
     comparisonValue: { fontSize: 12, fontWeight: '800', color: Colors.accent.gold },
 
-    // Class View Styles
     studentCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: C.cardBorder },
     studentHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 },
     rankBadge: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
-    rankText: { fontSize: 18, fontWeight: '900' },
     nameStack: { flex: 1, gap: 2 },
     studentName: { fontSize: 16, fontWeight: '800', color: C.text },
     totalPoints: { fontSize: 11, color: Colors.accent.gold, fontWeight: '900', letterSpacing: 0.5 },
@@ -865,7 +847,6 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     emptyTitle: { color: C.text, fontSize: 20, fontWeight: '900', marginTop: 24, marginBottom: 8 },
     emptySubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
 
-    // Modal Styles
     modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: 24 },
     modalContent: { backgroundColor: C.modalBg, borderRadius: 32, padding: 24, borderWidth: 1, borderColor: C.cardBorder },
     modalTitle: { color: C.text, fontSize: 20, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
@@ -878,4 +859,3 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     alert: { marginTop: 20 },
   });
 }
-

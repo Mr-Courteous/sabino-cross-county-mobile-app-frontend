@@ -5,7 +5,7 @@ import {
     ActivityIndicator,
     Platform,
     ScrollView,
-    Text,
+    TouchableOpacity,
     ImageBackground,
     StyleSheet,
     Dimensions,
@@ -14,7 +14,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '@/utils/api-service';
-import { getUserTypeFromToken, decodeToken } from '@/utils/jwt-decoder';
+import { getUserTypeFromToken } from '@/utils/jwt-decoder';
 import { CustomButton } from '@/components/custom-button';
 import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
@@ -23,10 +23,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useAppColors } from '@/hooks/use-app-colors';
 import {
     Colors,
-    Typography,
     Spacing,
-    BorderRadius,
-    Shadows,
 } from '@/constants/design-system';
 
 const { width } = Dimensions.get('window');
@@ -103,7 +100,7 @@ export default function LoginScreen() {
                 style={styles.hero}
             >
                 <LinearGradient
-                    colors={['rgba(10, 15, 30, 0.7)', 'rgba(15, 23, 42, 0.95)']}
+                    colors={C.isDark ? ['rgba(10, 15, 30, 0.7)', 'rgba(15, 23, 42, 0.95)'] : ['rgba(255, 255, 255, 0.4)', 'rgba(248, 250, 252, 0.95)']}
                     style={styles.overlay}
                 >
                     <ScrollView
@@ -111,13 +108,19 @@ export default function LoginScreen() {
                         showsVerticalScrollIndicator={false}
                     >
                         <View style={styles.header}>
+                            <TouchableOpacity 
+                                style={styles.backBtn}
+                                onPress={() => router.back()}
+                            >
+                                <Ionicons name="arrow-back" size={24} color={C.text} />
+                            </TouchableOpacity>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="ribbon" size={24} color="#FACC15" />
-                                <Text style={styles.logoText}>SABINO PORTAL</Text>
+                                <Ionicons name="ribbon" size={24} color={Colors.accent.gold} />
+                                <ThemedText style={styles.logoText}>SABINO PORTAL</ThemedText>
                             </View>
-                            <Text style={styles.title}>School Login</Text>
+                            <ThemedText style={styles.title}>School Login</ThemedText>
                             <View style={styles.goldBar} />
-                            <Text style={styles.subtitle}>Secure Access to Academic Management</Text>
+                            <ThemedText style={styles.subtitle}>Secure Access to Academic Management</ThemedText>
                         </View>
 
                         <View style={styles.card}>
@@ -172,21 +175,21 @@ export default function LoginScreen() {
                             <View style={styles.divider} />
 
                             <View style={styles.registerSection}>
-                                <Text style={styles.registerLabel}>Don't have an account?</Text>
+                                <ThemedText style={styles.registerLabel}>Don't have an account?</ThemedText>
                                 <CustomButton
                                     title="REGISTER YOUR SCHOOL"
-                                    onPress={() => router.push('/(auth)/register')}
+                                    onPress={() => router.push('/(auth)/verify-email')}
                                     disabled={isLoading}
                                     variant="outline"
                                     style={styles.registerButton}
-                                    textStyle={{ color: '#fff', fontWeight: '800' }}
+                                    textStyle={{ color: Colors.accent.blue, fontWeight: '800' }}
                                 />
                             </View>
                         </View>
 
                         <View style={styles.footer}>
-                            <Text style={styles.footerText}>© 2026 SABINO SYSTEMS GLOBAL</Text>
-                            <Text style={styles.footerSubtext}>THE GOLD STANDARD FOR ACADEMIC REPORTING</Text>
+                            <ThemedText style={styles.footerText}>© 2026 SABINO SYSTEMS GLOBAL</ThemedText>
+                            <ThemedText style={styles.footerSubtext}>THE GOLD STANDARD FOR ACADEMIC REPORTING</ThemedText>
                         </View>
                     </ScrollView>
                 </LinearGradient>
@@ -202,37 +205,48 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
         
         header: { alignItems: 'center', marginBottom: 40 },
+        backBtn: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 44,
+            height: 44,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: C.actionItemBg,
+            borderRadius: 22,
+            zIndex: 10
+        },
         logoBadge: {
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: 'rgba(255,255,255,0.08)',
+            backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
             paddingHorizontal: 16,
             paddingVertical: 10,
             borderRadius: 12,
             marginBottom: 20,
             borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.1)'
+            borderColor: C.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
         },
-        logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
-        title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-        goldBar: { width: 50, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
-        subtitle: { fontSize: 14, color: '#94A3B8', fontWeight: '500' },
+        logoText: { color: Colors.accent.gold, fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+        title: { fontSize: 32, fontWeight: '900', color: C.text, letterSpacing: -1 },
+        goldBar: { width: 50, height: 4, backgroundColor: Colors.accent.gold, borderRadius: 2, marginVertical: 15 },
+        subtitle: { fontSize: 14, color: C.textSecondary, fontWeight: '500' },
 
         card: {
-            backgroundColor: C.isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(255, 255, 255, 0.95)',
+            backgroundColor: C.card,
             borderRadius: 35,
             padding: 30,
             borderWidth: 1,
             borderColor: C.cardBorder,
         },
         inputContainer: {
-            backgroundColor: C.isDark ? 'rgba(15, 23, 42, 0.5)' : '#F8FAFC',
+            backgroundColor: C.inputBg,
             borderColor: C.inputBorder,
             marginBottom: 15,
         },
         loginButton: {
             marginTop: 10,
-            backgroundColor: '#2563EB',
             borderRadius: 15,
             height: 60,
         },

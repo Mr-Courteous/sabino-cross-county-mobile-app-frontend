@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
+  View, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Platform,
   ImageBackground, RefreshControl, Modal, useWindowDimensions
 } from 'react-native';
@@ -18,14 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { useAppColors } from '@/hooks/use-app-colors';
-import ColorPicker, {
-  Panel1,
-  HueSlider,
-  SaturationSlider,
-  BrightnessSlider,
-  InputWidget,
-  Swatches,
-} from 'reanimated-color-picker';
+
 
 const SWATCHES = [
   '#1E40AF', '#2563EB', '#0EA5E9', '#059669',
@@ -43,6 +36,8 @@ export default function SchoolPreferencesScreen() {
   const [saving, setSaving] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerColor, setPickerColor] = useState('#2563EB');
+  
+
 
   const { width: windowWidth } = useWindowDimensions();
   const isLargeScreen = windowWidth > 768;
@@ -222,15 +217,57 @@ export default function SchoolPreferencesScreen() {
     }
   };
 
-  // Called on every color change from the picker (worklet-safe via JS callback)
-  const onColorSelect = (colors: { hex: string }) => {
-    setPickerColor(colors.hex);
-  };
-
-  const confirmColor = () => {
-    setPrefs(prev => ({ ...prev, theme_color: pickerColor }));
+  const selectColor = (hex: string) => {
+    setPickerColor(hex);
+    setPrefs(prev => ({ ...prev, theme_color: hex }));
     setShowColorPicker(false);
   };
+
+  // Internal Sub-components to keep styles in scope
+  function AssetUploader({ title, subtitle, url, onUpload, icon }: any) {
+    return (
+      <View style={styles.assetRow}>
+        <View style={styles.assetPreview}>
+          {url ? (
+            <Image source={{ uri: url }} style={styles.assetImage} contentFit="contain" />
+          ) : (
+            <View style={styles.assetPlaceholder}>
+              <Ionicons name={icon} size={28} color={C.isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} />
+            </View>
+          )}
+        </View>
+        <View style={styles.assetInfo}>
+          <ThemedText style={styles.assetTitle}>{title}</ThemedText>
+          <ThemedText style={styles.assetSubtitle}>{subtitle}</ThemedText>
+          <TouchableOpacity style={styles.uploadBtn} onPress={onUpload}>
+            <Ionicons name="cloud-upload" size={14} color={Colors.accent.gold} />
+            <ThemedText style={styles.uploadBtnText}>Select File</ThemedText>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  function ThemeModeButton({ icon, label, subtitle, isActive, onPress }: any) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        style={[
+          styles.themeModeBtn,
+          {
+            backgroundColor: isActive ? 'rgba(37,99,235,0.12)' : C.actionItemBg,
+            borderColor: isActive ? '#2563EB' : C.cardBorder,
+            borderWidth: isActive ? 2 : 1,
+          }
+        ]}
+        activeOpacity={0.85}
+      >
+        <Ionicons name={icon} size={22} color={isActive ? '#2563EB' : C.textSecondary} />
+        <ThemedText style={[styles.themeModeLabel, { color: isActive ? '#2563EB' : C.textSecondary }]}>{label}</ThemedText>
+        {!!subtitle && <ThemedText style={styles.themeModeSubtitle}>{subtitle}</ThemedText>}
+      </TouchableOpacity>
+    );
+  }
 
   if (loading) return (
     <ThemedView style={styles.loader}>
@@ -251,15 +288,15 @@ export default function SchoolPreferencesScreen() {
         >
           <View style={[styles.header, { maxWidth: 1200, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 20 }]}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+              <Ionicons name="chevron-back" size={24} color={C.text} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>System Branding</Text>
+            <ThemedText style={styles.headerTitle}>System Branding</ThemedText>
             <View style={{ width: 44 }} />
           </View>
 
           <View style={[styles.heroContent, { maxWidth: contentWidth, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 30 }]}>
-            <Text style={styles.heroSubtitle}>VISUAL IDENTITY</Text>
-            <Text style={styles.heroMainTitle}>Portal Customization</Text>
+            <ThemedText style={styles.heroSubtitle}>VISUAL IDENTITY</ThemedText>
+            <ThemedText style={styles.heroMainTitle}>Portal Customization</ThemedText>
           </View>
         </LinearGradient>
       </ImageBackground>
@@ -286,10 +323,9 @@ export default function SchoolPreferencesScreen() {
 
         {/* ── Theme Color ── */}
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>THEME SPECIFICATION</Text>
-          <Text style={styles.helperText}>Choose a primary color to define the portal's visual accent.</Text>
+          <ThemedText style={styles.cardLabel}>THEME SPECIFICATION</ThemedText>
+          <ThemedText style={styles.helperText}>Choose a primary color to define the portal's visual accent.</ThemedText>
 
-          {/* Current color preview + open picker button */}
           <TouchableOpacity
             style={[styles.colorTrigger, { borderColor: prefs.theme_color }]}
             onPress={() => {
@@ -300,20 +336,20 @@ export default function SchoolPreferencesScreen() {
           >
             <View style={[styles.colorDot, { backgroundColor: prefs.theme_color }]} />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.colorTriggerLabel} numberOfLines={1}>Active Theme Color</Text>
-              <Text style={styles.colorTriggerValue} adjustsFontSizeToFit numberOfLines={1}>{prefs.theme_color.toUpperCase()}</Text>
+              <ThemedText style={styles.colorTriggerLabel} numberOfLines={1}>Active Theme Color</ThemedText>
+              <ThemedText style={styles.colorTriggerValue} adjustsFontSizeToFit numberOfLines={1}>{prefs.theme_color.toUpperCase()}</ThemedText>
             </View>
             <View style={[styles.colorTriggerChip, { backgroundColor: prefs.theme_color }]}>
               <Ionicons name="color-palette-outline" size={windowWidth < 360 ? 16 : 18} color="#FFFFFF" />
-              {windowWidth >= 360 && <Text style={styles.colorTriggerChipText}>Change</Text>}
+              {windowWidth >= 360 && <ThemedText style={styles.colorTriggerChipText}>Change</ThemedText>}
             </View>
           </TouchableOpacity>
         </View>
 
         {/* ── Theme Mode ── */}
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>DISPLAY MODE</Text>
-          <Text style={styles.helperText}>Choose how the portal appears across all devices.</Text>
+          <ThemedText style={styles.cardLabel}>DISPLAY MODE</ThemedText>
+          <ThemedText style={styles.helperText}>Choose how the portal appears across all devices.</ThemedText>
 
           <View style={styles.themeModeContainer}>
             <ThemeModeButton
@@ -340,7 +376,7 @@ export default function SchoolPreferencesScreen() {
 
         {/* ── Identity Assets ── */}
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>IDENTITY ASSETS</Text>
+          <ThemedText style={styles.cardLabel}>IDENTITY ASSETS</ThemedText>
 
           <AssetUploader
             title="School Emblem"
@@ -363,18 +399,18 @@ export default function SchoolPreferencesScreen() {
 
         {/* ── Report Config ── */}
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>REPORT CONFIGURATION</Text>
+          <ThemedText style={styles.cardLabel}>REPORT CONFIGURATION</ThemedText>
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Dynamic Footer Text</Text>
+            <ThemedText style={styles.inputLabel}>Dynamic Footer Text</ThemedText>
             <TextInput
               style={styles.textArea}
               value={prefs.report_footer_text}
               onChangeText={(txt) => setPrefs({ ...prefs, report_footer_text: txt })}
               placeholder="Enter validation disclaimer or school motto..."
-              placeholderTextColor="rgba(255,255,255,0.2)"
+              placeholderTextColor={C.textMuted}
               multiline
             />
-            <Text style={styles.helperText}>This text will appear at the base of all generated result certificates.</Text>
+            <ThemedText style={styles.helperText}>This text will appear at the base of all generated result certificates.</ThemedText>
           </View>
         </View>
 
@@ -383,15 +419,15 @@ export default function SchoolPreferencesScreen() {
             title={saving ? "Propagating Changes..." : "Secure & Apply Branding"}
             onPress={handleSave}
             loading={saving}
-            icon="shield-checkmark-outline"
+            variant="premium"
           />
           <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn}>
-            <Text style={styles.cancelText}>Discard Changes</Text>
+            <ThemedText style={styles.cancelText}>Discard Changes</ThemedText>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* ── Full Color Picker Modal ── */}
+      {/* ── Simple Color Picker Modal ── */}
       <Modal
         visible={showColorPicker}
         transparent
@@ -405,64 +441,37 @@ export default function SchoolPreferencesScreen() {
           ]}>
             {/* Header */}
             <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>Color Studio</Text>
+              <ThemedText style={styles.pickerTitle}>Select Theme Color</ThemedText>
               <TouchableOpacity onPress={() => setShowColorPicker(false)} style={styles.pickerClose}>
-                <Ionicons name="close" size={22} color="#94A3B8" />
+                <Ionicons name="close" size={22} color={Colors.accent.gold} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={{ paddingBottom: 20 }}>
-                <ColorPicker
-                  value={pickerColor}
-                  onComplete={onColorSelect}
-                  onChange={onColorSelect}
-                  style={styles.colorPicker}
+            <View style={{ padding: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
+              {SWATCHES.map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  onPress={() => selectColor(color)}
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 28,
+                    backgroundColor: color,
+                    borderWidth: prefs.theme_color === color ? 3 : 0,
+                    borderColor: C.text,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    elevation: 2,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                  }}
+                  activeOpacity={0.8}
                 >
-                  {/* Full HSB spectrum panel */}
-                  <Panel1 style={styles.pickerPanel} />
-
-                  {/* Sliders */}
-                  <View style={styles.slidersBlock}>
-                    <Text style={styles.sliderLabel}>HUE</Text>
-                    <HueSlider style={styles.slider} />
-
-                    <Text style={styles.sliderLabel}>SATURATION</Text>
-                    <SaturationSlider style={styles.slider} />
-
-                    <Text style={styles.sliderLabel}>BRIGHTNESS</Text>
-                    <BrightnessSlider style={styles.slider} />
-                  </View>
-
-                  {/* Hex / RGB / HSL input */}
-                  <View style={styles.hexBlock}>
-                    <InputWidget
-                      inputStyle={styles.pickerHexText}
-                      iconStyle={{ tintColor: '#94A3B8' }}
-                      formats={['HEX', 'RGB', 'HSL']}
-                    />
-                  </View>
-
-                  {/* Quick swatches */}
-                  <Text style={styles.swatchesLabel}>QUICK PICKS</Text>
-                  <Swatches
-                    style={styles.swatchesContainer}
-                    swatchStyle={styles.swatch}
-                    colors={SWATCHES}
-                  />
-                </ColorPicker>
-              </View>
-            </ScrollView>
-
-            {/* Live preview + confirm */}
-            <View style={styles.pickerFooter}>
-              <View style={[styles.pickerPreview, { backgroundColor: pickerColor }]}>
-                <Text style={styles.pickerPreviewText}>{pickerColor.toUpperCase()}</Text>
-              </View>
-              <TouchableOpacity style={styles.confirmBtn} onPress={confirmColor}>
-                <Ionicons name="checkmark-circle" size={20} color={Colors.accent.navy} />
-                <Text style={styles.confirmBtnText}>Apply Color</Text>
-              </TouchableOpacity>
+                  {prefs.theme_color === color && <Ionicons name="checkmark" size={28} color="#fff" />}
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
         </View>
@@ -471,59 +480,11 @@ export default function SchoolPreferencesScreen() {
   );
 }
 
-function AssetUploader({ title, subtitle, url, onUpload, icon }: any) {
-  return (
-    <View style={styles.assetRow}>
-      <View style={styles.assetPreview}>
-        {url ? (
-          <Image source={{ uri: url }} style={styles.assetImage} contentFit="contain" />
-        ) : (
-          <View style={styles.assetPlaceholder}>
-            <Ionicons name={icon} size={28} color="rgba(255,255,255,0.1)" />
-          </View>
-        )}
-      </View>
-      <View style={styles.assetInfo}>
-        <Text style={styles.assetTitle}>{title}</Text>
-        <Text style={styles.assetSubtitle}>{subtitle}</Text>
-        <TouchableOpacity style={styles.uploadBtn} onPress={onUpload}>
-          <Ionicons name="cloud-upload" size={14} color={Colors.accent.gold} />
-          <Text style={styles.uploadBtnText}>Select File</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-// ThemeModeButton: Simple button for theme mode selection
-function ThemeModeButton({ icon, label, subtitle, isActive, onPress }: any) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        flex: 1,
-        alignItems: 'center',
-        padding: 12,
-        marginHorizontal: 4,
-        borderRadius: 12,
-        backgroundColor: isActive ? 'rgba(37,99,235,0.12)' : 'rgba(255,255,255,0.04)',
-        borderWidth: isActive ? 2 : 1,
-        borderColor: isActive ? '#2563EB' : 'rgba(100,116,139,0.15)',
-      }}
-      activeOpacity={0.85}
-    >
-      <Ionicons name={icon} size={22} color={isActive ? '#2563EB' : '#64748B'} />
-      <Text style={{ color: isActive ? '#2563EB' : '#64748B', fontWeight: 'bold', marginTop: 4 }}>{label}</Text>
-      {!!subtitle && <Text style={{ color: '#64748B', fontSize: 10 }}>{subtitle}</Text>}
-    </TouchableOpacity>
-  );
-}
-
 function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
   return StyleSheet.create({
-    mainWrapper: { flex: 1 },
-    loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+    mainWrapper: { flex: 1, backgroundColor: C.background },
+    loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
+    loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
 
     hero: { height: 280, width: '100%' },
     heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
@@ -533,7 +494,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
 
     heroContent: { marginTop: 'auto', marginBottom: 30 },
     heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
-    heroMainTitle: { color: C.isDark ? '#FFFFFF' : '#0F172A', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+    heroMainTitle: { color: C.text, fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
     scrollView: { flex: 1, marginTop: -30 },
     scrollContent: { padding: 20, paddingBottom: 60 },
@@ -542,9 +503,12 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     card: { backgroundColor: C.card, borderRadius: 32, padding: 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 24 },
     cardLabel: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
     helperText: { color: C.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 12 },
+    
+    themeModeBtn: { flex: 1, alignItems: 'center', padding: 12, marginHorizontal: 4, borderRadius: 12 },
+    themeModeLabel: { fontWeight: 'bold', marginTop: 4 },
+    themeModeSubtitle: { color: C.textMuted, fontSize: 10 },
     themeModeContainer: { flexDirection: 'row', gap: 8, marginTop: 4 },
 
-    // Color trigger button
     colorTrigger: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: C.actionItemBg, borderRadius: 20, padding: 16, borderWidth: 1.5, borderColor: C.cardBorder },
     colorDot: { width: 48, height: 48, borderRadius: 16, borderWidth: 1, borderColor: C.divider },
     colorTriggerLabel: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
@@ -552,7 +516,6 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     colorTriggerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
     colorTriggerChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
-    // Picker modal
     pickerOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
     pickerOverlayLarge: { justifyContent: 'center', padding: 40 },
     pickerSheet: { backgroundColor: C.modalBg, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, borderTopWidth: 1, borderColor: C.cardBorder, maxHeight: '90%' },
@@ -590,6 +553,10 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     assetSubtitle: { color: C.textMuted, fontSize: 12, fontWeight: '600' },
     uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
     uploadBtnText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
+    
+    resetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4 },
+    resetBtnText: { color: Colors.accent.gold, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+
     divider: { height: 1, backgroundColor: C.divider, marginVertical: 20 },
 
     inputGroup: { gap: 12 },
