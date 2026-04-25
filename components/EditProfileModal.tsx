@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
+import { useAppColors } from '@/hooks/use-app-colors';
 
 const { width } = Dimensions.get('window');
 
@@ -41,6 +42,9 @@ interface EditProfileModalProps {
 }
 
 export default function EditProfileModal({ visible, onClose, student, onUpdate }: EditProfileModalProps) {
+    const C = useAppColors();
+    const styles = useMemo(() => makeStyles(C), [C.scheme]);
+
     const [form, setForm] = useState({
         firstName: student.first_name,
         lastName: student.last_name,
@@ -186,7 +190,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                     <View style={styles.modalHeader}>
                         <Text style={styles.modalTitle}>Edit Profile</Text>
                         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                            <Ionicons name="close" size={24} color="#94A3B8" />
+                            <Ionicons name="close" size={24} color={C.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
@@ -211,7 +215,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                     </View>
                                 )}
                                 <View style={styles.editIconBadge}>
-                                    <Ionicons name="camera" size={16} color="#0F172A" />
+                                    <Ionicons name="camera" size={16} color={C.scheme === 'dark' ? '#0F172A' : '#FFFFFF'} />
                                 </View>
                             </TouchableOpacity>
                             <Text style={styles.photoInfo}>Tap to change photo</Text>
@@ -224,7 +228,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                 value={form.firstName} 
                                 onChangeText={(t) => setForm({ ...form, firstName: t })} 
                                 placeholder="Enter first name"
-                                placeholderTextColor="#94A3B8"
+                                placeholderTextColor={C.textSecondary + '80'}
                             />
                         </View>
 
@@ -235,7 +239,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                 value={form.lastName} 
                                 onChangeText={(t) => setForm({ ...form, lastName: t })} 
                                 placeholder="Enter last name"
-                                placeholderTextColor="#94A3B8"
+                                placeholderTextColor={C.textSecondary + '80'}
                             />
                         </View>
 
@@ -247,7 +251,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                                 onChangeText={(t) => setForm({ ...form, phone: t })} 
                                 placeholder="Enter phone number"
                                 keyboardType="phone-pad"
-                                placeholderTextColor="#94A3B8"
+                                placeholderTextColor={C.textSecondary + '80'}
                             />
                         </View>
 
@@ -317,7 +321,7 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                             disabled={loading}
                         >
                             {loading ? (
-                                <ActivityIndicator color="#0F172A" />
+                                <ActivityIndicator color={C.scheme === 'dark' ? '#0F172A' : '#FFFFFF'} />
                             ) : (
                                 <Text style={styles.saveButtonText}>Update Profile</Text>
                             )}
@@ -331,18 +335,23 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
     );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: any) => StyleSheet.create({
     modalBackdrop: {
         flex: 1,
-        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
         justifyContent: 'flex-end',
     },
     modalCard: {
-        backgroundColor: '#1E293B',
+        backgroundColor: C.card,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
         height: '85%',
         padding: 24,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+        elevation: 10,
     },
     modalHeader: {
         flexDirection: 'row',
@@ -353,12 +362,12 @@ const styles = StyleSheet.create({
     modalTitle: {
         fontSize: 24,
         fontWeight: '900',
-        color: '#FFFFFF',
+        color: C.text,
     },
     closeButton: {
         padding: 8,
         borderRadius: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: C.textSecondary + '10',
     },
     errorBanner: {
         flexDirection: 'row',
@@ -391,17 +400,17 @@ const styles = StyleSheet.create({
         height: 100,
         borderRadius: 50,
         borderWidth: 3,
-        borderColor: '#FACC15',
+        borderColor: C.primary,
     },
     avatarPlaceholder: {
         width: 100,
         height: 100,
         borderRadius: 50,
-        backgroundColor: '#FACC15',
+        backgroundColor: C.primary,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 3,
-        borderColor: '#0F172A',
+        borderColor: C.card,
     },
     avatarText: {
         fontSize: 32,
@@ -412,18 +421,18 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 0,
         right: 0,
-        backgroundColor: '#FACC15',
+        backgroundColor: C.primary,
         width: 32,
         height: 32,
         borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 3,
-        borderColor: '#1E293B',
+        borderColor: C.card,
     },
     photoInfo: {
         marginTop: 12,
-        color: '#94A3B8',
+        color: C.textSecondary,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -433,17 +442,18 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 12,
         fontWeight: '900',
-        color: '#64748B',
+        color: C.textSecondary,
         marginBottom: 8,
         letterSpacing: 1,
+        opacity: 0.7,
     },
     input: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: C.scheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: C.border,
         borderRadius: 16,
         padding: 16,
-        color: '#FFFFFF',
+        color: C.text,
         fontSize: 16,
     },
     genderRow: {
@@ -454,21 +464,21 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 16,
         borderRadius: 16,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: C.scheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: C.border,
     },
     activeGender: {
-        backgroundColor: 'rgba(250, 204, 21, 0.1)',
-        borderColor: '#FACC15',
+        backgroundColor: C.primary + '15',
+        borderColor: C.primary,
     },
     genderText: {
-        color: '#94A3B8',
+        color: C.textSecondary,
         fontWeight: '700',
     },
     activeGenderText: {
-        color: '#FACC15',
+        color: C.primary,
     },
     dobRow: {
         flexDirection: 'row',
@@ -477,10 +487,10 @@ const styles = StyleSheet.create({
     },
     dobPart: {
         flex: 1,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: C.scheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: C.border,
         overflow: 'hidden',
     },
     dobScroll: {
@@ -490,26 +500,31 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         alignItems: 'center',
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+        borderBottomColor: C.border + '30',
     },
     activeDobItem: {
-        backgroundColor: '#FACC15',
+        backgroundColor: C.scheme === 'dark' ? C.primary : '#0F172A',
     },
     dobItemText: {
-        color: '#FFFFFF',
+        color: C.text,
         fontSize: 14,
         fontWeight: '600',
     },
     activeDobItemText: {
-        color: '#0F172A',
+        color: C.scheme === 'dark' ? '#0F172A' : '#FFFFFF',
         fontWeight: '900',
     },
     saveButton: {
-        backgroundColor: '#FACC15',
+        backgroundColor: C.primary,
         borderRadius: 16,
         padding: 20,
         alignItems: 'center',
         marginTop: 20,
+        shadowColor: C.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 5,
     },
     saveButtonText: {
         color: '#0F172A',

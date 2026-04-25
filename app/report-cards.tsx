@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   View, 
   Text,
@@ -25,6 +25,7 @@ import { Colors } from '@/constants/design-system';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { router } from 'expo-router';
+import { useAppColors } from '@/hooks/use-app-colors';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +37,8 @@ const getToken = async () => {
 
 
 export default function ReportSearchScreen() {
+  const C = useAppColors();
+  const styles = useMemo(() => makeStyles(C), [C.scheme]);
   const [mode, setMode] = useState<'student' | 'class'>('student');
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -66,6 +69,7 @@ export default function ReportSearchScreen() {
     title: string;
     message: string;
     onConfirm?: () => void;
+    confirmLabel?: string;
   }>({
     visible: false,
     type: 'info',
@@ -73,10 +77,8 @@ export default function ReportSearchScreen() {
     message: '',
   });
 
-  // PDF Preview State
-  const [pdfPreviewVisible, setPdfPreviewVisible] = useState(false);
-  const [pdfBase64, setPdfBase64] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  // Native Score Preview State
+  const [selectedPreviewStudent, setSelectedPreviewStudent] = useState<any>(null);
   const [pendingEmailData, setPendingEmailData] = useState<{
     enrollmentId: number;
     studentName: string;
@@ -345,46 +347,35 @@ export default function ReportSearchScreen() {
   }, [classReportData, selectedTerm, selectedSession, selectedStudentTerms]);
 
   // 3. Preview and then Email Official Report
-  const handleInitiateDispatch = useCallback(async (enrollmentId: number, studentName: string, term: number = 1, sessionId: number = 1) => {
-    try {
-      setLoadingPreview(true);
-      const token = await getToken();
-
-      // Fetch PDF preview first
-      const previewUrl = `${API_BASE_URL}/api/reports/preview/official-report/${enrollmentId}?term=${term}&sessionId=${sessionId}`;
-      const response = await fetch(previewUrl, {
-        headers: { Authorization: `Bearer ${token}` }
+  const handleInitiateDispatch = useCallback((enrollmentId: number, studentName: string, term: number = 1, sessionId: number = 1, preLoadedData?: any) => {
+    console.log('🔍 Initiating Preview for:', studentName, 'ID:', enrollmentId);
+    
+    // Use pre-loaded data if available, otherwise fallback to finding it
+    let student = preLoadedData || 
+                  results.find((s: any) => String(s.enrollment_id) === String(enrollmentId)) || 
+                  classReportData.find((s: any) => String(s.enrollment_id) === String(enrollmentId));
+    
+    if (student) {
+      console.log('✅ Found Student Data:', student.name || `${student.first_name} ${student.last_name}`);
+      setSelectedPreviewStudent({
+        ...student,
+        displayTerm: String(term),
+        displaySessionId: String(sessionId)
       });
-
-      const result = await response.json();
-      if (result.success && result.pdfBase64) {
-        setPdfBase64(result.pdfBase64);
-        setPendingEmailData({ enrollmentId, studentName, term, sessionId });
-        setPdfPreviewVisible(true);
-      } else {
-        throw new Error(result.error || 'Failed to generate preview');
-      }
-    } catch (error) {
-      console.error('Preview generation error:', error);
-      setStatusAlert({
-        visible: true,
-        type: 'error',
-        title: 'Preview Failed',
-        message: error instanceof Error ? error.message : 'Failed to generate PDF preview'
-      });
-    } finally {
-      setLoadingPreview(false);
+      // Prepare the email parameters
+      setPendingEmailData({ enrollmentId, studentName, term, sessionId });
+    } else {
+      console.log('❌ Student data missing for enrollmentId:', enrollmentId);
+      Alert.alert('Data Error', 'Unable to isolate student records for preview. Please refresh and try again.');
     }
-  }, []);
+  }, [results, classReportData]);
 
   // Handle email after preview confirmation
   const handleProceedToEmail = useCallback(() => {
     if (pendingEmailData) {
       setCurrentEmailRequest(pendingEmailData);
       setEmailInput('');
-      setPdfPreviewVisible(false);
-      // We keep the base64 if we want to show it in the email modal too, 
-      // but usually we can clear it or wait until close.
+      setSelectedPreviewStudent(null);
     }
   }, [pendingEmailData]);
 
@@ -629,7 +620,8 @@ export default function ReportSearchScreen() {
                 item.enrollment_id,
                 `${item.first_name} ${item.last_name}`,
                 parseInt(selectedTermForStudent),
-                item.session_id || parseInt(selectedSession)
+                item.session_id || parseInt(selectedSession),
+                item
               )}
               disabled={downloadingId === `${item.enrollment_id}`}
             >
@@ -674,12 +666,12 @@ export default function ReportSearchScreen() {
     return (
       <View style={styles.resultCard}>
         <View style={styles.rankBadge}>
-          <ThemedText style={styles.rankText}>#{item.rank}</ThemedText>
+          <Ionicons name="person" size={12} color="#FFFFFF" />
         </View>
         
         <View style={styles.studentInfo}>
           <ThemedText style={styles.resultTitle}>{studentName}</ThemedText>
-          <ThemedText style={styles.scoreMeta}>Aggregate Score: {item.total_score || 'N/A'}</ThemedText>
+          <ThemedText style={styles.scoreMeta}>Aggregate Score: {Math.round(item.grand_total || item.total_score || 0)}</ThemedText>
 
           <View style={styles.cardActions}>
             <TouchableOpacity
@@ -687,8 +679,9 @@ export default function ReportSearchScreen() {
               onPress={() => handleInitiateDispatch(
                 item.enrollment_id,
                 studentName,
-                item.term || 1,
-                parseInt(selectedSession)
+                parseInt(selectedTerm),
+                parseInt(selectedSession),
+                item
               )}
               disabled={downloadingId === `${item.enrollment_id}`}
             >
@@ -924,14 +917,14 @@ export default function ReportSearchScreen() {
             >
               <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-            <View style={{ flex: 1 }}>
+            {/* <View style={{ flex: 1 }}>
               <CustomButton
                 title={downloadingAll ? `Sending (${downloadProgress.current}/${downloadProgress.total})` : "Email All Class Reports"}
                 onPress={emailAllClassReports}
                 loading={downloadingAll}
                 variant="premium"
               />
-            </View>
+            </View> */}
           </View>
         )}
 
@@ -984,45 +977,93 @@ export default function ReportSearchScreen() {
         />
       )}
 
-      {/* PDF Preview Modal */}
-      <Modal visible={pdfPreviewVisible} transparent animationType="slide">
+      {/* Native Score Preview Modal */}
+      <Modal visible={selectedPreviewStudent !== null} transparent animationType="slide">
         <View style={styles.previewOverlay}>
           <View style={styles.previewContainer}>
             <View style={styles.previewHeader}>
               <View>
-                <Text style={styles.previewTitle}>Academic Record</Text>
-                <Text style={styles.previewSubtitle}>{pendingEmailData?.studentName || 'Official PDF'}</Text>
+                <Text style={styles.previewTitle}>Performance Preview</Text>
+                <Text style={styles.previewSubtitle}>
+                  {selectedPreviewStudent?.name || `${selectedPreviewStudent?.first_name || ''} ${selectedPreviewStudent?.last_name || ''}`.trim()} - Term {selectedPreviewStudent?.displayTerm}
+                </Text>
               </View>
               <TouchableOpacity 
-                onPress={() => { setPdfPreviewVisible(false); setPdfBase64(null); }}
+                onPress={() => setSelectedPreviewStudent(null)}
                 style={styles.previewCloseBtn}
               >
                 <Ionicons name="close" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.pdfArea}>
-              {loadingPreview ? (
-                <View style={styles.previewLoader}>
-                  <ActivityIndicator size="large" color={Colors.accent.gold} />
-                  <Text style={styles.loaderText}>GENERATING OFFICIAL PDF...</Text>
-                </View>
-              ) : pdfBase64 ? (
-                <WebView
-                  source={{ uri: `data:application/pdf;base64,${pdfBase64}` }}
-                  style={styles.webView}
-                  scalesPageToFit
-                />
-              ) : null}
-            </View>
+            <ScrollView 
+              style={{ flex: 1, backgroundColor: Colors.accent.navy }} 
+              contentContainerStyle={{ padding: 20 }}
+            >
+              {(() => {
+                const termToDisplay = selectedPreviewStudent?.displayTerm || '1';
+                // Check for scores_by_term (Search mode) or subjects (Class mode)
+                const subjectList = selectedPreviewStudent?.scores_by_term 
+                  ? selectedPreviewStudent.scores_by_term[termToDisplay] 
+                  : selectedPreviewStudent?.subjects;
+
+                console.log('📦 Previewing subjects for Term:', termToDisplay);
+                console.log('📂 Subject List Source:', selectedPreviewStudent?.scores_by_term ? 'scores_by_term' : 'subjects');
+                console.log('📊 Count:', subjectList?.length || 0);
+
+                if (subjectList && Array.isArray(subjectList) && subjectList.length > 0) {
+                  return subjectList.map((subject: any, idx: number) => {
+                    const caTotal = Number(subject.ca1_score || 0) + Number(subject.ca2_score || 0) + Number(subject.ca3_score || 0) + Number(subject.ca4_score || 0);
+                    const manualTotal = caTotal + Number(subject.exam_score || 0);
+                    const overrideTotal = Number(subject.student_total ?? subject.subject_total ?? subject.total_score) || manualTotal;
+                    
+                    return (
+                      <View key={idx} style={{ 
+                        marginBottom: 16, 
+                        padding: 16, 
+                        backgroundColor: 'rgba(255,255,255,0.05)', 
+                        borderRadius: 16,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.1)'
+                      }}>
+                        <ThemedText style={{ color: Colors.accent.gold, fontWeight: '800', marginBottom: 12, fontSize: 16 }}>
+                          {subject.subject_name || subject.subject || 'Subject'}
+                        </ThemedText>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <ThemedText style={{ color: '#94A3B8' }}>Continuous Assessment:</ThemedText>
+                          <ThemedText style={{ color: '#F1F5F9', fontWeight: 'bold' }}>{caTotal} / 40</ThemedText>
+                        </View>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                          <ThemedText style={{ color: '#94A3B8' }}>Terminal Examination:</ThemedText>
+                          <ThemedText style={{ color: '#F1F5F9', fontWeight: 'bold' }}>{subject.exam_score || 0} / 60</ThemedText>
+                        </View>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                          <ThemedText style={{ color: '#FFFFFF', fontWeight: '900' }}>CUMULATIVE SCORE:</ThemedText>
+                          <ThemedText style={{ color: Colors.accent.gold, fontWeight: '900', fontSize: 18 }}>{overrideTotal}%</ThemedText>
+                        </View>
+                      </View>
+                    );
+                  });
+                }
+
+                return (
+                  <View style={{ padding: 40, alignItems: 'center' }}>
+                    <Ionicons name="document-text-outline" size={48} color="rgba(255,255,255,0.2)" />
+                    <ThemedText style={{ color: 'rgba(255,255,255,0.5)', marginTop: 16, textAlign: 'center' }}>
+                      No detailed scores loaded for this term. The student may not have grades entered yet.
+                    </ThemedText>
+                  </View>
+                );
+              })()}
+            </ScrollView>
 
             <View style={styles.previewFooter}>
               <View style={styles.footerInfo}>
                 <Ionicons name="shield-checkmark" size={16} color={Colors.accent.gold} />
-                <Text style={styles.footerInfoText}>Verified Official Document</Text>
+                <Text style={styles.footerInfoText}>Local Data Preview</Text>
               </View>
               <View style={styles.previewActionRow}>
-                <TouchableOpacity style={styles.previewCancel} onPress={() => { setPdfPreviewVisible(false); setPdfBase64(null); }}>
+                <TouchableOpacity style={styles.previewCancel} onPress={() => setSelectedPreviewStudent(null)}>
                   <Text style={styles.previewCancelText}>Discard</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.previewSubmit} onPress={handleProceedToEmail}>
@@ -1090,164 +1131,182 @@ export default function ReportSearchScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Global Status/Logout Overlay */}
+      <Modal visible={statusAlert.visible} transparent animationType="fade">
+        <View style={styles.alertOverlay}>
+          <CustomAlert 
+            type={statusAlert.type} 
+            title={statusAlert.title} 
+            message={statusAlert.message} 
+            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+            onConfirm={statusAlert.onConfirm}
+            confirmLabel={statusAlert.confirmLabel}
+            style={{ width: '100%' }}
+          />
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
 
-const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
-  hero: { height: 180, width: '100%' },
-  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 44 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  headerActions: { flexDirection: 'row', gap: 12 },
-  actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  heroContent: { marginTop: 'auto', marginBottom: 16 },
-  heroSubtitle: { color: Colors.accent.gold, fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 2 },
-  heroMainTitle: { color: '#FFFFFF', fontSize: 26, fontWeight: '900', letterSpacing: -1 },
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+  return StyleSheet.create({
+    mainWrapper: { flex: 1, backgroundColor: C.background },
+    hero: { height: 180, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 44 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+    backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerActions: { flexDirection: 'row', gap: 12 },
+    actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    heroContent: { marginTop: 'auto', marginBottom: 16 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 2 },
+    heroMainTitle: { color: C.isDark ? '#FFFFFF' : '#0F172A', fontSize: 26, fontWeight: '900', letterSpacing: -1 },
 
-  tabSection: { paddingHorizontal: 24, marginTop: 16, zIndex: 10 },
-  tabContainer: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 20, padding: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 16 },
-  activeTabBtn: { backgroundColor: Colors.accent.gold },
-  tabBtnText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
-  activeTabBtnText: { color: Colors.accent.navy },
+    tabSection: { paddingHorizontal: 24, marginTop: 16, zIndex: 10 },
+    tabContainer: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 20, padding: 6, borderWidth: 1, borderColor: C.cardBorder },
+    tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 16 },
+    activeTabBtn: { backgroundColor: Colors.accent.gold },
+    tabBtnText: { color: C.textMuted, fontSize: 13, fontWeight: '700' },
+    activeTabBtnText: { color: Colors.accent.navy },
 
-  searchSection: { paddingHorizontal: 24, marginTop: 24 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 20, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-  searchInput: { flex: 1, marginLeft: 12, color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+    searchSection: { paddingHorizontal: 24, marginTop: 24 },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 20, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: C.inputBorder },
+    searchInput: { flex: 1, marginLeft: 12, color: C.inputText, fontSize: 15, fontWeight: '600' },
 
-  filterSection: { paddingHorizontal: 24, marginTop: 24 },
-  filterGroup: { marginBottom: 24 },
-  filterLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, textTransform: 'uppercase' },
-  
-  inputSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(30, 41, 59, 0.5)',
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    height: 56,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  selectorText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  
-  selectorList: {
-    backgroundColor: '#1E293B',
-    borderRadius: 20,
-    marginTop: 8,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    overflow: 'hidden',
-  },
-  selectorItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
-  selectorItemText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
+    filterSection: { paddingHorizontal: 24, marginTop: 24 },
+    filterGroup: { marginBottom: 24 },
+    filterLabel: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, textTransform: 'uppercase' },
+    
+    inputSelector: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: C.inputBg,
+      borderRadius: 16,
+      paddingHorizontal: 20,
+      height: 56,
+      borderWidth: 1,
+      borderColor: C.inputBorder,
+    },
+    selectorText: { color: C.text, fontSize: 14, fontWeight: '700' },
+    
+    selectorList: {
+      backgroundColor: C.modalBg,
+      borderRadius: 20,
+      marginTop: 8,
+      padding: 8,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+      overflow: 'hidden',
+    },
+    selectorItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
+    selectorItemText: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
+    selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
 
-  chipRow: { flexDirection: 'row', gap: 10 },
+    chipRow: { flexDirection: 'row', gap: 10 },
 
-  listContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
-  resultCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-  avatarContainer: { width: 50, height: 50, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
-  avatarText: { color: Colors.accent.gold, fontSize: 16, fontWeight: '800' },
-  rankBadge: { width: 50, height: 50, borderRadius: 16, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
-  rankText: { color: Colors.accent.navy, fontSize: 18, fontWeight: '900' },
-  studentInfo: { flex: 1, marginLeft: 16 },
-  resultTitle: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  resultSubtitle: { fontSize: 12, color: '#94A3B8', fontWeight: '600' },
-  scoreMeta: { fontSize: 11, color: Colors.accent.gold, fontWeight: '700', marginBottom: 8 },
-  termSection: { flexDirection: 'row', gap: 6, marginBottom: 12 },
-  miniChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)' },
-  activeMiniChip: { backgroundColor: Colors.accent.gold },
-  miniChipText: { fontSize: 10, color: '#94A3B8', fontWeight: '800' },
-  activeMiniChipText: { color: Colors.accent.navy },
-  cardActions: { flexDirection: 'column', gap: 8, marginTop: 4 },
-  actionBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  fullActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)'
-  },
-  actionBtnText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5
-  },
+    listContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+    resultCard: { backgroundColor: C.card, borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
+    avatarContainer: { width: 50, height: 50, borderRadius: 16, backgroundColor: C.isDark ? 'rgba(255,255,255,0.05)' : '#E8EEF4', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+    avatarText: { color: Colors.accent.gold, fontSize: 16, fontWeight: '800' },
+    rankBadge: { width: 50, height: 50, borderRadius: 16, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
+    rankText: { color: Colors.accent.navy, fontSize: 18, fontWeight: '900' },
+    studentInfo: { flex: 1, marginLeft: 16 },
+    resultTitle: { fontSize: 16, fontWeight: '800', color: C.text, marginBottom: 4 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+    resultSubtitle: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
+    scoreMeta: { fontSize: 11, color: Colors.accent.gold, fontWeight: '700', marginBottom: 8 },
+    termSection: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+    miniChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: C.actionItemBg },
+    activeMiniChip: { backgroundColor: Colors.accent.gold },
+    miniChipText: { fontSize: 10, color: C.textSecondary, fontWeight: '800' },
+    activeMiniChipText: { color: Colors.accent.navy },
+    cardActions: { flexDirection: 'column', gap: 8, marginTop: 4 },
+    actionBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: C.border },
+    fullActionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: C.card,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+    },
+    actionBtnText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: C.text,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
 
-  centerLoader: { padding: 40, alignItems: 'center' },
-  loaderText: { color: Colors.accent.gold, marginTop: 12, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
-  errorCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 16, borderRadius: 16, marginTop: 20 },
-  errorText: { color: '#EF4444', fontSize: 13, fontWeight: '600', flex: 1 },
+    centerLoader: { padding: 40, alignItems: 'center' },
+    loaderText: { color: Colors.accent.gold, marginTop: 12, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+    errorCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 16, borderRadius: 16, marginTop: 20 },
+    errorText: { color: '#EF4444', fontSize: 13, fontWeight: '600', flex: 1 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  modalContent: { width: '100%', backgroundColor: '#1E293B', borderRadius: 32, padding: 32, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', alignItems: 'center' },
-  modalTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
-  modalSubtitle: { color: '#94A3B8', fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 20, paddingHorizontal: 16, height: 56, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', width: '100%' },
-  modalInput: { flex: 1, marginLeft: 12, color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
-  modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)' },
-  modalCancelText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  modalSubmit: { flex: 2, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold },
-  modalSubmitText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
-  successIcon: { alignItems: 'center', marginBottom: 20 },
+    alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
+    modalContent: { width: '100%', backgroundColor: C.modalBg, borderRadius: 32, padding: 32, borderWidth: 1, borderColor: C.cardBorder, alignItems: 'center' },
+    modalTitle: { color: C.text, fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
+    modalSubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 20, paddingHorizontal: 16, height: 56, marginBottom: 24, borderWidth: 1, borderColor: C.inputBorder, width: '100%' },
+    modalInput: { flex: 1, marginLeft: 12, color: C.inputText, fontSize: 16, fontWeight: '600' },
+    modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+    modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: C.actionItemBg },
+    modalCancelText: { color: C.text, fontSize: 14, fontWeight: '700' },
+    modalSubmit: { flex: 2, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold },
+    modalSubmitText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
+    successIcon: { alignItems: 'center', marginBottom: 20 },
 
-  // PDF Preview Styles
-  previewOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.98)', justifyContent: 'center' },
-  previewContainer: { flex: 1, width: '100%' },
-  previewHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingHorizontal: 24, 
-    paddingTop: 60, 
-    paddingBottom: 20,
-    backgroundColor: '#1E293B',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)'
-  },
-  previewTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
-  previewSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
-  previewCloseBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
-  
-  pdfArea: { flex: 1, backgroundColor: '#000' },
-  webView: { flex: 1, backgroundColor: '#000' },
-  previewLoader: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  
-  previewFooter: { 
-    paddingHorizontal: 24, 
-    paddingTop: 20, 
-    paddingBottom: 40, 
-    backgroundColor: '#1E293B',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)'
-  },
-  footerInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 20 },
-  footerInfoText: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  
-  previewActionRow: { flexDirection: 'row', gap: 12 },
-  previewCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  previewCancelText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  previewSubmit: { flex: 2, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 16, backgroundColor: Colors.accent.gold },
-  previewSubmitText: { color: Colors.accent.navy, fontSize: 15, fontWeight: '900' }
-});
+    // PDF Preview
+    previewOverlay: { flex: 1, backgroundColor: C.isDark ? 'rgba(15,23,42,0.98)' : 'rgba(241,245,249,0.98)', justifyContent: 'center' },
+    previewContainer: { flex: 1, width: '100%' },
+    previewHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingTop: 60,
+      paddingBottom: 20,
+      backgroundColor: C.modalBg,
+      borderBottomWidth: 1,
+      borderBottomColor: C.divider,
+    },
+    previewTitle: { color: C.text, fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+    previewSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+    previewCloseBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+    
+    pdfArea: { flex: 1, backgroundColor: '#000' },
+    webView: { flex: 1, backgroundColor: '#000' },
+    previewLoader: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
+    
+    previewFooter: {
+      paddingHorizontal: 24,
+      paddingTop: 20,
+      paddingBottom: 40,
+      backgroundColor: C.modalBg,
+      borderTopWidth: 1,
+      borderTopColor: C.divider,
+    },
+    footerInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 20 },
+    footerInfoText: { color: C.textLabel, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+    
+    previewActionRow: { flexDirection: 'row', gap: 12 },
+    previewCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: C.border },
+    previewCancelText: { color: C.text, fontSize: 14, fontWeight: '700' },
+    previewSubmit: { flex: 2, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 16, backgroundColor: Colors.accent.gold },
+    previewSubmitText: { color: Colors.accent.navy, fontSize: 15, fontWeight: '900' },
+  });
+}

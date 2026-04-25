@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -26,6 +26,7 @@ import EditProfileModal from '../../components/EditProfileModal';
 import { Colors } from '@/constants/design-system';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
+import { useAppColors } from '@/hooks/use-app-colors';
 
 interface StudentData {
     id: number;
@@ -43,6 +44,20 @@ interface StudentData {
 
 export default function StudentDashboard() {
     const router = useRouter();
+    const C = useAppColors();
+    const styles = useMemo(() => makeStyles(C), [C.scheme]);
+
+    function CompactActionCard({ icon, label, color, onPress }: any) {
+        return (
+            <TouchableOpacity style={styles.compactCard} onPress={onPress}>
+                <View style={[styles.compactIcon, { backgroundColor: `${color}15` }]}>
+                    <Ionicons name={icon} size={20} color={color} />
+                </View>
+                <Text style={styles.compactLabel}>{label}</Text>
+            </TouchableOpacity>
+        );
+    }
+
     const [student, setStudent] = useState<StudentData | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -280,7 +295,7 @@ export default function StudentDashboard() {
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FACC15" />
+                <ActivityIndicator size="large" color={Colors.accent.gold} />
                 <Text style={styles.loadingText}>Syncing portal data...</Text>
             </View>
         );
@@ -320,9 +335,14 @@ export default function StudentDashboard() {
                                 <Ionicons name="school" size={18} color="#FACC15" />
                                 <Text style={styles.logoText}>PREMIUM PORTAL</Text>
                             </View>
-                            <TouchableOpacity style={styles.logoutFab} onPress={handleLogout}>
-                                <Ionicons name="power" size={20} color="#EF4444" />
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                                <TouchableOpacity style={styles.settingsFab} onPress={() => router.push('/(student)/preferences' as any)}>
+                                    <Ionicons name="settings-outline" size={20} color={Colors.accent.gold} />
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.logoutFab} onPress={handleLogout}>
+                                    <Ionicons name="power" size={20} color="#EF4444" />
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
                         <View style={styles.welcomeInfo}>
@@ -446,9 +466,8 @@ export default function StudentDashboard() {
                 onRequestClose={() => setEnrollModalVisible(false)}
             >
                 <View style={styles.modalOverlay}>
-                    <LinearGradient
-                        colors={['#1E293B', '#0F172A']}
-                        style={styles.modalContent}
+                    <View
+                        style={[styles.modalContent, { backgroundColor: C.modalBg }]}
                     >
                         <View style={styles.modalIndictor} />
                         <View style={styles.modalHeader}>
@@ -542,7 +561,7 @@ export default function StudentDashboard() {
                                 style={styles.modalSubmit}
                             />
                         </ScrollView>
-                    </LinearGradient>
+                    </View>
                 </View>
             </Modal>
 
@@ -556,114 +575,106 @@ export default function StudentDashboard() {
     );
 }
 
-function CompactActionCard({ icon, label, color, onPress }: any) {
-    return (
-        <TouchableOpacity style={styles.compactCard} onPress={onPress}>
-            <View style={[styles.compactIcon, { backgroundColor: `${color}15` }]}>
-                <Ionicons name={icon} size={20} color={color} />
-            </View>
-            <Text style={styles.compactLabel}>{label}</Text>
-        </TouchableOpacity>
-    );
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+    return StyleSheet.create({
+        container: { flex: 1, backgroundColor: C.background },
+        loadingContainer: { flex: 1, backgroundColor: C.background, justifyContent: 'center', alignItems: 'center' },
+        loadingText: { color: C.textSecondary, marginTop: 16, fontSize: 13, fontWeight: '800', letterSpacing: 2 },
+        scrollContent: { flexGrow: 1 },
+
+        heroHeader: { height: 260, width: '100%', marginBottom: 0 },
+        heroOverlay: { flex: 1, padding: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
+        topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+        logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+        logoText: { color: '#FACC15', fontSize: 10, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
+        logoutFab: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(239, 68, 68, 0.1)', justifyContent: 'center', alignItems: 'center' },
+        settingsFab: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center' },
+
+        welcomeInfo: { marginTop: 30 },
+        greeting: { color: '#FACC15', fontSize: 11, fontWeight: '900', letterSpacing: 3 },
+        studentName: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 4 },
+        regBadge: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 10, marginBottom: 5 },
+        regText: { color: '#94A3B8', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+
+        section: { paddingHorizontal: 24, marginBottom: 30 },
+        glassCard: { backgroundColor: C.card, borderRadius: 25, padding: 20, borderWidth: 1, borderColor: C.cardBorder },
+        profileSummary: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+        avatarLarge: { position: 'relative' },
+        avatarImg: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: '#FACC15' },
+        avatarLargePlaceholder: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FACC15' },
+        avatarLargeText: { color: '#FACC15', fontSize: 22, fontWeight: '900' },
+        onlineSignal: { position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#1E293B' },
+        idInfo: { marginLeft: 16, flex: 1 },
+        idTitle: { color: C.textLabel, fontSize: 9, fontWeight: '900', letterSpacing: 2 },
+        idValue: { color: C.text, fontSize: 15, fontWeight: '700', marginTop: 2 },
+        editProfileBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+        editProfileText: { color: '#FACC15', fontSize: 10, fontWeight: '900', marginLeft: 6, letterSpacing: 1 },
+
+        miniStats: { flexDirection: 'row', backgroundColor: C.actionItemBg, borderRadius: 15, padding: 15 },
+        statItem: { flex: 1, alignItems: 'center' },
+        statLabel: { color: C.textSecondary, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+        statValue: { color: C.text, fontSize: 14, fontWeight: '800', marginTop: 4 },
+        divider: { width: 1, height: '100%', backgroundColor: C.divider },
+
+        sectionLabel: { color: C.textLabel, fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 15 },
+        actionGrid: { flexDirection: 'row', gap: 15 },
+        compactCard: { flex: 1, alignItems: 'center', backgroundColor: C.actionItemBg, paddingVertical: 15, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder },
+        compactIcon: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+        compactLabel: { color: C.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+
+        sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+        registryItem: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
+        registryIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(250, 204, 21, 0.05)', justifyContent: 'center', alignItems: 'center' },
+        registryInfo: { flex: 1, marginLeft: 16 },
+        regSession: { color: C.text, fontSize: 14, fontWeight: '800' },
+        regClass: { color: C.textSecondary, fontSize: 12, fontWeight: '600', marginTop: 2 },
+        regActions: { flexDirection: 'row', marginTop: 12 },
+        regBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.actionIconWrap, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: C.cardBorder },
+        regBtnText: { color: '#FACC15', fontSize: 9, fontWeight: '900', marginLeft: 6, letterSpacing: 1 },
+
+        emptyRegistry: { alignItems: 'center', padding: 40, backgroundColor: C.actionItemBg, borderRadius: 25, borderStyle: 'dashed', borderWidth: 2, borderColor: C.cardBorder },
+        emptyTitle: { color: C.textLabel, fontSize: 12, fontWeight: '900', marginTop: 15, letterSpacing: 1 },
+        emptyDesc: { color: C.textSecondary, fontSize: 11, textAlign: 'center', marginTop: 6, fontWeight: '600' },
+
+        modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
+        modalContent: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, height: '85%' },
+        modalIndictor: { width: 40, height: 5, backgroundColor: C.divider, borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
+        modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
+        modalTitle: { color: C.text, fontSize: 20, fontWeight: '900', letterSpacing: 1 },
+        closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.actionIconWrap, justifyContent: 'center', alignItems: 'center' },
+
+        inputSelector: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: C.inputBg,
+            borderRadius: 16,
+            paddingHorizontal: 20,
+            height: 56,
+            borderWidth: 1,
+            borderColor: C.inputBorder,
+        },
+        selectorText: { color: C.inputText, fontSize: 14, fontWeight: '700' },
+        selectorList: {
+            backgroundColor: C.modalBg,
+            borderRadius: 20,
+            marginTop: 8,
+            padding: 8,
+            borderWidth: 1,
+            borderColor: C.cardBorder,
+            overflow: 'hidden',
+        },
+        selectorItem: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderRadius: 12,
+        },
+        selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
+        selectorItemText: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
+        selectorItemTextActive: { color: '#FACC15', fontWeight: '800' },
+        modalSubmit: { marginTop: 30, height: 60, borderRadius: 18 },
+    });
 }
-
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#0A0F1E' },
-    loadingContainer: { flex: 1, backgroundColor: '#0A0F1E', justifyContent: 'center', alignItems: 'center' },
-    loadingText: { color: '#64748B', marginTop: 16, fontSize: 13, fontWeight: '800', letterSpacing: 2 },
-    scrollContent: { flexGrow: 1 },
-
-    heroHeader: { height: 260, width: '100%', marginBottom: 0 },
-    heroOverlay: { flex: 1, padding: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
-    topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-    logoText: { color: '#FACC15', fontSize: 10, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
-    logoutFab: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(239, 68, 68, 0.1)', justifyContent: 'center', alignItems: 'center' },
-
-    welcomeInfo: { marginTop: 30 },
-    greeting: { color: '#FACC15', fontSize: 11, fontWeight: '900', letterSpacing: 3 },
-    studentName: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 4 },
-    regBadge: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 10, marginBottom: 5 },
-    regText: { color: '#94A3B8', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-
-    section: { paddingHorizontal: 24, marginBottom: 30 },
-    glassCard: { backgroundColor: 'rgba(30, 41, 59, 0.7)', borderRadius: 25, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    profileSummary: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-    avatarLarge: { position: 'relative' },
-    avatarImg: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: '#FACC15' },
-    avatarLargePlaceholder: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FACC15' },
-    avatarLargeText: { color: '#FACC15', fontSize: 22, fontWeight: '900' },
-    onlineSignal: { position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#1E293B' },
-    idInfo: { marginLeft: 16, flex: 1 },
-    idTitle: { color: '#64748B', fontSize: 9, fontWeight: '900', letterSpacing: 2 },
-    idValue: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 2 },
-    editProfileBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-    editProfileText: { color: '#FACC15', fontSize: 10, fontWeight: '900', marginLeft: 6, letterSpacing: 1 },
-
-    miniStats: { flexDirection: 'row', backgroundColor: 'rgba(15, 23, 42, 0.4)', borderRadius: 15, padding: 15 },
-    statItem: { flex: 1, alignItems: 'center' },
-    statLabel: { color: '#64748B', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-    statValue: { color: '#E2E8F0', fontSize: 14, fontWeight: '800', marginTop: 4 },
-    divider: { width: 1, height: '100%', backgroundColor: 'rgba(255,255,255,0.05)' },
-
-    sectionLabel: { color: '#475569', fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 15 },
-    actionGrid: { flexDirection: 'row', gap: 15 },
-    compactCard: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', paddingVertical: 15, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-    compactIcon: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-    compactLabel: { color: '#94A3B8', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-
-    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-    registryItem: { flexDirection: 'row', backgroundColor: 'rgba(30, 41, 59, 0.4)', borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-    registryIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(250, 204, 21, 0.05)', justifyContent: 'center', alignItems: 'center' },
-    registryInfo: { flex: 1, marginLeft: 16 },
-    regSession: { color: '#E2E8F0', fontSize: 14, fontWeight: '800' },
-    regClass: { color: '#64748B', fontSize: 12, fontWeight: '600', marginTop: 2 },
-    regActions: { flexDirection: 'row', marginTop: 12 },
-    regBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-    regBtnText: { color: '#FACC15', fontSize: 9, fontWeight: '900', marginLeft: 6, letterSpacing: 1 },
-
-    emptyRegistry: { alignItems: 'center', padding: 40, backgroundColor: 'rgba(30, 41, 59, 0.2)', borderRadius: 25, borderStyle: 'dashed', borderWidth: 2, borderColor: 'rgba(255,255,255,0.05)' },
-    emptyTitle: { color: '#475569', fontSize: 12, fontWeight: '900', marginTop: 15, letterSpacing: 1 },
-    emptyDesc: { color: '#334155', fontSize: 11, textAlign: 'center', marginTop: 6, fontWeight: '600' },
-
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
-    modalContent: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, height: '85%' },
-    modalIndictor: { width: 40, height: 5, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
-    modalTitle: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-    closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
-
-    inputSelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        height: 56,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
-    },
-    selectorText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-    selectorList: {
-        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-        borderRadius: 20,
-        marginTop: 8,
-        padding: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        overflow: 'hidden',
-    },
-    selectorItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 12,
-    },
-    selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
-    selectorItemText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-    selectorItemTextActive: { color: '#FACC15', fontWeight: '800' },
-    modalSubmit: { marginTop: 30, height: 60, borderRadius: 18 },
-});

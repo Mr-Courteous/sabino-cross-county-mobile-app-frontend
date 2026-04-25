@@ -5,7 +5,6 @@ export default function StudentLayout() {
         <Stack
             screenOptions={{
                 headerShown: false,
-                contentStyle: { backgroundColor: '#0F172A' }
             }}
         >
             <Stack.Screen name="index" options={{ title: 'Student Login' }} />
@@ -17,6 +16,7 @@ export default function StudentLayout() {
             <Stack.Screen name="register" options={{ title: 'Complete Profile' }} />
             <Stack.Screen name="dashboard" options={{ title: 'Student Dashboard' }} />
             <Stack.Screen name="grades" options={{ title: 'My Grades' }} />
+            <Stack.Screen name="preferences" options={{ title: 'Preferences' }} />
         </Stack>
     );
 }

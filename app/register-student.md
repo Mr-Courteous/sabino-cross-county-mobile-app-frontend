@@ -73,8 +73,8 @@ export default function RegisterStudent() {
   };
 
   const getToken = async () => {
-    return Platform.OS !== 'web' 
-      ? await SecureStore.getItemAsync('userToken') 
+    return Platform.OS !== 'web'
+      ? await SecureStore.getItemAsync('userToken')
       : localStorage.getItem('userToken');
   };
 
@@ -271,9 +271,8 @@ export default function RegisterStudent() {
     <ThemedView style={styles.mainWrapper}>
       <StatusBar style="light" />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        
+
         <ImageBackground
-          source={require('@/assets/images/student_registration_hero_bg_1776972192837.png')}
           style={styles.hero}
         >
           <LinearGradient
@@ -295,7 +294,7 @@ export default function RegisterStudent() {
           </LinearGradient>
         </ImageBackground>
 
-        <ScrollView 
+        <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -318,7 +317,7 @@ export default function RegisterStudent() {
               <Ionicons name="school-outline" size={20} color={Colors.accent.gold} />
               <ThemedText style={styles.cardLabel}>ACADEMIC ASSIGNMENT</ThemedText>
             </View>
-            
+
             {loadingFilters ? (
               <ActivityIndicator color={Colors.accent.gold} style={{ marginVertical: 20 }} />
             ) : (
@@ -413,7 +412,7 @@ export default function RegisterStudent() {
                 style={{ flex: 1 }}
               />
               {editingId && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => { setEditingId(null); setForm({ firstName: '', lastName: '', email: '', registrationNumber: '', gender: 'Male' }) }}
                   style={styles.cancelLink}
                 >
@@ -466,7 +465,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
   backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
   headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
-  
+
   heroContent: { marginTop: 'auto', marginBottom: 30 },
   heroSubtitle: { color: Colors.accent.gold, fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
   heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
@@ -475,13 +474,13 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 20, paddingBottom: 60 },
   alert: { marginBottom: 20 },
 
-  card: { 
-    backgroundColor: 'rgba(255, 255, 255, 0.03)', 
-    borderRadius: 32, 
-    padding: 24, 
-    borderWidth: 1, 
-    borderColor: 'rgba(255, 255, 255, 0.08)', 
-    marginBottom: 24 
+  card: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 32,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 24
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
   cardLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
@@ -489,14 +488,14 @@ const styles = StyleSheet.create({
 
   filterSection: { marginBottom: 20 },
   chipScroll: { marginHorizontal: -4 },
-  filterChip: { 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.03)', 
-    marginHorizontal: 4, 
-    borderWidth: 1, 
-    borderColor: 'rgba(255,255,255,0.05)' 
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)'
   },
   filterChipActive: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
   filterChipText: { fontSize: 12, fontWeight: '700', color: '#94A3B8' },
@@ -508,14 +507,14 @@ const styles = StyleSheet.create({
   cancelText: { color: '#EF4444', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
 
   sectionTitle: { fontSize: 12, fontWeight: '800', color: Colors.accent.gold, letterSpacing: 1.5, marginTop: 20, marginBottom: 16, marginLeft: 8 },
-  studentItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: 'rgba(255, 255, 255, 0.02)', 
-    padding: 16, 
-    borderRadius: 24, 
+  studentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    padding: 16,
+    borderRadius: 24,
     marginBottom: 12,
-    borderWidth: 1, 
+    borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.05)'
   },
   studentAvatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 16 },

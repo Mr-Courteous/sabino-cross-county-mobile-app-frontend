@@ -1,29 +1,76 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Comprehensive Light / Dark theme token system.
+ * Dark  = current navy/slate premium dark mode (default)
+ * Light = clean white/slate professional mode
  */
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    // Backgrounds
+    background:        '#F1F5F9',   // slate-100
+    surface:           '#FFFFFF',   // cards / sheets
+    surfaceElevated:   '#FFFFFF',
+    surfaceMuted:      '#F8FAFC',
+
+    // Text
+    text:              '#0F172A',   // slate-900
+    textSecondary:     '#475569',   // slate-600
+    textMuted:         '#94A3B8',   // slate-400
+    textInverse:       '#FFFFFF',
+
+    // Borders & dividers
+    border:            '#E2E8F0',   // slate-200
+    borderStrong:      '#CBD5E1',   // slate-300
+    divider:           '#F1F5F9',
+
+    // Interactive
+    tint:              '#2563EB',   // blue-600
+    icon:              '#475569',
+    tabIconDefault:    '#94A3B8',
+    tabIconSelected:   '#2563EB',
+
+    // Inputs
+    inputBg:           '#FFFFFF',
+    inputBorder:       '#CBD5E1',
+    placeholder:       '#94A3B8',
+
+    // Hero / header
+    heroOverlay:       'rgba(241,245,249,0.92)',
   },
+
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    // Backgrounds
+    background:        '#1e293b',   // slate-800  (was navy)
+    surface:           'rgba(255,255,255,0.04)',
+    surfaceElevated:   'rgba(255,255,255,0.07)',
+    surfaceMuted:      'rgba(255,255,255,0.02)',
+
+    // Text
+    text:              '#F8FAFC',   // slate-50
+    textSecondary:     '#CBD5E1',   // slate-300
+    textMuted:         '#64748B',   // slate-500
+    textInverse:       '#0F172A',
+
+    // Borders & dividers
+    border:            'rgba(255,255,255,0.08)',
+    borderStrong:      'rgba(255,255,255,0.15)',
+    divider:           'rgba(255,255,255,0.05)',
+
+    // Interactive
+    tint:              '#FACC15',   // gold accent
+    icon:              '#94A3B8',
+    tabIconDefault:    '#64748B',
+    tabIconSelected:   '#FACC15',
+
+    // Inputs
+    inputBg:           'rgba(255,255,255,0.05)',
+    inputBorder:       'rgba(255,255,255,0.1)',
+    placeholder:       'rgba(255,255,255,0.3)',
+
+    // Hero / header
+    heroOverlay:       'rgba(15,23,42,0.85)',
   },
 };
 

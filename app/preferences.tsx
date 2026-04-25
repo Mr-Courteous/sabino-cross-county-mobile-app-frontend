@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Platform,
@@ -14,8 +14,10 @@ import { API_BASE_URL } from '@/utils/api-service';
 import { useTheme } from '@/contexts/theme-context';
 import { Colors } from '@/constants/design-system';
 import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
+import { useAppColors } from '@/hooks/use-app-colors';
 import ColorPicker, {
   Panel1,
   HueSlider,
@@ -33,7 +35,9 @@ const SWATCHES = [
 
 export default function SchoolPreferencesScreen() {
   const router = useRouter();
-  const { themeColor, loadThemeFromPreferences } = useTheme();
+  const C = useAppColors();
+  const styles = useMemo(() => makeStyles(C), [C.scheme]);
+  const { themeColor, loadThemeFromPreferences, themeMode, setThemeMode } = useTheme();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -231,7 +235,7 @@ export default function SchoolPreferencesScreen() {
   if (loading) return (
     <ThemedView style={styles.loader}>
       <ActivityIndicator size="large" color={Colors.accent.gold} />
-      <Text style={styles.loadingText}>SYNCHRONIZING ASSETS...</Text>
+      <ThemedText style={styles.loadingText}>SYNCHRONIZING ASSETS...</ThemedText>
     </ThemedView>
   );
 
@@ -242,7 +246,7 @@ export default function SchoolPreferencesScreen() {
         style={[styles.hero, { height: isLargeScreen ? 350 : 250 }]}
       >
         <LinearGradient
-          colors={['rgba(15, 23, 42, 0.7)', Colors.accent.navy]}
+          colors={[C.isDark ? 'rgba(15, 23, 42, 0.7)' : 'rgba(255, 255, 255, 0.7)', C.background]}
           style={styles.heroOverlay}
         >
           <View style={[styles.header, { maxWidth: 1200, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 20 }]}>
@@ -304,6 +308,34 @@ export default function SchoolPreferencesScreen() {
               {windowWidth >= 360 && <Text style={styles.colorTriggerChipText}>Change</Text>}
             </View>
           </TouchableOpacity>
+        </View>
+
+        {/* ── Theme Mode ── */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>DISPLAY MODE</Text>
+          <Text style={styles.helperText}>Choose how the portal appears across all devices.</Text>
+
+          <View style={styles.themeModeContainer}>
+            <ThemeModeButton
+              icon="sunny"
+              label="Light"
+              isActive={themeMode === 'light'}
+              onPress={() => setThemeMode('light')}
+            />
+            <ThemeModeButton
+              icon="moon"
+              label="Dark"
+              isActive={themeMode === 'dark'}
+              onPress={() => setThemeMode('dark')}
+            />
+            <ThemeModeButton
+              icon="phone-portrait"
+              label="System"
+              isActive={themeMode === 'system'}
+              onPress={() => setThemeMode('system')}
+              subtitle="Auto"
+            />
+          </View>
         </View>
 
         {/* ── Identity Assets ── */}
@@ -463,82 +495,109 @@ function AssetUploader({ title, subtitle, url, onUpload, icon }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent.navy },
-  loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+// ThemeModeButton: Simple button for theme mode selection
+function ThemeModeButton({ icon, label, subtitle, isActive, onPress }: any) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        padding: 12,
+        marginHorizontal: 4,
+        borderRadius: 12,
+        backgroundColor: isActive ? 'rgba(37,99,235,0.12)' : 'rgba(255,255,255,0.04)',
+        borderWidth: isActive ? 2 : 1,
+        borderColor: isActive ? '#2563EB' : 'rgba(100,116,139,0.15)',
+      }}
+      activeOpacity={0.85}
+    >
+      <Ionicons name={icon} size={22} color={isActive ? '#2563EB' : '#64748B'} />
+      <Text style={{ color: isActive ? '#2563EB' : '#64748B', fontWeight: 'bold', marginTop: 4 }}>{label}</Text>
+      {!!subtitle && <Text style={{ color: '#64748B', fontSize: 10 }}>{subtitle}</Text>}
+    </TouchableOpacity>
+  );
+}
 
-  hero: { height: 280, width: '100%' },
-  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
-  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+  return StyleSheet.create({
+    mainWrapper: { flex: 1 },
+    loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    loadingText: { marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
 
-  heroContent: { marginTop: 'auto', marginBottom: 30 },
-  heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
-  heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+    hero: { height: 280, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
+    backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: C.text, fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
 
-  scrollView: { flex: 1, marginTop: -30 },
-  scrollContent: { padding: 20, paddingBottom: 60 },
-  alert: { marginBottom: 20 },
+    heroContent: { marginTop: 'auto', marginBottom: 30 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
+    heroMainTitle: { color: C.isDark ? '#FFFFFF' : '#0F172A', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
-  card: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: 24 },
-  cardLabel: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
-  helperText: { color: '#64748B', fontSize: 12, lineHeight: 18, marginBottom: 12 },
+    scrollView: { flex: 1, marginTop: -30 },
+    scrollContent: { padding: 20, paddingBottom: 60 },
+    alert: { marginBottom: 20 },
 
-  // Color trigger button
-  colorTrigger: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, padding: 16, borderWidth: 1.5 },
-  colorDot: { width: 48, height: 48, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  colorTriggerLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
-  colorTriggerValue: { color: '#FFFFFF', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
-  colorTriggerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
-  colorTriggerChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+    card: { backgroundColor: C.card, borderRadius: 32, padding: 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 24 },
+    cardLabel: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
+    helperText: { color: C.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 12 },
+    themeModeContainer: { flexDirection: 'row', gap: 8, marginTop: 4 },
 
-  // Picker modal
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  pickerOverlayLarge: { justifyContent: 'center', padding: 40 },
-  pickerSheet: { backgroundColor: '#0F172A', borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%' },
+    // Color trigger button
+    colorTrigger: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: C.actionItemBg, borderRadius: 20, padding: 16, borderWidth: 1.5, borderColor: C.cardBorder },
+    colorDot: { width: 48, height: 48, borderRadius: 16, borderWidth: 1, borderColor: C.divider },
+    colorTriggerLabel: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
+    colorTriggerValue: { color: C.text, fontSize: 16, fontWeight: '900', letterSpacing: 1 },
+    colorTriggerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+    colorTriggerChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
-  pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 },
-  pickerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
-  pickerClose: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', justifyContent: 'center', alignItems: 'center' },
+    // Picker modal
+    pickerOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
+    pickerOverlayLarge: { justifyContent: 'center', padding: 40 },
+    pickerSheet: { backgroundColor: C.modalBg, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, borderTopWidth: 1, borderColor: C.cardBorder, maxHeight: '90%' },
 
-  colorPicker: { paddingHorizontal: 20 },
-  pickerPanel: { borderRadius: 20, height: 220, marginBottom: 20 },
+    pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 },
+    pickerTitle: { color: C.text, fontSize: 20, fontWeight: '900' },
+    pickerClose: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.actionIconWrap, justifyContent: 'center', alignItems: 'center' },
 
-  slidersBlock: { gap: 12, marginBottom: 20 },
-  sliderLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
-  slider: { borderRadius: 12, height: 28 },
+    colorPicker: { paddingHorizontal: 20 },
+    pickerPanel: { borderRadius: 20, height: 220, marginBottom: 20 },
 
-  hexBlock: { marginBottom: 20 },
-  pickerHexText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+    slidersBlock: { gap: 12, marginBottom: 20 },
+    sliderLabel: { color: C.textLabel, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
+    slider: { borderRadius: 12, height: 28 },
 
-  swatchesLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, paddingHorizontal: 20 },
-  swatchesContainer: { paddingHorizontal: 20, marginBottom: 8 },
-  swatch: { borderRadius: 12, height: 36, width: 36 },
+    hexBlock: { marginBottom: 20 },
+    pickerHexText: { color: C.text, fontSize: 14, fontWeight: '800' },
 
-  pickerFooter: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginTop: 8 },
-  pickerPreview: { flex: 1, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  pickerPreviewText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-  confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent.gold, paddingHorizontal: 24, borderRadius: 16 },
-  confirmBtnText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
+    swatchesLabel: { color: C.textLabel, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, paddingHorizontal: 20 },
+    swatchesContainer: { paddingHorizontal: 20, marginBottom: 8 },
+    swatch: { borderRadius: 12, height: 36, width: 36 },
 
-  assetRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  assetPreview: { width: 80, height: 80, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
-  assetImage: { width: '100%', height: '100%' },
-  assetPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  assetInfo: { flex: 1, gap: 4 },
-  assetTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  assetSubtitle: { color: '#64748B', fontSize: 12, fontWeight: '600' },
-  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  uploadBtnText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
-  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 20 },
+    pickerFooter: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: C.divider, marginTop: 8 },
+    pickerPreview: { flex: 1, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+    pickerPreviewText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
+    confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent.gold, paddingHorizontal: 24, borderRadius: 16 },
+    confirmBtnText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
 
-  inputGroup: { gap: 12 },
-  inputLabel: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
-  textArea: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 20, padding: 16, color: '#FFFFFF', fontSize: 14, height: 120, textAlignVertical: 'top', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+    assetRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+    assetPreview: { width: 80, height: 80, borderRadius: 20, backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder, overflow: 'hidden' },
+    assetImage: { width: '100%', height: '100%' },
+    assetPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    assetInfo: { flex: 1, gap: 4 },
+    assetTitle: { color: C.text, fontSize: 15, fontWeight: '800' },
+    assetSubtitle: { color: C.textMuted, fontSize: 12, fontWeight: '600' },
+    uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+    uploadBtnText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
+    divider: { height: 1, backgroundColor: C.divider, marginVertical: 20 },
 
-  actionRow: { gap: 16, marginTop: 20 },
-  cancelBtn: { alignItems: 'center', paddingVertical: 12 },
-  cancelText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
-});
+    inputGroup: { gap: 12 },
+    inputLabel: { color: C.textSecondary, fontSize: 13, fontWeight: '700' },
+    textArea: { backgroundColor: C.inputBg, borderRadius: 20, padding: 16, color: C.inputText, fontSize: 14, height: 120, textAlignVertical: 'top', borderWidth: 1, borderColor: C.inputBorder },
+
+    actionRow: { gap: 16, marginTop: 20 },
+    cancelBtn: { alignItems: 'center', paddingVertical: 12 },
+    cancelText: { color: C.textMuted, fontSize: 14, fontWeight: '700' },
+  });
+}

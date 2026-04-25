@@ -57,12 +57,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             savedToken = await SecureStore.getItemAsync('userToken');
             savedUser = await SecureStore.getItemAsync('userData');
             if (savedToken) {
-              console.log('✅ [AUTH-CONTEXT] Token restored from SecureStore');
+              // console.log('✅ [AUTH-CONTEXT] Token restored from SecureStore');
             } else {
-              console.log('❌ [AUTH-CONTEXT] No token found in SecureStore');
+              // console.log('❌ [AUTH-CONTEXT] No token found in SecureStore');
             }
           } catch (secureStoreErr) {
-            console.log('⚠️  [AUTH-CONTEXT] SecureStore restore failed:', (secureStoreErr as any)?.message);
+            // console.log('⚠️  [AUTH-CONTEXT] SecureStore restore failed:', (secureStoreErr as any)?.message);
           }
         } else {
           // Fallback to localStorage on web
@@ -71,12 +71,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             savedToken = localStorage.getItem('userToken');
             savedUser = localStorage.getItem('userData');
             if (savedToken) {
-              console.log('✅ [AUTH-CONTEXT] Token restored from localStorage');
+              // console.log('✅ [AUTH-CONTEXT] Token restored from localStorage');
             } else {
-              console.log('❌ [AUTH-CONTEXT] No token found in localStorage');
+              // console.log('❌ [AUTH-CONTEXT] No token found in localStorage');
             }
           } catch (storageErr) {
-            console.log('⚠️  [AUTH-CONTEXT] localStorage restore failed:', (storageErr as any)?.message);
+            // console.log('⚠️  [AUTH-CONTEXT] localStorage restore failed:', (storageErr as any)?.message);
           }
         }
 

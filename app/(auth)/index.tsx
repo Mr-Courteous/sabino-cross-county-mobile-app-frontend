@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     ActivityIndicator,
@@ -20,6 +20,7 @@ import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
+import { useAppColors } from '@/hooks/use-app-colors';
 import {
     Colors,
     Typography,
@@ -32,6 +33,8 @@ const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
     const router = useRouter();
+    const C = useAppColors();
+    const styles = useMemo(() => makeStyles(C), [C.scheme]);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -94,7 +97,7 @@ export default function LoginScreen() {
     };
 
     return (
-        <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
+        <ThemedView style={{ flex: 1, backgroundColor: C.background }}>
             <ImageBackground
                 source={{ uri: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=80&w=2071' }}
                 style={styles.hero}
@@ -192,66 +195,68 @@ export default function LoginScreen() {
     );
 }
 
-const styles = StyleSheet.create({
-    hero: { flex: 1, width: '100%' },
-    overlay: { flex: 1, paddingHorizontal: 24 },
-    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
-    
-    header: { alignItems: 'center', marginBottom: 40 },
-    logoBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.08)',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 12,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
-    },
-    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
-    title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-    goldBar: { width: 50, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
-    subtitle: { fontSize: 14, color: '#94A3B8', fontWeight: '500' },
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+    return StyleSheet.create({
+        hero: { flex: 1, width: '100%' },
+        overlay: { flex: 1, paddingHorizontal: 24 },
+        scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+        
+        header: { alignItems: 'center', marginBottom: 40 },
+        logoBadge: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 12,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.1)'
+        },
+        logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+        title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+        goldBar: { width: 50, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
+        subtitle: { fontSize: 14, color: '#94A3B8', fontWeight: '500' },
 
-    card: {
-        backgroundColor: 'rgba(30, 41, 59, 0.7)',
-        borderRadius: 35,
-        padding: 30,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    inputContainer: {
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        borderColor: 'rgba(255,255,255,0.1)',
-        marginBottom: 15,
-    },
-    loginButton: {
-        marginTop: 10,
-        backgroundColor: '#2563EB',
-        borderRadius: 15,
-        height: 60,
-    },
-    forgotText: {
-        color: '#94A3B8',
-        fontSize: 12,
-        fontWeight: '700',
-        letterSpacing: 1,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        marginVertical: 25,
-    },
-    registerSection: { alignItems: 'center' },
-    registerLabel: { color: '#64748B', fontSize: 13, marginBottom: 15, fontWeight: '600' },
-    registerButton: {
-        borderColor: '#2563EB',
-        borderWidth: 2,
-        borderRadius: 15,
-        width: '100%',
-    },
-    footer: { marginTop: 40, alignItems: 'center' },
-    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-    footerSubtext: { color: '#1E293B', fontSize: 9, fontWeight: '900', marginTop: 5 }
-});
+        card: {
+            backgroundColor: C.isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(255, 255, 255, 0.95)',
+            borderRadius: 35,
+            padding: 30,
+            borderWidth: 1,
+            borderColor: C.cardBorder,
+        },
+        inputContainer: {
+            backgroundColor: C.isDark ? 'rgba(15, 23, 42, 0.5)' : '#F8FAFC',
+            borderColor: C.inputBorder,
+            marginBottom: 15,
+        },
+        loginButton: {
+            marginTop: 10,
+            backgroundColor: '#2563EB',
+            borderRadius: 15,
+            height: 60,
+        },
+        forgotText: {
+            color: C.textSecondary,
+            fontSize: 12,
+            fontWeight: '700',
+            letterSpacing: 1,
+        },
+        divider: {
+            height: 1,
+            backgroundColor: C.divider,
+            marginVertical: 25,
+        },
+        registerSection: { alignItems: 'center' },
+        registerLabel: { color: C.textMuted, fontSize: 13, marginBottom: 15, fontWeight: '600' },
+        registerButton: {
+            borderColor: '#2563EB',
+            borderWidth: 2,
+            borderRadius: 15,
+            width: '100%',
+        },
+        footer: { marginTop: 40, alignItems: 'center' },
+        footerText: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+        footerSubtext: { color: C.textSecondary, fontSize: 9, fontWeight: '900', marginTop: 5 }
+    });
+}

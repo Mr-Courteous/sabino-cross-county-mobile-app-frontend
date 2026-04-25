@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Linking, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Linking, Alert, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAppColors } from '@/hooks/use-app-colors';
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import { Colors } from '@/constants/design-system';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 
 export default function InitiatePayment() {
   const routePlanId = undefined; // fallback; we'll parse web query params below
   const router = useRouter();
+  const C = useAppColors();
+  const styles = useMemo(() => makeStyles(C), [C.scheme]);
   const [planId, setPlanId] = useState(routePlanId || '');
   const [loading, setLoading] = useState(false);
   const [link, setLink] = useState('');
@@ -57,31 +63,45 @@ export default function InitiatePayment() {
   };
 
   return (
-    <View style={{ flex: 1, padding: 20, justifyContent: 'center' }}>
-      <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12 }}>Initiate Payment</Text>
+    <ThemedView style={styles.container}>
+      <ThemedText style={styles.title}>Initiate Payment</ThemedText>
 
-      <Text style={{ marginBottom: 6 }}>Plan ID</Text>
+      <ThemedText style={styles.label}>Plan ID</ThemedText>
       <TextInput
         value={String(planId)}
         onChangeText={setPlanId}
         placeholder="Plan ID"
+        placeholderTextColor={C.textMuted}
         keyboardType="numeric"
-        style={{ padding: 12, borderWidth: 1, borderRadius: 8, marginBottom: 12 }}
+        style={styles.input}
       />
 
-      <TouchableOpacity onPress={initiate} disabled={loading} style={{ backgroundColor: '#1a73e8', padding: 14, borderRadius: 8, alignItems: 'center' }}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>GET PAYMENT LINK</Text>}
+      <TouchableOpacity onPress={initiate} disabled={loading} style={styles.button}>
+        {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>GET PAYMENT LINK</ThemedText>}
       </TouchableOpacity>
 
       {txRef ? (
         <View style={{ marginTop: 16 }}>
-          <Text style={{ fontSize: 12, color: '#666' }}>Tx Ref: {txRef}</Text>
-          <TouchableOpacity onPress={() => router.push({ pathname: '/(payments)/verify', params: { tx_ref: txRef, plan_id: planId } } as any)} style={{ marginTop: 8 }}>
-            <Text style={{ color: '#1a73e8' }}>Verify Payment</Text>
+          <ThemedText style={styles.txRef}>Tx Ref: {txRef}</ThemedText>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/(payments)/verify', params: { tx_ref: txRef, plan_id: planId } } as any)} style={{ marginTop: 12 }}>
+            <ThemedText style={styles.verifyLink}>Verify Payment</ThemedText>
           </TouchableOpacity>
         </View>
       ) : null}
 
-    </View>
+    </ThemedView>
   );
+}
+
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+  return StyleSheet.create({
+    container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: C.background },
+    title: { fontSize: 24, fontWeight: '900', color: C.text, marginBottom: 24 },
+    label: { fontSize: 12, fontWeight: '800', color: C.textLabel, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
+    input: { padding: 16, backgroundColor: C.inputBg, color: C.inputText, borderWidth: 1, borderColor: C.inputBorder, borderRadius: 16, marginBottom: 20, fontSize: 16, fontWeight: '600' },
+    button: { backgroundColor: Colors.accent.navy, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+    buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
+    txRef: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
+    verifyLink: { color: Colors.accent.gold, fontWeight: '800', fontSize: 14 }
+  });
 }

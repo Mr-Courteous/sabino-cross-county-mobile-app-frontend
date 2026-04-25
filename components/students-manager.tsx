@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import { Colors } from '@/constants/design-system';
 import { ThemedView } from '@/components/themed-view';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
+import { useAppColors } from '@/hooks/use-app-colors';
 import Footer from '../app/components/Footer';
 
 const { width } = Dimensions.get('window');
@@ -49,8 +50,11 @@ type Class = {
   capacity: number;
 };
 
+
 export default function StudentsManager() {
   const router = useRouter();
+  const C = useAppColors();
+  const styles = useMemo(() => makeStyles(C), [C.scheme]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
 
@@ -62,6 +66,7 @@ export default function StudentsManager() {
     title: string;
     message: string;
     onConfirm?: () => void;
+    confirmLabel?: string;
   }>({
     visible: false,
     type: 'info',
@@ -86,7 +91,25 @@ export default function StudentsManager() {
   const [dobParts, setDobParts] = useState({ year: '', month: '', day: '' });
   const [editingId, setEditingId] = useState<string | number | null>(null);
 
+  const [activeSessionName, setActiveSessionName] = useState<string>('');
+  const [isClassListOpen, setIsClassListOpen] = useState<boolean>(false);
+  const [classSearchQuery, setClassSearchQuery] = useState<string>('');
+
   const [searchText, setSearchText] = useState<string>('');
+
+  const renderAlert = () => {
+    if (!statusAlert.visible) return null;
+    return (
+      <CustomAlert
+        type={statusAlert.type}
+        title={statusAlert.title}
+        message={statusAlert.message}
+        onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+        onConfirm={statusAlert.onConfirm}
+        confirmLabel={statusAlert.confirmLabel}
+      />
+    );
+  };
 
   const getToken = async () => {
     return Platform.OS !== 'web'
@@ -99,26 +122,32 @@ export default function StudentsManager() {
       const token = await getToken();
       if (!token) return;
 
-      const [classRes, studentRes] = await Promise.all([
+      const [classRes, studentRes, sessionRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/students`, { headers: { Authorization: `Bearer ${token}` } })
+        fetch(`${API_BASE_URL}/api/students`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/academic-sessions`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
 
-      const [classData, studentData] = await Promise.all([
+      const [classData, studentData, sessionData] = await Promise.all([
         classRes.json(),
-        studentRes.json()
+        studentRes.json(),
+        sessionRes.json()
       ]);
 
       if (classData.success) setClasses(classData.data);
-
       if (studentData.success) setStudents(studentData.data || []);
 
-    } catch (e) {
+      if (sessionData.success && sessionData.data?.length > 0) {
+        const active = sessionData.data.find((s: any) => s.is_active) || sessionData.data[0];
+        setActiveSessionName(active.session_name);
+      }
+
+    } catch (e: any) {
       setStatusAlert({
         visible: true,
         type: 'error',
         title: 'System Error',
-        message: 'Unable to synchronize student records.'
+        message: e?.message || 'Unable to synchronize student records.'
       });
     } finally {
       setLoading(false);
@@ -138,7 +167,7 @@ export default function StudentsManager() {
   const handleDownloadTemplate = async () => {
     try {
       const csvContent = "firstName,lastName,email,phone,dateOfBirth,classId,studentNumber,gender\nJohn,Doe,john@example.com,1234567890,2005-08-16,1,STU-001,Male";
-      
+
       if (Platform.OS === 'web') {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
@@ -151,7 +180,7 @@ export default function StudentsManager() {
       } else {
         const fileUri = `${FileSystem.documentDirectory}student_bulk_template.csv`;
         await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: 'utf8' });
-        
+
         const isAvailable = await Sharing.isAvailableAsync();
         if (isAvailable) {
           await Sharing.shareAsync(fileUri);
@@ -172,15 +201,15 @@ export default function StudentsManager() {
       });
       if (result.canceled) return;
       const file = result.assets[0];
-      
+
       setLoading(true);
       const token = await getToken();
-      
+
       let text = '';
       if (Platform.OS === 'web') {
-         text = await (file as any).file.text();
+        text = await (file as any).file.text();
       } else {
-         text = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
+        text = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
       }
 
       setStatusAlert({
@@ -196,7 +225,7 @@ export default function StudentsManager() {
       if (sessionData.success && sessionData.data?.length > 0) {
         sessionName = sessionData.data.find((s: any) => s.is_active)?.session_name || sessionData.data[0].session_name;
       }
-      
+
       if (!sessionName) throw new Error('No active academic session found on the server.');
 
       const lines = text.split('\n').filter(l => l.trim().length > 0);
@@ -204,19 +233,19 @@ export default function StudentsManager() {
 
       const studentsArray = [];
       for (let i = 1; i < lines.length; i++) {
-         const attrs = lines[i].split(',').map(a => a.trim());
-         if (attrs.length >= 6) {
-           studentsArray.push({
-             firstName: attrs[0],
-             lastName: attrs[1],
-             email: attrs[2],
-             phone: attrs[3],
-             dateOfBirth: attrs[4],
-             classId: Number(attrs[5]),
-             studentNumber: attrs[6] || undefined,
-             gender: attrs[7] || undefined,
-           });
-         }
+        const attrs = lines[i].split(',').map(a => a.trim());
+        if (attrs.length >= 6) {
+          studentsArray.push({
+            firstName: attrs[0],
+            lastName: attrs[1],
+            email: attrs[2],
+            phone: attrs[3],
+            dateOfBirth: attrs[4],
+            classId: Number(attrs[5]),
+            studentNumber: attrs[6] || undefined,
+            gender: attrs[7] || undefined,
+          });
+        }
       }
 
       const res = await fetch(`${API_BASE_URL}/api/students/bulk`, {
@@ -224,19 +253,19 @@ export default function StudentsManager() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ students: studentsArray, academicSession: sessionName })
       });
-      
+
       const json = await res.json();
       if (json.success) {
         fetchInitialData();
         setStatusAlert({ visible: true, type: 'success', title: 'Bulk Success', message: `Processed ${studentsArray.length} records successfully.` });
       } else {
-        throw new Error(json.error || 'Server rejected bulk payload');
+        throw new Error(json.error || json.message || 'Server rejected bulk payload');
       }
     } catch (e: any) {
       setStatusAlert({
         visible: true,
         type: 'error',
-        title: 'Process Error',
+        title: 'Bulk Upload Failed',
         message: e?.message || 'Bulk synchronization failed.'
       });
     } finally {
@@ -250,6 +279,7 @@ export default function StudentsManager() {
       type: 'warning',
       title: 'Sign-out',
       message: 'Terminate administrative session?',
+      confirmLabel: 'LOGOUT',
       onConfirm: async () => {
         await clearAllStorage();
         router.replace('/');
@@ -323,7 +353,7 @@ export default function StudentsManager() {
 
       <View style={styles.searchSection}>
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color="#94A3B8" />
+          <Ionicons name="search" size={18} color="#94A3B8" style={styles.searchIcon} />
           <TextInput
             placeholder="Search registry..."
             style={styles.searchInput}
@@ -345,18 +375,11 @@ export default function StudentsManager() {
         renderItem={renderStudent}
         refreshing={refreshing}
         onRefresh={onRefresh}
-        ListHeaderComponent={statusAlert.visible ? (
-          <CustomAlert
-            type={statusAlert.type}
-            title={statusAlert.title}
-            message={statusAlert.message}
-            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-            onConfirm={statusAlert.onConfirm}
-            style={styles.alert}
-          />
-        ) : null}
         ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={handleLogout} />}
       />
+
+      {/* Global Status Alert (for bulk uploads, refreshes, etc) */}
+      {!modalVisible && renderAlert()}
 
       <Modal animationType="fade" transparent={true} visible={modalVisible}>
         <View style={styles.modalOverlay}>
@@ -364,6 +387,8 @@ export default function StudentsManager() {
             colors={['rgba(15, 23, 42, 0.95)', 'rgba(30, 41, 59, 0.98)']}
             style={styles.modalSheet}
           >
+            {/* Modal Status Alert (for individual enrollment errors) */}
+            {renderAlert()}
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>{editingId ? 'Modify Record' : 'Enroll Student'}</Text>
@@ -378,18 +403,83 @@ export default function StudentsManager() {
 
               {!editingId && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionLabel}>ACADEMIC PARAMETERS</Text>
-                  <View style={styles.classGrid}>
-                    {classes.map((c) => (
-                      <TouchableOpacity
-                        key={c.id}
-                        style={[styles.classChip, form.classId === c.id && styles.activeClassChip]}
-                        onPress={() => setForm({ ...form, classId: c.id })}
+                  <Text style={styles.sectionLabel}>CLASSES</Text>
+                  
+                  <View style={styles.inputWrapper}>
+                    {form.classId && !isClassListOpen ? (
+                      <TouchableOpacity 
+                        style={styles.selectedClassChip} 
+                        onPress={() => { setIsClassListOpen(true); setClassSearchQuery(''); }}
                       >
-                        <Text style={[styles.chipText, form.classId === c.id && styles.activeChipText]}>{c.display_name}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Ionicons name="school" size={16} color={Colors.accent.gold} style={{ marginRight: 8 }} />
+                          <Text style={styles.selectedClassChipText}>
+                            {classes.find(c => c.id === form.classId)?.display_name}
+                          </Text>
+                          <TouchableOpacity 
+                            onPress={(e) => { 
+                              e.stopPropagation();
+                              setForm({ ...form, classId: null }); 
+                              setIsClassListOpen(true); 
+                            }}
+                            style={styles.chipCloseBtn}
+                          >
+                            <Ionicons name="close-circle" size={18} color={Colors.accent.gold} />
+                          </TouchableOpacity>
+                        </View>
                       </TouchableOpacity>
-                    ))}
+                    ) : (
+                      <>
+                        <Ionicons name="search-outline" size={18} color="rgba(255,255,255,0.3)" style={styles.inputIcon} />
+                        <TextInput
+                          style={styles.formInput}
+                          placeholder="Search and select class..."
+                          placeholderTextColor="#64748B"
+                          value={classSearchQuery}
+                          onChangeText={(t) => {
+                            setClassSearchQuery(t);
+                            setIsClassListOpen(true);
+                          }}
+                          onFocus={() => setIsClassListOpen(true)}
+                        />
+                      </>
+                    )}
                   </View>
+
+                  {(isClassListOpen || !form.classId) && (
+                    <View style={styles.classListContainer}>
+                      <ScrollView 
+                        nestedScrollEnabled 
+                        style={styles.classListScroll}
+                        contentContainerStyle={styles.classListContent}
+                      >
+                        {classes
+                          .filter((c: any) => c.display_name.toLowerCase().includes(classSearchQuery.toLowerCase()))
+                          .map((c: any) => (
+                            <TouchableOpacity
+                              key={c.id}
+                              style={[styles.classListItem, form.classId === c.id && styles.activeClassListItem]}
+                              onPress={() => {
+                                setForm({ ...form, classId: c.id });
+                                setIsClassListOpen(false);
+                                setClassSearchQuery('');
+                              }}
+                            >
+                              <View style={styles.classListSelection}>
+                                <Ionicons 
+                                  name={form.classId === c.id ? "radio-button-on" : "radio-button-off"} 
+                                  size={18} 
+                                  color={form.classId === c.id ? Colors.accent.gold : "rgba(255,255,255,0.2)"} 
+                                />
+                                <Text style={[styles.classListText, form.classId === c.id && styles.activeClassListText]}>
+                                  {c.display_name}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -477,10 +567,10 @@ export default function StudentsManager() {
 
               <View style={styles.modalActions}>
                 <CustomButton
-                  title={saving ? "SECURELY SAVING..." : "COMMIT TO REGISTRY"}
+                  title={saving ? "SECURELY SAVING..." : "REGISTER STUDENT"}
                   onPress={saveStudent}
                   loading={saving}
-                  icon="shield-checkmark-outline"
+                  icon={<Ionicons name="shield-checkmark-outline" size={20} color={Colors.accent.navy} style={{ marginRight: 10 }} />}
                 />
               </View>
             </ScrollView>
@@ -489,6 +579,25 @@ export default function StudentsManager() {
       </Modal>
     </ThemedView>
   );
+
+    function DobPicker({ data, selected, onSelect, label }: any) {
+      return (
+        <View style={styles.dobColumn}>
+          <Text style={styles.dobLabel}>{label}</Text>
+          <ScrollView style={styles.dobList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {data.map((item: any) => (
+              <TouchableOpacity
+                key={item}
+                style={[styles.dobItem, selected === item && styles.activeDobItem]}
+                onPress={() => onSelect(item)}
+              >
+                <Text style={[styles.dobItemText, selected === item && styles.activeDobItemText]}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      );
+    }
 
   async function saveStudent() {
     if (!form.firstName || !form.lastName) {
@@ -521,7 +630,7 @@ export default function StudentsManager() {
       const endpoint = editingId ? `/api/students/${editingId}` : `/api/students/bulk`;
       const body = editingId
         ? JSON.stringify({ ...form, dateOfBirth: finalDob })
-        : JSON.stringify({ students: [{ ...form, dateOfBirth: finalDob }], academicSession });
+        : JSON.stringify({ students: [{ ...form, dateOfBirth: finalDob }], academicSession: activeSessionName });
 
       const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method,
@@ -538,13 +647,16 @@ export default function StudentsManager() {
           title: 'Registry Success',
           message: 'Database synchronized successfully.'
         });
+      } else {
+        const errorMsg = json.error || json.message || 'Server rejected the request.';
+        throw new Error(errorMsg);
       }
-    } catch (e) {
+    } catch (e: any) {
       setStatusAlert({
         visible: true,
         type: 'error',
-        title: 'Protocol Error',
-        message: 'Session timed out or connection lost.'
+        title: 'Error',
+        message: e?.message || 'Session timed out or connection lost.'
       });
     } finally {
       setSaving(false);
@@ -561,7 +673,6 @@ export default function StudentsManager() {
           month = String(d.getMonth() + 1).padStart(2, '0');
           day = String(d.getDate()).padStart(2, '0');
         } else {
-          // Fallback if Date parsing somehow fails but string format aligns
           const parts = String(s.date_of_birth).split('T')[0].split('-');
           if (parts.length === 3) {
             year = parts[0];
@@ -587,100 +698,88 @@ export default function StudentsManager() {
   }
 }
 
-function DobPicker({ data, selected, onSelect, label }: any) {
-  return (
-    <View style={styles.dobColumn}>
-      <Text style={styles.dobLabel}>{label}</Text>
-      <ScrollView style={styles.dobList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-        {data.map((item: any) => (
-          <TouchableOpacity
-            key={item}
-            style={[styles.dobItem, selected === item && styles.activeDobItem]}
-            onPress={() => onSelect(item)}
-          >
-            <Text style={[styles.dobItemText, selected === item && styles.activeDobItemText]}>{item}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
 
 const years = Array.from({ length: 50 }, (_, i) => String(new Date().getFullYear() - 2 - i));
 const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
-const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: Colors.accent.navy },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent.navy },
-  loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+  return StyleSheet.create({
+    mainWrapper: { flex: 1, backgroundColor: C.background },
+    loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
+    loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
 
-  hero: { height: 260, width: '100%' },
-  heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 },
-  backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
+    hero: { height: 260, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 },
+    backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
 
-  heroContent: { marginTop: 'auto', marginBottom: 20 },
-  heroSubtitle: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
-  heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+    heroContent: { marginTop: 'auto', marginBottom: 20 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 2 },
+    heroMainTitle: { color: C.isDark ? '#FFFFFF' : '#0F172A', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
 
-  searchSection: { paddingHorizontal: 24, marginTop: -25, marginBottom: 20 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 20, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-  searchInput: { flex: 1, marginLeft: 12, color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+    searchSection: { paddingHorizontal: 24, marginTop: -25, marginBottom: 20 },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 20, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: C.inputBorder },
+    searchIcon: { marginRight: 12 },
+    searchInput: { flex: 1, color: C.inputText, fontSize: 14, fontWeight: '600' },
 
-  listContent: { paddingHorizontal: 24, paddingBottom: 100 },
-  studentCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-  avatarContainer: { width: 50, height: 50, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
-  avatarText: { color: Colors.accent.gold, fontSize: 16, fontWeight: '800' },
-  studentInfo: { flex: 1, marginLeft: 16 },
-  studentName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-  studentSub: { fontSize: 12, color: '#94A3B8', fontWeight: '600' },
-  metaDivider: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)' },
-  studentEmail: { fontSize: 11, color: '#64748B', fontWeight: '500' },
-  alert: { marginBottom: 20 },
+    listContent: { paddingHorizontal: 24, paddingBottom: 100 },
+    studentCard: { backgroundColor: C.card, borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
+    avatarContainer: { width: 50, height: 50, borderRadius: 16, backgroundColor: C.isDark ? 'rgba(255,255,255,0.05)' : '#E8EEF4', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+    avatarText: { color: Colors.accent.gold, fontSize: 16, fontWeight: '800' },
+    studentInfo: { flex: 1, marginLeft: 16 },
+    studentName: { fontSize: 16, fontWeight: '800', color: C.text, marginBottom: 4 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+    studentSub: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
+    metaDivider: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.divider },
+    studentEmail: { fontSize: 11, color: C.textMuted, fontWeight: '500' },
+    alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
+    modalSheet: { height: '90%', borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 24 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 },
+    modalTitle: { color: C.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
+    modalSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '700', letterSpacing: 1, marginTop: 4 },
+    closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
-  modalSheet: { height: '90%', borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 24 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 },
-  modalTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
-  modalSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '700', letterSpacing: 1, marginTop: 4 },
-  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+    modalScroll: { paddingBottom: 60 },
+    formSection: { marginBottom: 32 },
+    sectionLabel: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
 
-  modalScroll: { paddingBottom: 60 },
-  formSection: { marginBottom: 32 },
-  sectionLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
+    classListContainer: { height: 200, backgroundColor: C.card, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder, overflow: 'hidden' },
+    classListScroll: { flex: 1 },
+    classListContent: { padding: 4 },
+    classListItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, marginBottom: 4, backgroundColor: 'transparent' },
+    activeClassListItem: { backgroundColor: 'rgba(250,204,21,0.2)', borderColor: 'rgba(250,204,21,0.4)', borderWidth: 1 },
+    classListSelection: { flexDirection: 'row', alignItems: 'center' },
+    classListText: { color: C.textSecondary, fontSize: 13, fontWeight: '700', marginLeft: 12 },
+    activeClassListText: { color: C.text, fontWeight: '900' },
 
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  classGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  sessionChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  classChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  activeSessionChip: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
-  activeClassChip: { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: Colors.accent.gold },
-  chipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-  activeChipText: { color: Colors.accent.navy },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 16, height: 55, marginBottom: 12, borderWidth: 1, borderColor: C.inputBorder },
+    inputIcon: { marginRight: 12 },
+    formInput: { flex: 1, color: C.inputText, fontSize: 14, fontWeight: '600' },
 
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 16, paddingHorizontal: 16, height: 55, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  inputIcon: { marginRight: 12 },
-  formInput: { flex: 1, color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+    selectedClassChip: { backgroundColor: 'rgba(250,204,21,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(250,204,21,0.3)', alignSelf: 'flex-start' },
+    selectedClassChipText: { color: Colors.accent.gold, fontSize: 14, fontWeight: '800', marginRight: 8 },
+    chipCloseBtn: { padding: 2 },
 
-  genderSelect: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  genderOption: { flex: 1, height: 50, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.03)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  activeGender: { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: Colors.accent.gold },
-  genderBtnText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
-  activeGenderBtnText: { color: Colors.accent.gold },
+    genderSelect: { flexDirection: 'row', gap: 12, marginTop: 8 },
+    genderOption: { flex: 1, height: 50, borderRadius: 16, backgroundColor: C.inputBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: C.inputBorder },
+    activeGender: { backgroundColor: C.isDark ? 'rgba(255,255,255,0.1)' : '#FEF9C3', borderColor: Colors.accent.gold },
+    genderBtnText: { color: C.textMuted, fontSize: 14, fontWeight: '700' },
+    activeGenderBtnText: { color: Colors.accent.gold },
 
-  dobGrid: { flexDirection: 'row', gap: 12, height: 180 },
-  dobColumn: { flex: 1 },
-  dobLabel: { color: '#64748B', fontSize: 10, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
-  dobList: { flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  dobItem: { paddingVertical: 12, alignItems: 'center' },
-  activeDobItem: { backgroundColor: 'rgba(255, 255, 255, 0.05)' },
-  dobItemText: { color: '#64748B', fontSize: 13, fontWeight: '600' },
-  activeDobItemText: { color: Colors.accent.gold, fontWeight: '900' },
+    dobGrid: { flexDirection: 'row', gap: 12, height: 180 },
+    dobColumn: { flex: 1 },
+    dobLabel: { color: C.textMuted, fontSize: 10, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
+    dobList: { flex: 1, backgroundColor: C.inputBg, borderRadius: 16, borderWidth: 1, borderColor: C.inputBorder },
+    dobItem: { paddingVertical: 12, alignItems: 'center' },
+    activeDobItem: { backgroundColor: C.isDark ? 'rgba(255,255,255,0.05)' : '#EFF6FF' },
+    dobItemText: { color: C.textMuted, fontSize: 13, fontWeight: '600' },
+    activeDobItemText: { color: Colors.accent.gold, fontWeight: '900' },
 
-  modalActions: { marginTop: 10 }
-});
+    modalActions: { marginTop: 10 },
+  });
+}

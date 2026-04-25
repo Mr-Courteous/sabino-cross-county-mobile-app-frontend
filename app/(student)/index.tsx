@@ -23,6 +23,8 @@ import { Colors } from '@/constants/design-system';
 
 export default function StudentLogin() {
     const router = useRouter();
+    const C = useAppColors();
+    const styles = useMemo(() => makeStyles(C), [C.scheme]);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -75,13 +77,13 @@ export default function StudentLogin() {
     };
 
     return (
-        <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
+        <ThemedView style={{ flex: 1, backgroundColor: C.background }}>
             <ImageBackground
                 source={{ uri: 'https://images.unsplash.com/photo-1523240693567-520c80c8966e?q=80&w=2070' }}
                 style={styles.hero}
             >
                 <LinearGradient
-                    colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']}
+                    colors={['rgba(10, 15, 30, 0.7)', 'rgba(15, 23, 42, 0.95)']}
                     style={styles.overlay}
                 >
                     <ScrollView
@@ -180,73 +182,75 @@ export default function StudentLogin() {
     );
 }
 
-const styles = StyleSheet.create({
-    hero: { flex: 1, width: '100%' },
-    overlay: { flex: 1, paddingHorizontal: 24 },
-    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+    return StyleSheet.create({
+        hero: { flex: 1, width: '100%' },
+        overlay: { flex: 1, paddingHorizontal: 24 },
+        scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
 
-    header: { alignItems: 'center', marginBottom: 40 },
-    logoBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.08)',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 12,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
-    },
-    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
-    title: { fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-    goldBar: { width: 60, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
-    subtitle: { fontSize: 12, color: '#94A3B8', fontWeight: '800', letterSpacing: 1 },
+        header: { alignItems: 'center', marginBottom: 40 },
+        logoBadge: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 12,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.1)'
+        },
+        logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+        title: { fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+        goldBar: { width: 60, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
+        subtitle: { fontSize: 12, color: '#94A3B8', fontWeight: '800', letterSpacing: 1 },
 
-    card: {
-        backgroundColor: 'rgba(30, 41, 59, 0.7)',
-        borderRadius: 35,
-        padding: 30,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    iconCircle: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: 'rgba(250, 204, 21, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        marginBottom: 30,
-        borderWidth: 1,
-        borderColor: 'rgba(250, 204, 21, 0.2)'
-    },
-    inputContainer: {
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    forgotPass: { alignSelf: 'flex-end', marginBottom: 25 },
-    forgotText: { color: '#FACC15', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+        card: {
+            backgroundColor: C.isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(255, 255, 255, 0.95)',
+            borderRadius: 35,
+            padding: 30,
+            borderWidth: 1,
+            borderColor: C.cardBorder,
+        },
+        iconCircle: {
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            backgroundColor: 'rgba(250, 204, 21, 0.1)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            alignSelf: 'center',
+            marginBottom: 30,
+            borderWidth: 1,
+            borderColor: 'rgba(250, 204, 21, 0.2)'
+        },
+        inputContainer: {
+            backgroundColor: C.isDark ? 'rgba(15, 23, 42, 0.5)' : '#F8FAFC',
+            borderColor: C.inputBorder,
+        },
+        forgotPass: { alignSelf: 'flex-end', marginBottom: 25 },
+        forgotText: { color: '#FACC15', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
 
-    ctaButton: { height: 60, borderRadius: 15 },
+        ctaButton: { height: 60, borderRadius: 15 },
 
-    divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 30 },
-    dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.1)' },
-    dividerText: { color: '#64748B', fontSize: 12, fontWeight: '800', marginHorizontal: 20 },
+        divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 30 },
+        dividerLine: { flex: 1, height: 1, backgroundColor: C.divider },
+        dividerText: { color: C.textSecondary, fontSize: 12, fontWeight: '800', marginHorizontal: 20 },
 
-    registerButton: {
-        height: 55,
-        borderRadius: 15,
-        borderWidth: 2,
-        borderColor: '#FACC15',
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    registerText: { color: '#FACC15', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
+        registerButton: {
+            height: 55,
+            borderRadius: 15,
+            borderWidth: 2,
+            borderColor: '#FACC15',
+            alignItems: 'center',
+            justifyContent: 'center'
+        },
+        registerText: { color: '#FACC15', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
 
-    backButton: { marginTop: 25, alignItems: 'center' },
-    backText: { color: '#94A3B8', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+        backButton: { marginTop: 25, alignItems: 'center' },
+        backText: { color: C.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
 
-    footer: { marginTop: 40, alignItems: 'center' },
-    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-});
+        footer: { marginTop: 40, alignItems: 'center' },
+        footerText: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+    });
+}

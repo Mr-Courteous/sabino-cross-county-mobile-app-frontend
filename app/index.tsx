@@ -1,17 +1,35 @@
 import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ImageBackground, Dimensions } from 'react-native';
+import { useState, useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAppColors } from '@/hooks/use-app-colors';
+import { Colors } from '@/constants/design-system';
 
 const { width } = Dimensions.get('window');
 
 export default function HomePage() {
   const router = useRouter();
+  const C = useAppColors();
+  const styles = useMemo(() => makeStyles(C), [C.scheme]);
+
+
+  function FeatureCard({ icon, title, desc }: any) {
+    return (
+      <View style={styles.fCard}>
+        <View style={styles.iconCircle}>
+          <Ionicons name={icon} size={24} color={C.isDark ? "#1E293B" : "#2563EB"} />
+        </View>
+        <Text style={styles.fTitle}>{title}</Text>
+        <Text style={styles.fDesc}>{desc}</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.mainWrapper}>
-      <StatusBar style="light" />
+      <StatusBar style={C.isDark ? "light" : "dark"} />
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
         <ImageBackground
@@ -85,141 +103,125 @@ export default function HomePage() {
   );
 }
 
-interface FeatureCardProps {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  desc: string;
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+  return StyleSheet.create({
+    mainWrapper: { flex: 1, backgroundColor: C.isDark ? '#1e293b' : '#F8FAFC' },
+    scrollContainer: { flexGrow: 1 },
+
+    hero: { width: '100%', minHeight: 700, paddingBottom: 45 },
+    overlay: { flex: 1, paddingHorizontal: 20, paddingVertical: 60, justifyContent: 'center', alignItems: 'center' },
+
+    logoBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 12,
+      marginBottom: 25,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.1)'
+    },
+    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
+
+    // BOLDER TITLE STYLES
+    title: {
+      fontSize: 40,
+      fontWeight: '700',
+      color: '#fff',
+      textAlign: 'center',
+      lineHeight: 48,
+      letterSpacing: -1
+    },
+    goldBar: { width: 80, height: 6, backgroundColor: '#FACC15', borderRadius: 3, marginVertical: 20 },
+
+    tagline: { fontSize: 16, color: '#94A3B8', textAlign: 'center', paddingHorizontal: 10, lineHeight: 26, fontWeight: '500' },
+
+    ctaButton: {
+      flexDirection: 'row',
+      backgroundColor: '#2563EB',
+      paddingVertical: 18,
+      paddingHorizontal: 25,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#2563EB',
+      shadowOpacity: 0.5,
+      shadowRadius: 20,
+      elevation: 8
+    },
+    ctaButtonText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
+
+    buttonRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+      marginTop: 40,
+      flexWrap: 'wrap',
+      width: '100%',
+    },
+
+    studentLoginButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#fff',
+      paddingVertical: 18,
+      paddingHorizontal: 25,
+      borderRadius: 15,
+      borderWidth: 2,
+      borderColor: '#2563EB',
+      shadowColor: '#2563EB',
+      shadowOpacity: 0.1,
+      shadowRadius: 10,
+      elevation: 4
+    },
+    studentLoginText: { color: '#2563EB', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
+
+    content: {
+      padding: 24,
+      backgroundColor: C.background,
+      borderTopLeftRadius: 45,
+      borderTopRightRadius: 45,
+      marginTop: -45,
+      paddingBottom: 50
+    },
+    sectionLabel: { color: '#2563EB', fontSize: 12, fontWeight: '900', letterSpacing: 2.5, textAlign: 'center', marginBottom: 10 },
+    sectionTitle: { fontSize: 26, fontWeight: '900', color: C.text, textAlign: 'center', marginBottom: 35, letterSpacing: -0.5 },
+
+    featureGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+    fCard: {
+      width: (width - 64) / 2,
+      backgroundColor: C.card,
+      padding: 24,
+      borderRadius: 30,
+      marginBottom: 16,
+      borderWidth: 1.5,
+      borderColor: C.cardBorder
+    },
+    iconCircle: { width: 50, height: 50, borderRadius: 18, backgroundColor: C.isDark ? '#1e293b' : '#fff', justifyContent: 'center', alignItems: 'center', marginBottom: 15, elevation: 2 },
+    fTitle: { fontSize: 16, fontWeight: '900', color: C.text, letterSpacing: -0.3 },
+    fDesc: { fontSize: 13, color: C.textSecondary, marginTop: 8, lineHeight: 20, fontWeight: '500' },
+
+    loginOutline: {
+      backgroundColor: '#2563EB',
+      marginTop: 25,
+      padding: 20,
+      borderRadius: 15,
+      alignItems: 'center',
+      shadowColor: '#2563EB',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 10,
+      elevation: 8,
+    },
+    loginOutlineText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 1 },
+
+    footer: { backgroundColor: C.isDark ? '#0F172A' : '#F1F5F9', padding: 60, alignItems: 'center' },
+    footerBrand: { color: C.text, fontSize: 24, fontWeight: '900', letterSpacing: 6 },
+    footerCopyright: { color: C.textMuted, fontSize: 10, fontWeight: '800', marginTop: 15, letterSpacing: 1 },
+    footerDivider: { width: 50, height: 2, backgroundColor: '#FACC15', marginVertical: 25 },
+    footerYear: { color: C.textLabel, fontSize: 10, fontWeight: 'bold' }
+  });
 }
-
-function FeatureCard({ icon, title, desc }: FeatureCardProps) {
-  return (
-    <View style={styles.fCard}>
-      <View style={styles.iconCircle}>
-        <Ionicons name={icon} size={24} color="#1E293B" />
-      </View>
-      <Text style={styles.fTitle}>{title}</Text>
-      <Text style={styles.fDesc}>{desc}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: '#1e293b' },
-  scrollContainer: { flexGrow: 1 },
-
-  hero: { width: '100%', minHeight: 700, paddingBottom: 45 },
-  overlay: { flex: 1, paddingHorizontal: 20, paddingVertical: 60, justifyContent: 'center', alignItems: 'center' },
-
-  logoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 25,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)'
-  },
-  logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
-
-  // BOLDER TITLE STYLES
-  title: {
-    fontSize: 40,
-    fontWeight: '700',
-    color: '#fff',
-    textAlign: 'center',
-    lineHeight: 48,
-    letterSpacing: -1
-  },
-  goldBar: { width: 80, height: 6, backgroundColor: '#FACC15', borderRadius: 3, marginVertical: 20 },
-
-  tagline: { fontSize: 16, color: '#94A3B8', textAlign: 'center', paddingHorizontal: 10, lineHeight: 26, fontWeight: '500' },
-
-  ctaButton: {
-    flexDirection: 'row',
-    backgroundColor: '#2563EB',
-    paddingVertical: 18,
-    paddingHorizontal: 25,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#2563EB',
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 8
-  },
-  ctaButtonText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
-
-  buttonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 40,
-    flexWrap: 'wrap',
-    width: '100%',
-  },
-
-  studentLoginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 18,
-    paddingHorizontal: 25,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: '#2563EB',
-    shadowColor: '#2563EB',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4
-  },
-  studentLoginText: { color: '#2563EB', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
-
-  content: {
-    padding: 24,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 45,
-    borderTopRightRadius: 45,
-    marginTop: -45,
-    paddingBottom: 50
-  },
-  sectionLabel: { color: '#2563EB', fontSize: 12, fontWeight: '900', letterSpacing: 2.5, textAlign: 'center', marginBottom: 10 },
-  sectionTitle: { fontSize: 26, fontWeight: '900', color: '#1e293b', textAlign: 'center', marginBottom: 35, letterSpacing: -0.5 },
-
-  featureGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  fCard: {
-    width: (width - 64) / 2,
-    backgroundColor: '#F8FAFC',
-    padding: 24,
-    borderRadius: 30,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#F1F5F9'
-  },
-  iconCircle: { width: 50, height: 50, borderRadius: 18, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', marginBottom: 15, elevation: 2 },
-  fTitle: { fontSize: 16, fontWeight: '900', color: '#1E293B', letterSpacing: -0.3 },
-  fDesc: { fontSize: 13, color: '#64748B', marginTop: 8, lineHeight: 20, fontWeight: '500' },
-
-  loginOutline: {
-    backgroundColor: '#2563EB',
-    marginTop: 25,
-    padding: 20,
-    borderRadius: 15,
-    alignItems: 'center',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  loginOutlineText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 1 },
-
-  footer: { backgroundColor: '#1e293b', padding: 60, alignItems: 'center' },
-  footerBrand: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 6 },
-  footerCopyright: { color: '#475569', fontSize: 10, fontWeight: '800', marginTop: 15, letterSpacing: 1 },
-  footerDivider: { width: 50, height: 2, backgroundColor: '#FACC15', marginVertical: 25 },
-  footerYear: { color: '#334155', fontSize: 10, fontWeight: 'bold' }
-});

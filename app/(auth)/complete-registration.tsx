@@ -399,10 +399,10 @@ export default function CompleteRegistrationScreen() {
                   </View>
                 ) : (
                   <View style={styles.card}>
-                    <View style={styles.pricingHeader}>
+                    {/* <View style={styles.pricingHeader}>
                         <Text style={styles.pricingTitle}>SABINO SCHOOL PORTAL</Text>
                         <Text style={styles.pricingAmount}>₦5,000<Text style={{ fontSize: 16 }}>/mo</Text></Text>
-                    </View>
+                    </View> */}
                     
                     <View style={styles.featureBox}>
                         <PricingFeature text="Full Student Registry Access" />

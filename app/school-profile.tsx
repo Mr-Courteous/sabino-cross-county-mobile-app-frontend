@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,9 +16,12 @@ import { API_BASE_URL } from '@/utils/api-service';
 import { Colors } from '@/constants/design-system';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
+import { useAppColors } from '@/hooks/use-app-colors';
 
 export default function SchoolProfileEditPage() {
   const router = useRouter();
+  const C = useAppColors();
+  const styles = useMemo(() => makeStyles(C), [C.scheme]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [alert, setAlert] = useState<{ visible: boolean; type: 'success' | 'error'; message: string }>({
@@ -34,6 +37,7 @@ export default function SchoolProfileEditPage() {
     address: '',
     city: '',
     country: '',
+    registration_code: '',
   });
 
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function SchoolProfileEditPage() {
           address: d.address || '',
           city: d.city || '',
           country: d.country || '',
+          registration_code: d.registration_code || '',
         });
       }
     } catch (e) {
@@ -91,7 +96,7 @@ export default function SchoolProfileEditPage() {
       if (result.success) {
         setAlert({ visible: true, type: 'success', message: 'Institution details updated successfully!' });
       } else {
-        setAlert({ visible: true, type: 'error', message: result.error || 'Failed to update details.' });
+        setAlert({ visible: true, type: 'error', message: result.error || result.message || 'Failed to update details.' });
       }
     } catch (e) {
       console.error(e);
@@ -103,16 +108,16 @@ export default function SchoolProfileEditPage() {
 
   if (loading) {
     return (
-      <View style={styles.loader}>
+      <View style={[styles.loader, { backgroundColor: C.background }]}>
         <ActivityIndicator size="large" color={Colors.accent.gold} />
-        <Text style={styles.loadingText}>Loading Profile...</Text>
+        <Text style={[styles.loadingText, { color: Colors.accent.gold }]}>Loading Profile...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
+    <View style={[styles.container, { backgroundColor: C.background }]}>
+      <StatusBar style={C.isDark ? 'light' : 'dark'} />
       <View style={styles.header}>
         <Ionicons name="arrow-back" size={24} color="#FFF" onPress={() => router.back()} style={styles.backBtn} />
         <Text style={styles.headerTitle}>Edit Institution Profile</Text>
@@ -135,6 +140,17 @@ export default function SchoolProfileEditPage() {
             style={styles.input}
             value={formData.name}
             onChangeText={(text) => setFormData({ ...formData, name: text })}
+            placeholderTextColor="#64748B"
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Registration Number</Text>
+          <TextInput
+            style={styles.input}
+            value={formData.registration_code}
+            onChangeText={(text) => setFormData({ ...formData, registration_code: text })}
+            placeholder="Official School Reg. No"
             placeholderTextColor="#64748B"
           />
         </View>
@@ -205,21 +221,23 @@ export default function SchoolProfileEditPage() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' },
-  loadingText: { color: Colors.accent.gold, marginTop: 15, fontWeight: '700' },
-  
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 20, paddingBottom: 20, backgroundColor: '#1E293B', borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  backBtn: { padding: 5 },
-  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '800' },
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+  return StyleSheet.create({
+    container: { flex: 1 },
+    loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    loadingText: { marginTop: 15, fontWeight: '700' },
+    
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 20, paddingBottom: 20, backgroundColor: C.modalBg, borderBottomWidth: 1, borderColor: C.divider },
+    backBtn: { padding: 5 },
+    headerTitle: { color: C.text, fontSize: 18, fontWeight: '800' },
 
-  scrollContent: { padding: 24, paddingBottom: 100 },
-  
-  formGroup: { marginBottom: 20 },
-  row: { flexDirection: 'row' },
-  label: { color: '#94A3B8', fontSize: 12, fontWeight: '700', marginBottom: 8, letterSpacing: 1, marginLeft: 4 },
-  input: { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 16, padding: 16, color: '#FFFFFF', fontSize: 15, fontWeight: '600', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  
-  submitBtn: { marginTop: 10, borderRadius: 16, paddingVertical: 18 },
-});
+    scrollContent: { padding: 24, paddingBottom: 100 },
+    
+    formGroup: { marginBottom: 20 },
+    row: { flexDirection: 'row' },
+    label: { color: C.textSecondary, fontSize: 12, fontWeight: '700', marginBottom: 8, letterSpacing: 1, marginLeft: 4 },
+    input: { backgroundColor: C.inputBg, borderRadius: 16, padding: 16, color: C.inputText, fontSize: 15, fontWeight: '600', borderWidth: 1, borderColor: C.inputBorder },
+    
+    submitBtn: { marginTop: 10, borderRadius: 16, paddingVertical: 18 },
+  });
+}

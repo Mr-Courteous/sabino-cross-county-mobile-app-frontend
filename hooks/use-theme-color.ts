@@ -1,21 +1,22 @@
 /**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
+ * Hook to resolve a theme color token against the current effective color scheme.
+ * Reads from ThemeContext (not RN's useColorScheme) so it reacts to manual
+ * light / dark / system selection made in the Preferences screen.
  */
 
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useEffectiveColorScheme } from '@/contexts/theme-context';
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
   colorName: keyof typeof Colors.light & keyof typeof Colors.dark
 ) {
-  const theme = useColorScheme() ?? 'light';
-  const colorFromProps = props[theme];
+  const scheme = useEffectiveColorScheme() ?? 'dark';
+  const colorFromProps = props[scheme];
 
   if (colorFromProps) {
     return colorFromProps;
-  } else {
-    return Colors[theme][colorName];
   }
+
+  return Colors[scheme][colorName] as string;
 }

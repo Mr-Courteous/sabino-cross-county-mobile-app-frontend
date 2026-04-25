@@ -22,18 +22,18 @@ export default function RootLayout() {
           : localStorage.getItem('userToken');
 
         if (token) {
-          console.log('✅ Token found, decoding...');
+          // console.log('✅ Token found, decoding...');
           const type = getUserTypeFromToken(token);
           setUserType(type);
           setIsSignedIn(true);
-          console.log(`🎯 User type detected: ${type}`);
+          // console.log(`🎯 User type detected: ${type}`);
         } else {
-          console.log('❌ No token found');
+          // console.log('❌ No token found');
           setIsSignedIn(false);
           setUserType(null);
         }
       } catch (e) {
-        console.error('❌ Auth check error:', e);
+        // console.error('❌ Auth check error:', e);
       } finally {
         setIsLoading(false);
       }
@@ -63,7 +63,7 @@ export default function RootLayout() {
       if (!token) {
         // If no token, allow public routes, otherwise redirect to home
         if (!inAuthGroup && !isPublicStudentRoute) {
-          console.log('🔄 No token found, redirecting to home');
+          // console.log('🔄 No token found, redirecting to home');
           router.replace('/' as any);
         }
         return;
@@ -71,12 +71,12 @@ export default function RootLayout() {
 
       // Decode token to determine user type
       const detectedUserType = getUserTypeFromToken(token);
-      console.log(`🔍 Current route: ${currentRoot}, Detected user type: ${detectedUserType}`);
+      // console.log(`🔍 Current route: ${currentRoot}, Detected user type: ${detectedUserType}`);
 
       // Handle student routing
       if (detectedUserType === 'student') {
         if (!inStudentGroup) {
-          console.log('🚀 Routing student to /(student)/dashboard');
+          // console.log('🚀 Routing student to /(student)/dashboard');
           router.replace('/(student)/dashboard' as any);
         }
         return;

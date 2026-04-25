@@ -44,16 +44,16 @@ export const decodeToken = (token: string): DecodedToken | null => {
     // Parse JSON
     const parsed: DecodedToken = JSON.parse(decoded);
     
-    console.log('✅ Token decoded successfully:', {
-      type: parsed.type,
-      studentId: parsed.studentId || 'N/A',
-      schoolId: parsed.schoolId || 'N/A',
-      countryId: parsed.countryId || 'N/A',
-    });
+    // console.log('✅ Token decoded successfully:', {
+    //   type: parsed.type,
+    //   studentId: parsed.studentId || 'N/A',
+    //   schoolId: parsed.schoolId || 'N/A',
+    //   countryId: parsed.countryId || 'N/A',
+    // });
     
     return parsed;
   } catch (error: any) {
-    console.error('❌ Token decode error:', error.message);
+    // console.error('❌ Token decode error:', error.message);
     return null;
   }
 };

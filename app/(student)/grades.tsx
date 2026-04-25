@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -24,6 +24,7 @@ import { Colors } from '@/constants/design-system';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
+import { useAppColors } from '@/hooks/use-app-colors';
 
 const { width } = Dimensions.get('window');
 
@@ -74,6 +75,8 @@ const getLetterGrade = (score: number) => {
 
 export default function StudentGrades() {
     const router = useRouter();
+    const C = useAppColors();
+    const styles = useMemo(() => makeStyles(C), [C.scheme]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -348,11 +351,41 @@ export default function StudentGrades() {
     if (loading) {
         return (
             <ThemedView style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FACC15" />
-                <Text style={styles.loadingText}>SYNCHRONIZING ACADEMIC REEDS...</Text>
+                <ActivityIndicator size="large" color={Colors.accent.gold} />
+                <Text style={styles.loadingText}>SYNCHRONIZING ACADEMIC RECORDS...</Text>
             </ThemedView>
         );
     }
+
+        const MetricCard = ({ label, value, icon, color }: any) => (
+            <View style={styles.metricCard}>
+                <View style={[styles.metricIcon, { backgroundColor: color + '15' }]}>
+                    <Ionicons name={icon as any} size={18} color={color} />
+                </View>
+                <Text style={styles.metricValue}>{value}</Text>
+                <Text style={styles.metricLabel}>{label}</Text>
+            </View>
+        );
+
+        const ScoreBar = ({ label, value, max }: any) => {
+            const percentage = Math.min((value / max) * 100, 100);
+            return (
+                <View style={styles.scoreBarContainer}>
+                    <View style={styles.scoreBarHeader}>
+                        <Text style={styles.scoreBarLabel}>{label}</Text>
+                        <Text style={styles.scoreBarValue}>{value}/{max}</Text>
+                    </View>
+                    <View style={styles.progressBar}>
+                        <LinearGradient
+                            colors={['#FACC15', '#EAB308']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={[styles.progressFill, { width: `${percentage}%` }]}
+                        />
+                    </View>
+                </View>
+            );
+        };
 
     return (
         <ThemedView style={styles.container}>
@@ -361,7 +394,7 @@ export default function StudentGrades() {
                 style={styles.hero}
             >
                 <LinearGradient
-                    colors={['rgba(15, 23, 42, 0.7)', Colors.accent.navy]}
+                    colors={[C.isDark ? 'rgba(15, 23, 42, 0.7)' : 'rgba(255, 255, 255, 0.7)', C.background]}
                     style={styles.heroOverlay}
                 >
                     <View style={styles.header}>
@@ -526,8 +559,7 @@ export default function StudentGrades() {
                     <>
                         {summary && (
                             <View style={styles.summaryGrid}>
-                                <MetricCard label="RANK" value={summary.position ? `${summary.position}/${summary.total_students}` : '--'} icon="trophy-outline" color="#FACC15" />
-                                <MetricCard label="AVERAGE" value={summary.average_score ? `${parseFloat(summary.average_score as any).toFixed(1)}%` : '--'} icon="analytics-outline" color="#3B82F6" />
+                                <MetricCard label="AVERAGE" value={summary.average_score ? `${parseFloat(summary.average_score as any).toFixed(0)}%` : '--'} icon="analytics-outline" color="#3B82F6" />
                                 <MetricCard label="STATUS" value={`${summary.subjects_passed ?? 0} PASS`} icon="shield-checkmark-outline" color="#10B981" />
                             </View>
                         )}
@@ -554,13 +586,13 @@ export default function StudentGrades() {
                                         <View style={styles.gradeHeader}>
                                             <View style={styles.subjectInfo}>
                                                 <Text style={styles.subjectName}>{grade.subject_name || 'Generic Subject'}</Text>
-                                                <View style={styles.comparisonRow}>
-                                                    <Text style={styles.avgText}>Class Avg: {classAvg != null ? `${classAvg.toFixed(1)}%` : 'N/A'}</Text>
+                                                 <View style={styles.comparisonRow}>
+                                                    <Text style={styles.avgText}>Class Avg: {classAvg != null ? `${classAvg.toFixed(0)}%` : 'N/A'}</Text>
                                                     {classAvg != null && (
                                                         <View style={[styles.statusBadge, { backgroundColor: isAbove ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
                                                             <Ionicons name={isAbove ? 'trending-up' : 'trending-down'} size={12} color={isAbove ? '#10B981' : '#EF4444'} />
                                                             <Text style={[styles.statusText, { color: isAbove ? '#10B981' : '#EF4444' }]}>
-                                                                {Math.abs(total - classAvg).toFixed(1)}%
+                                                                {Math.abs(total - classAvg).toFixed(0)}%
                                                             </Text>
                                                         </View>
                                                     )}
@@ -611,7 +643,7 @@ export default function StudentGrades() {
             {/* Email Input Modal */}
             <Modal visible={emailModalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
+                    <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
                         <Text style={styles.modalTitle}>Secure Dispatch</Text>
                         <Text style={styles.modalSubtitle}>Enter destination address for academic credentials</Text>
                         <TextInput
@@ -638,7 +670,7 @@ export default function StudentGrades() {
             {/* Success Modal */}
             <Modal visible={showSuccessModal} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
+                    <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
                         <View style={styles.successIcon}>
                             <Ionicons name="checkmark-circle" size={64} color="#10B981" />
                         </View>
@@ -652,158 +684,129 @@ export default function StudentGrades() {
     );
 }
 
-function MetricCard({ label, value, icon, color }: any) {
-    return (
-        <View style={styles.metricCard}>
-            <View style={[styles.metricIcon, { backgroundColor: color + '15' }]}>
-                <Ionicons name={icon as any} size={18} color={color} />
-            </View>
-            <Text style={styles.metricValue}>{value}</Text>
-            <Text style={styles.metricLabel}>{label}</Text>
-        </View>
-    );
+
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+    return StyleSheet.create({
+        container: { flex: 1, backgroundColor: C.background },
+        loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
+        loadingText: { color: C.textSecondary, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+        
+        hero: { height: 280, width: '100%' },
+        heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
+        backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+        headerTitle: { color: C.text, fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+        heroContent: { marginTop: 'auto', marginBottom: 30 },
+        heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
+        heroMainTitle: { color: C.text, fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+
+        scrollView: { flex: 1, marginTop: -30 },
+        scrollContent: { padding: 20, paddingBottom: 60 },
+        alert: { marginBottom: 20 },
+
+        card: { backgroundColor: C.card, borderRadius: 32, padding: 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 24 },
+        cardLabel: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 20 },
+        filterTitle: { color: C.textLabel, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, marginTop: 24, textTransform: 'uppercase' },
+        
+        inputSelector: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: C.inputBg,
+            borderRadius: 16,
+            paddingHorizontal: 20,
+            height: 60,
+            borderWidth: 1,
+            borderColor: C.inputBorder,
+        },
+        selectorText: { color: C.inputText, fontSize: 15, fontWeight: '700' },
+        
+        selectorList: {
+            backgroundColor: C.modalBg,
+            borderRadius: 20,
+            marginTop: 8,
+            padding: 8,
+            borderWidth: 1,
+            borderColor: C.cardBorder,
+            overflow: 'hidden',
+        },
+        selectorItem: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            borderRadius: 12,
+        },
+        selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
+        selectorItemText: { color: C.textSecondary, fontSize: 14, fontWeight: '600' },
+        selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
+
+        pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
+        pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.cardBorder },
+        pillActive: { backgroundColor: Colors.accent.gold + '20', borderColor: Colors.accent.gold },
+        pillText: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
+        pillTextActive: { color: Colors.accent.gold, fontWeight: '800' },
+        
+        classPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: C.actionItemBg, marginRight: 10, borderWidth: 1, borderColor: C.cardBorder },
+        classPillActive: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
+        classPillText: { color: C.textSecondary, fontSize: 13, fontWeight: '700' },
+        classPillTextActive: { color: Colors.accent.navy, fontWeight: '800' },
+        emptyFilterText: { color: C.textMuted, fontSize: 12, fontStyle: 'italic', marginVertical: 8 },
+
+        inlineLoader: { marginVertical: 10, alignSelf: 'flex-start' },
+
+        searchBtn: { height: 56 },
+
+        summaryGrid: { flexDirection: 'row', gap: 12, marginBottom: 32 },
+        metricCard: { flex: 1, backgroundColor: C.card, borderRadius: 24, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: C.cardBorder },
+        metricIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+        metricValue: { color: C.text, fontSize: 16, fontWeight: '900' },
+        metricLabel: { color: C.textSecondary, fontSize: 10, fontWeight: '700', marginTop: 2 },
+
+        sectionLabel: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 20, textAlign: 'center' },
+        gradesList: { gap: 16, marginBottom: 30 },
+        gradeCard: { backgroundColor: C.card, borderRadius: 32, padding: 20, borderWidth: 1, borderColor: C.cardBorder },
+        gradeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+        subjectInfo: { flex: 1 },
+        subjectName: { color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 6 },
+        comparisonRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+        avgText: { color: C.textSecondary, fontSize: 11, fontWeight: '600' },
+        statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+        statusText: { fontSize: 10, fontWeight: '800' },
+        gradeCircle: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+        gradeLetter: { fontSize: 24, fontWeight: '900', marginBottom: -4 },
+        gradeDesc: { fontSize: 8, fontWeight: '800', opacity: 0.8 },
+
+        scoreBars: { gap: 16, marginBottom: 20 },
+        scoreBarContainer: { gap: 6 },
+        scoreBarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+        scoreBarLabel: { color: C.textSecondary, fontSize: 11, fontWeight: '700' },
+        scoreBarValue: { color: C.text, fontSize: 11, fontWeight: '800' },
+        progressBar: { height: 6, backgroundColor: C.divider, borderRadius: 3, overflow: 'hidden' },
+        progressFill: { height: '100%', borderRadius: 3 },
+
+        totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: C.divider },
+        totalLabel: { color: C.textSecondary, fontSize: 11, fontWeight: '800' },
+        totalValue: { fontSize: 24, fontWeight: '900' },
+
+        dispatchBtn: { height: 60, borderRadius: 20 },
+
+        emptyState: { alignItems: 'center', marginTop: 60, gap: 16 },
+        emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+        emptyTitle: { color: C.text, fontSize: 20, fontWeight: '900' },
+        emptyDesc: { color: C.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22, paddingHorizontal: 40 },
+
+        modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
+        modalContent: { width: '100%', borderRadius: 32, padding: 32, borderWidth: 1, borderColor: C.cardBorder },
+        modalTitle: { color: C.text, fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
+        modalSubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', marginBottom: 24 },
+        modalInput: { backgroundColor: C.inputBg, borderRadius: 16, padding: 16, color: C.inputText, fontSize: 16, marginBottom: 20, borderWidth: 1, borderColor: C.inputBorder },
+        modalActions: { flexDirection: 'row', gap: 12 },
+        modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: C.actionIconWrap },
+        modalCancelText: { color: C.textSecondary, fontWeight: '700' },
+        modalSubmit: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold },
+        modalSubmitText: { color: Colors.accent.navy, fontWeight: '900' },
+        successIcon: { alignItems: 'center', marginBottom: 20 },
+    });
 }
-
-function ScoreBar({ label, value, max }: any) {
-    const percentage = Math.min((value / max) * 100, 100);
-    return (
-        <View style={styles.scoreBarContainer}>
-            <View style={styles.scoreBarHeader}>
-                <Text style={styles.scoreBarLabel}>{label}</Text>
-                <Text style={styles.scoreBarValue}>{value}/{max}</Text>
-            </View>
-            <View style={styles.progressBar}>
-                <LinearGradient
-                    colors={['#FACC15', '#EAB308']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[styles.progressFill, { width: `${percentage}%` }]}
-                />
-            </View>
-        </View>
-    );
-}
-
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: Colors.accent.navy },
-    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent.navy },
-    loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
-    
-    hero: { height: 280, width: '100%' },
-    heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
-    backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
-    heroContent: { marginTop: 'auto', marginBottom: 30 },
-    heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
-    heroMainTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -1 },
-
-    scrollView: { flex: 1, marginTop: -30 },
-    scrollContent: { padding: 20, paddingBottom: 60 },
-    alert: { marginBottom: 20 },
-
-    card: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: 24 },
-    cardLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 20 },
-    filterTitle: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, marginTop: 24, textTransform: 'uppercase' },
-    
-    inputSelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        height: 60,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-    },
-    selectorText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-    
-    selectorList: {
-        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-        borderRadius: 20,
-        marginTop: 8,
-        padding: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        overflow: 'hidden',
-    },
-    selectorItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderRadius: 12,
-    },
-    selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
-    selectorItemText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-    selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
-
-    pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
-    pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-    pillActive: { backgroundColor: Colors.accent.gold + '20', borderColor: Colors.accent.gold },
-    pillText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-    pillTextActive: { color: Colors.accent.gold, fontWeight: '800' },
-    
-    classPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-    classPillActive: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
-    classPillText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
-    classPillTextActive: { color: Colors.accent.navy, fontWeight: '800' },
-    emptyFilterText: { color: '#475569', fontSize: 12, fontStyle: 'italic', marginVertical: 8 },
-
-    inlineLoader: { marginVertical: 10, alignSelf: 'flex-start' },
-
-    searchBtn: { height: 56 },
-
-    summaryGrid: { flexDirection: 'row', gap: 12, marginBottom: 32 },
-    metricCard: { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 24, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)' },
-    metricIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-    metricValue: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
-    metricLabel: { color: '#64748B', fontSize: 10, fontWeight: '700', marginTop: 2 },
-
-    sectionLabel: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 20, textAlign: 'center' },
-    gradesList: { gap: 16, marginBottom: 30 },
-    gradeCard: { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 32, padding: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
-    gradeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    subjectInfo: { flex: 1 },
-    subjectName: { color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginBottom: 6 },
-    comparisonRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    avgText: { color: '#64748B', fontSize: 11, fontWeight: '600' },
-    statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-    statusText: { fontSize: 10, fontWeight: '800' },
-    gradeCircle: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
-    gradeLetter: { fontSize: 24, fontWeight: '900', marginBottom: -4 },
-    gradeDesc: { fontSize: 8, fontWeight: '800', opacity: 0.8 },
-
-    scoreBars: { gap: 16, marginBottom: 20 },
-    scoreBarContainer: { gap: 6 },
-    scoreBarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    scoreBarLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '700' },
-    scoreBarValue: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
-    progressBar: { height: 6, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 3, overflow: 'hidden' },
-    progressFill: { height: '100%', borderRadius: 3 },
-
-    totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.05)' },
-    totalLabel: { color: '#64748B', fontSize: 11, fontWeight: '800' },
-    totalValue: { fontSize: 24, fontWeight: '900' },
-
-    dispatchBtn: { height: 60, borderRadius: 20 },
-
-    emptyState: { alignItems: 'center', marginTop: 60, gap: 16 },
-    emptyIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255, 255, 255, 0.03)', justifyContent: 'center', alignItems: 'center' },
-    emptyTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
-    emptyDesc: { color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 22, paddingHorizontal: 40 },
-
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-    modalContent: { width: '100%', backgroundColor: '#1E293B', borderRadius: 32, padding: 32, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-    modalTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
-    modalSubtitle: { color: '#94A3B8', fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-    modalInput: { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 16, padding: 16, color: '#FFFFFF', fontSize: 16, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-    modalActions: { flexDirection: 'row', gap: 12 },
-    modalCancel: { flex: 1, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.05)' },
-    modalCancelText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-    modalSubmit: { flex: 2, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold },
-    modalSubmitText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
-    successIcon: { alignItems: 'center', marginBottom: 20 },
-});
