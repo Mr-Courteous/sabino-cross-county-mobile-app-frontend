@@ -12,7 +12,7 @@ export default function TabLayout() {
       try {
         const ok = window.confirm('Are you sure you want to logout?');
         if (ok) {
-          try { await clearAllStorage(); } catch (e) { console.warn('Failed to clear storage during logout', e); }
+          try { await clearAllStorage(); } catch (e) { }
           router.replace('/');
         }
       } catch (e) {
@@ -21,7 +21,7 @@ export default function TabLayout() {
           'Are you sure you want to logout?',
           [
             { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-            { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { console.warn(e); } router.replace('/'); }, style: 'destructive' }
+            { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { } router.replace('/'); }, style: 'destructive' }
           ]
         );
       }
@@ -33,7 +33,7 @@ export default function TabLayout() {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-        { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { console.warn(e); } router.replace('/'); }, style: 'destructive' }
+        { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { } router.replace('/'); }, style: 'destructive' }
       ]
     );
   };

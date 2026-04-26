@@ -140,7 +140,6 @@ export default function ReportViewScreen() {
         }
       }
     } catch (err) {
-      console.error('Error fetching sessions:', err);
     }
   };
 

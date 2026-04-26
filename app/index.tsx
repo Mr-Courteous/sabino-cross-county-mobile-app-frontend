@@ -21,7 +21,7 @@ export default function HomePage() {
     return (
       <View style={styles.fCard}>
         <View style={styles.iconCircle}>
-          <Ionicons name={icon} size={24} color={C.isDark ? "#1E293B" : "#2563EB"} />
+          <Ionicons name={icon} size={24} color={C.isDark ? "#fff" : "#2563EB"} />
         </View>
         <ThemedText style={styles.fTitle}>{title}</ThemedText>
         <ThemedText style={styles.fDesc}>{desc}</ThemedText>
@@ -70,7 +70,7 @@ export default function HomePage() {
                 style={styles.studentLoginButton}
                 onPress={() => router.push('/(student)' as any)}
               >
-                <Ionicons name="person-outline" size={20} color="#2563EB" style={{ marginRight: 8 }} />
+                <Ionicons name="person-outline" size={20} color={C.isDark ? "#fff" : "#2563EB"} style={{ marginRight: 8 }} />
                 <ThemedText style={styles.studentLoginText}>STUDENTS' LOGIN</ThemedText>
               </TouchableOpacity>
             </View>
@@ -167,18 +167,18 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#fff',
+      backgroundColor: C.isDark ? 'rgba(255,255,255,0.1)' : '#fff',
       paddingVertical: 18,
       paddingHorizontal: 25,
       borderRadius: 15,
       borderWidth: 2,
-      borderColor: '#2563EB',
+      borderColor: C.isDark ? 'rgba(255,255,255,0.2)' : '#2563EB',
       shadowColor: '#2563EB',
       shadowOpacity: 0.1,
       shadowRadius: 10,
       elevation: 4
     },
-    studentLoginText: { color: '#2563EB', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
+    studentLoginText: { color: C.isDark ? '#fff' : '#2563EB', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
 
     content: {
       padding: 24,

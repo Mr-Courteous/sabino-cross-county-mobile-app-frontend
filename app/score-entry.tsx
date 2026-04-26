@@ -230,7 +230,6 @@ export default function ScoreEntryScreen() {
         setClasses(data.data);
       }
     } catch (err) {
-      console.error('Classes fetch error:', err);
     }
   };
 
@@ -244,7 +243,6 @@ export default function ScoreEntryScreen() {
         setSubjects(data.data);
       }
     } catch (err) {
-      console.error('Subjects fetch error:', err);
     }
   };
 
@@ -263,7 +261,6 @@ export default function ScoreEntryScreen() {
         setSubjects(data.data);
       }
     } catch (err) {
-      console.error('Subject search error:', err);
     } finally {
       setSearchingSubjects(false);
     }
@@ -287,7 +284,6 @@ export default function ScoreEntryScreen() {
         }
       }
     } catch (err) {
-      console.error('Academic sessions fetch error:', err);
     }
   };
 
@@ -342,7 +338,6 @@ export default function ScoreEntryScreen() {
 
       setMatrixData(allRows);
     } catch (err) {
-      console.error('Matrix load err:', err);
     } finally {
       setLoadingSheet(false);
     }
@@ -484,7 +479,6 @@ export default function ScoreEntryScreen() {
         setStatusAlert({ visible: true, type: 'error', title: 'Update Failed', message: data.message || 'Unable to save scores.' });
       }
     } catch (err) {
-      console.error('Save scores error:', err);
     } finally {
       setSavingScores(false);
     }

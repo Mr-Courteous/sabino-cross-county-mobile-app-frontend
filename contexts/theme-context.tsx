@@ -48,7 +48,6 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await SecureStore.setItemAsync('themeMode', mode);
       }
     } catch (err) {
-      console.error('Failed to persist theme mode:', err);
     }
   }, []);
 
@@ -71,7 +70,6 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       
       setThemeModeState(savedMode);
     } catch (err) {
-      console.error('Failed to load theme mode:', err);
     }
   }, []);
 
@@ -113,7 +111,6 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
       }
     } catch (err) {
-      console.error('Theme Load Error:', err);
       setThemeColor('#2196F3');
     } finally {
       setIsLoadingTheme(false);

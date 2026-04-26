@@ -110,7 +110,6 @@ export default function ManageScoresScreen() {
       setSubjects(subjectsArray);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load initial data';
-      console.error('[MANAGE-SCORES] Error loading data:', errorMessage);
       setError(errorMessage);
     } finally {
       setLoadingData(false);

@@ -172,7 +172,6 @@ export default function EditProfileModal({ visible, onClose, student, onUpdate }
                 setError(data.error || 'Failed to update profile');
             }
         } catch (err: any) {
-            console.error('Update Profile Error:', err);
             setError('Connection error. Please try again.');
         } finally {
             setLoading(false);

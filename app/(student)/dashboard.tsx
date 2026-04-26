@@ -119,7 +119,7 @@ export default function StudentDashboard() {
                 setEnrollments(data.data || []);
             }
         } catch (error) {
-            console.error('Failed to load enrollments:', error);
+
         }
     };
 
@@ -139,7 +139,7 @@ export default function StudentDashboard() {
                 router.replace('/(student)');
             }
         } catch (error) {
-            console.error('Error loading student data:', error);
+
             setStatusAlert({
                 visible: true,
                 type: 'error',

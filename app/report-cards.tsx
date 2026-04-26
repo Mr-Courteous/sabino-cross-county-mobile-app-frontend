@@ -29,6 +29,7 @@ import { useAppColors } from '@/hooks/use-app-colors';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IS_TINY = SCREEN_WIDTH < 320;
 const IS_MICRO = SCREEN_WIDTH < 280;
+const IS_ULTRA = SCREEN_WIDTH < 260;
 
 const getToken = async () => {
   if (Platform.OS !== 'web') return await SecureStore.getItemAsync('userToken');
@@ -76,6 +77,7 @@ export default function ReportSearchScreen() {
 
   // Native Score Preview State
   const [selectedPreviewStudent, setSelectedPreviewStudent] = useState<any>(null);
+  const [regeneratingRemark, setRegeneratingRemark] = useState(false);
 
   // Dropdown States
   const [showSessionSelector, setShowSessionSelector] = useState(false);
@@ -183,7 +185,6 @@ export default function ReportSearchScreen() {
         }
       }
     } catch (err) {
-      console.error('Error fetching sessions:', err);
     }
   };
 
@@ -258,6 +259,49 @@ export default function ReportSearchScreen() {
       term,
       sessionId
     });
+  };
+
+  const handleRegenerateRemark = async () => {
+    if (!selectedPreviewStudent) return;
+    const enrollmentId = selectedPreviewStudent.enrollment_id;
+    const term = selectedPreviewStudent.displayTerm || '1';
+    const sessionId = selectedPreviewStudent.session_id || selectedSession;
+
+    setRegeneratingRemark(true);
+    try {
+      const token = await getToken();
+      const response = await fetch(
+        `${API_BASE_URL}/api/reports/regenerate-remark/${enrollmentId}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ term: parseInt(term), sessionId: parseInt(sessionId) }),
+        }
+      );
+      const result = await response.json();
+      if (response.ok && result.success) {
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Remark Regenerated',
+          message: result.message || 'AI remark has been regenerated successfully.',
+        });
+      } else {
+        throw new Error(result.error || 'Failed to regenerate remark');
+      }
+    } catch (err: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Regeneration Failed',
+        message: err.message || 'Could not regenerate AI remark. Please try again.',
+      });
+    } finally {
+      setRegeneratingRemark(false);
+    }
   };
 
   const handleNativePreview = (student: any, term: string) => {
@@ -598,6 +642,29 @@ export default function ReportSearchScreen() {
                 <TouchableOpacity style={styles.previewCancel} onPress={() => setSelectedPreviewStudent(null)}>
                   <ThemedText style={styles.previewCancelText}>Discard</ThemedText>
                 </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.previewRegenerate, regeneratingRemark && styles.previewRegenerateDisabled]} 
+                  onPress={() => {
+                    Alert.alert(
+                      'Regenerate AI Remark',
+                      'This will generate a new AI remark for this student. Continue?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Regenerate', onPress: handleRegenerateRemark },
+                      ]
+                    );
+                  }}
+                  disabled={regeneratingRemark}
+                >
+                  {regeneratingRemark ? (
+                    <ActivityIndicator size="small" color={Colors.accent.navy} />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh" size={16} color={Colors.accent.navy} />
+                      <ThemedText style={styles.previewRegenerateText}>Regenerate AI</ThemedText>
+                    </>
+                  )}
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.previewSubmit} onPress={handleProceedToEmail}>
                   <Ionicons name="mail" size={18} color={Colors.accent.navy} />
                   <ThemedText style={styles.previewSubmitText}>Proceed to Email</ThemedText>
@@ -620,10 +687,11 @@ export default function ReportSearchScreen() {
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setCurrentEmailRequest(null)}>
-                <ThemedText style={styles.modalCancelText}>Discard</ThemedText>
+                <ThemedText style={styles.modalCancelText}>Cancel</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalSubmit} onPress={handleEmailModalSubmit}>
-                <ThemedText style={styles.modalSubmitText}>Transmit</ThemedText>
+                <Ionicons name="send" size={18} color={Colors.accent.navy} />
+                <ThemedText style={styles.modalSubmitText}>Send to Email</ThemedText>
               </TouchableOpacity>
             </View>
           </View>
@@ -744,10 +812,13 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     previewFooter: { padding: IS_TINY ? 16 : 24, borderTopWidth: 1, borderTopColor: C.divider },
     footerInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: IS_TINY ? 12 : 20 },
     footerInfoText: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-    previewActionRow: { flexDirection: IS_TINY ? 'column' : 'row', gap: 12 },
-    previewCancel: { height: IS_TINY ? 48 : 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: C.divider, flex: IS_TINY ? 0 : 1 },
-    previewCancelText: { color: C.text, fontSize: 14, fontWeight: '700' },
-    previewSubmit: { height: IS_TINY ? 48 : 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 16, backgroundColor: Colors.accent.gold, flex: IS_TINY ? 0 : 2 },
-    previewSubmitText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
+    previewActionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' },
+    previewCancel: { paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 12, borderWidth: 1, borderColor: C.divider },
+    previewCancelText: { color: C.text, fontSize: 12, fontWeight: '700' },
+    previewRegenerate: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: Colors.accent.gold, borderWidth: 1, borderColor: Colors.accent.gold },
+    previewRegenerateDisabled: { opacity: 0.6 },
+    previewRegenerateText: { color: Colors.accent.navy, fontSize: 12, fontWeight: '800' },
+    previewSubmit: { paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, backgroundColor: Colors.accent.gold },
+    previewSubmitText: { color: Colors.accent.navy, fontSize: 12, fontWeight: '900' },
   });
 }

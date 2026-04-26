@@ -220,7 +220,6 @@ export default function StudentsManager() {
       }
       setDownloadModalVisible(false);
     } catch (e) {
-      console.error(e);
       setStatusAlert({ visible: true, type: 'error', title: 'Download Error', message: 'Could not generate sample bulk data.' });
     }
   };
@@ -262,7 +261,6 @@ export default function StudentsManager() {
         throw new Error(json.message || 'Server failed to dispatch email');
       }
     } catch (e: any) {
-      console.log("Dispatch Template Error Details:", e);
       setTemplateError(e.message || 'Unable to connect to the server. Check if backend is running.');
     } finally {
       setSendingTemplate(false);

@@ -28,7 +28,6 @@ export const decodeToken = (token: string): DecodedToken | null => {
     // JWT format: header.payload.signature
     const parts = token.split('.');
     if (parts.length !== 3) {
-      console.error('❌ Invalid token format');
       return null;
     }
 
@@ -44,16 +43,11 @@ export const decodeToken = (token: string): DecodedToken | null => {
     // Parse JSON
     const parsed: DecodedToken = JSON.parse(decoded);
     
-    // console.log('✅ Token decoded successfully:', {
-    //   type: parsed.type,
-    //   studentId: parsed.studentId || 'N/A',
-    //   schoolId: parsed.schoolId || 'N/A',
-    //   countryId: parsed.countryId || 'N/A',
-    // });
+
     
     return parsed;
   } catch (error: any) {
-    // console.error('❌ Token decode error:', error.message);
+
     return null;
   }
 };
@@ -69,13 +63,11 @@ export const isTokenExpired = (token: string): boolean => {
     const now = Date.now() / 1000; // Convert to seconds
     const isExpired = decoded.exp < now;
     
-    if (isExpired) {
-      console.warn('⚠️ Token is expired');
-    }
+
     
     return isExpired;
   } catch (error) {
-    console.error('❌ Token expiration check error:', error);
+
     return true;
   }
 };
@@ -89,13 +81,11 @@ export const getUserTypeFromToken = (token: string): 'student' | 'school' | null
     const decoded = decodeToken(token);
     const userType = decoded?.type as 'student' | 'school' | null;
     
-    if (!userType) {
-      console.warn('⚠️ User type not found in token');
-    }
+
     
     return userType || null;
   } catch (error) {
-    console.error('❌ Error getting user type:', error);
+
     return null;
   }
 };
@@ -111,13 +101,11 @@ export const getUserIdFromToken = (token: string): number | null => {
     // For schools: use id or schoolId
     const userId = decoded?.studentId || decoded?.id || decoded?.schoolId;
     
-    if (!userId) {
-      console.warn('⚠️ User ID not found in token');
-    }
+
     
     return userId || null;
   } catch (error) {
-    console.error('❌ Error getting user ID:', error);
+
     return null;
   }
 };
@@ -130,13 +118,11 @@ export const getSchoolIdFromToken = (token: string): number | null => {
     const decoded = decodeToken(token);
     const schoolId = decoded?.schoolId || decoded?.id;
     
-    if (!schoolId) {
-      console.warn('⚠️ School ID not found in token');
-    }
+
     
     return schoolId || null;
   } catch (error) {
-    console.error('❌ Error getting school ID:', error);
+
     return null;
   }
 };
@@ -149,13 +135,11 @@ export const getCountryIdFromToken = (token: string): number | null => {
     const decoded = decodeToken(token);
     const countryId = decoded?.countryId;
     
-    if (!countryId) {
-      console.warn('⚠️ Country ID not found in token');
-    }
+
     
     return countryId || null;
   } catch (error) {
-    console.error('❌ Error getting country ID:', error);
+
     return null;
   }
 };

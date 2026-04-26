@@ -183,7 +183,6 @@ export default function StudentGrades() {
                 }
             }
         } catch (error) {
-            console.error('Metadata fetch error:', error);
         } finally {
             setFetchingMetadata(false);
         }

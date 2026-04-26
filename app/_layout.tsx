@@ -31,7 +31,7 @@ export default function RootLayout() {
           setUserType(null);
         }
       } catch (e) {
-        // console.error('❌ Auth check error:', e);
+
       } finally {
         setIsLoading(false);
       }
@@ -75,14 +75,14 @@ export default function RootLayout() {
       if (detectedUserType === 'school') {
         const isResetRoute = currentRoot === '(auth)' && ['forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1] as string);
         if (inStudentGroup || (inAuthGroup && !isResetRoute)) {
-          console.log('🚀 Routing school to /dashboard');
+
           router.replace('/dashboard' as any);
         }
         return;
       }
 
       if (!inAuthGroup) {
-        console.log('⚠️ Invalid or unrecognized token, redirecting to home');
+
         router.replace('/' as any);
       }
     };
