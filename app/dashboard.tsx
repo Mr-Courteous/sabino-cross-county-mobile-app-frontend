@@ -4,13 +4,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
-  Dimensions,
   Platform,
   ActivityIndicator,
   Image,
   RefreshControl,
   Modal,
   ImageBackground,
+  useWindowDimensions,
 } from 'react-native';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
@@ -21,20 +21,18 @@ import { API_BASE_URL } from '@/utils/api-service';
 import { clearAllStorage } from '@/utils/storage';
 import { useTheme } from '@/contexts/theme-context';
 import { Colors } from '@/constants/design-system';
-import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAppColors } from '@/hooks/use-app-colors';
 import Footer from './components/Footer';
 
-const { width } = Dimensions.get('window');
-
 export default function DashboardPage() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const { themeColor, loadThemeFromPreferences } = useTheme();
   const C = useAppColors();
-  const styles = useMemo(() => makeStyles(C), [C.scheme, themeColor]);
+  const styles = useMemo(() => makeStyles(C, width), [C.scheme, themeColor, width]);
 
   const [schoolData, setSchoolData] = useState<any>(null);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
@@ -76,6 +74,12 @@ export default function DashboardPage() {
         })
       ]);
 
+      // Handle subscription/payment required (402)
+      if (schoolRes.status === 402 || sessionRes.status === 402) {
+        router.replace('/pricing');
+        return;
+      }
+
       if (schoolRes.status === 401 || sessionRes.status === 401) {
         await clearAllStorage();
         router.replace('/(auth)');
@@ -101,7 +105,7 @@ export default function DashboardPage() {
         visible: true,
         type: 'error',
         title: 'System Error',
-        message: 'Unable to synchronize dashboard data.'
+        message: 'Unable to sync dashboard.'
       });
     } finally {
       setLoading(false);
@@ -123,7 +127,7 @@ export default function DashboardPage() {
       visible: true,
       type: 'warning',
       title: 'Portal Sign-out',
-      message: 'Are you sure you want to terminate your current administrative session?',
+      message: 'Terminate administrative session?',
       confirmLabel: 'LOGOUT',
       onConfirm: async () => {
         await clearAllStorage();
@@ -135,36 +139,37 @@ export default function DashboardPage() {
   if (loading) return (
     <ThemedView style={styles.loader}>
       <ActivityIndicator size="large" color={Colors.accent.gold} />
-      <ThemedText style={styles.loadingText}>INITIALIZING PORTAL...</ThemedText>
+      <ThemedText style={styles.loadingText}>SABINO EDU...</ThemedText>
     </ThemedView>
   );
+
+  const isTiny = width < 300;
 
   return (
     <ThemedView style={styles.mainWrapper}>
       <StatusBar style={C.isDark ? 'light' : 'dark'} />
 
-      {/* ── Hero Header ── */}
       <ImageBackground
-        source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
+        source={{ uri: 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?q=80&w=2070' }}
         style={styles.hero}
-        imageStyle={{ borderBottomLeftRadius: 40, borderBottomRightRadius: 40 }}
+        imageStyle={{ borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}
       >
         <LinearGradient
           colors={C.isDark ? ['rgba(15, 23, 42, 0.4)', 'rgba(15, 23, 42, 0.95)'] : ['rgba(255, 255, 255, 0.2)', 'rgba(255, 255, 255, 0.95)']}
           style={styles.heroOverlay}
         >
-          <View style={[styles.header, { zIndex: 50 }]}>
+          <View style={styles.header}>
             <View style={[styles.logoContainer, { backgroundColor: C.isDark ? '#FFFFFF' : '#F8FAFC' }]}>
               {schoolData?.logo ? (
                 <Image source={{ uri: schoolData.logo }} style={styles.schoolLogo} />
               ) : (
                 <View style={[styles.logoPlaceholder, { backgroundColor: themeColor + '20' }]}>
-                  <Ionicons name="school" size={28} color={themeColor} />
+                  <Ionicons name="school" size={24} color={themeColor} />
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={handleLogout} style={[styles.powerBtn, { zIndex: 50 }]}>
-              <Ionicons name="power" size={20} color={Colors.accent.gold} />
+            <TouchableOpacity onPress={handleLogout} style={styles.powerBtn}>
+              <Ionicons name="power" size={18} color={Colors.accent.gold} />
             </TouchableOpacity>
           </View>
 
@@ -172,32 +177,24 @@ export default function DashboardPage() {
             <ThemedText style={styles.schoolType}>
               {schoolData?.school_type?.toUpperCase() || 'REGISTERED INSTITUTION'}
             </ThemedText>
-            <ThemedText style={styles.schoolName}>
-              {schoolData?.name?.toUpperCase() || 'SABINO ACADEMY'}
+            <ThemedText style={styles.schoolName} numberOfLines={2}>
+              {schoolData?.name?.toUpperCase() || 'SABINO EDU'}
             </ThemedText>
             <View style={styles.schoolMetaRow}>
-              <View style={[styles.metaBadge, { backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-                <Ionicons name="shield-checkmark" size={12} color={C.textSecondary} />
+              <View style={styles.metaBadge}>
+                <Ionicons name="shield-checkmark" size={10} color={C.textSecondary} />
                 <ThemedText style={styles.schoolReg}>REG: {schoolData?.registration_code || 'PENDING'}</ThemedText>
               </View>
               {schoolData?.email && (
-                <View style={[styles.metaBadge, { backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-                  <Ionicons name="mail" size={12} color={C.textSecondary} />
+                <View style={styles.metaBadge}>
+                  <Ionicons name="mail" size={10} color={C.textSecondary} />
                   <ThemedText style={styles.schoolReg}>{schoolData.email}</ThemedText>
                 </View>
               )}
               {schoolData?.phone && (
-                <View style={[styles.metaBadge, { backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-                  <Ionicons name="call" size={12} color={C.textSecondary} />
+                <View style={styles.metaBadge}>
+                  <Ionicons name="call" size={10} color={C.textSecondary} />
                   <ThemedText style={styles.schoolReg}>{schoolData.phone}</ThemedText>
-                </View>
-              )}
-              {(schoolData?.city || schoolData?.country) && (
-                <View style={[styles.metaBadge, { backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-                  <Ionicons name="location" size={12} color={C.isDark ? Colors.accent.gold : '#2563EB'} />
-                  <ThemedText style={[styles.schoolReg, { color: C.isDark ? Colors.accent.gold : '#2563EB' }]}>
-                    {[schoolData.city, schoolData.state, schoolData.country].filter(Boolean).join(', ')}
-                  </ThemedText>
                 </View>
               )}
             </View>
@@ -205,86 +202,43 @@ export default function DashboardPage() {
         </LinearGradient>
       </ImageBackground>
 
-      {/* ── Scrollable Content ── */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent.gold} />}
       >
+        <View style={[styles.card, { marginTop: 15 }]}>
+          <ThemedText style={styles.cardLabel}>SCHOOL DETAILS</ThemedText>
+          <View style={styles.actionList}>
+            <DetailItem icon="map" label="Region" value={`${schoolData?.city || 'N/A'}, ${schoolData?.state || 'N/A'}`} C={C} styles={styles} />
+            <DetailItem icon="location" label="Address" value={schoolData?.address || 'Address not set'} C={C} styles={styles} />
+            <DetailItem icon="mail" label="Official Email" value={schoolData?.email || 'N/A'} C={C} styles={styles} />
+            <DetailItem icon="call" label="Contact Number" value={schoolData?.phone || 'N/A'} C={C} styles={styles} />
+          </View>
+        </View>
         <View style={styles.card}>
           <ThemedText style={styles.cardLabel}>OPERATIONS CENTER</ThemedText>
           <View style={styles.actionList}>
-            <ActionListItem
-              title="Student Management"
-              icon="people-outline"
-              onPress={() => router.push('/students_list')}
-              highlight
-              themeColor={Colors.primary.main}
-              C={C}
-              styles={styles}
-            />
-            <ActionListItem
-              title="Score & Assessments Entry"
-              icon="document-text-outline"
-              onPress={() => router.push('/score-entry')}
-              C={C}
-              styles={styles}
-            />
-            <ActionListItem
-              title="Batch Report Generation"
-              icon="copy-outline"
-              onPress={() => router.push('/report-cards')}
-              C={C}
-              styles={styles}
-            />
-            <ActionListItem
-              title="Institution Profile"
-              icon="business-outline"
-              onPress={() => router.push('/school-profile')}
-              C={C}
-              styles={styles}
-            />
-            <ActionListItem
-              title="School Branding Preferences"
-              icon="color-palette-outline"
-              onPress={() => router.push('/preferences')}
-              highlight
-              themeColor={themeColor}
-              C={C}
-              styles={styles}
-            />
-            <ActionListItem
-              title="Institution Finance"
-              icon="card-outline"
-              onPress={() => router.push('/(payments)/initiate')}
-              C={C}
-              styles={styles}
-            />
+            <ActionListItem title="Students" icon="people-outline" onPress={() => router.push('/students_list')} highlight themeColor={Colors.primary.main} C={C} styles={styles} />
+            <ActionListItem title="Score Entry" icon="document-text-outline" onPress={() => router.push('/score-entry')} C={C} styles={styles} />
+            <ActionListItem title="Reports" icon="copy-outline" onPress={() => router.push('/report-cards')} C={C} styles={styles} />
+            <ActionListItem title="Institution" icon="business-outline" onPress={() => router.push('/school-profile')} C={C} styles={styles} />
+            <ActionListItem title="Branding" icon="color-palette-outline" onPress={() => router.push('/preferences')} C={C} styles={styles} />
+            <ActionListItem title="Chat Support" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2348169119816')} C={C} styles={styles} />
+            <View style={[styles.actionListItem, { backgroundColor: 'rgba(37, 211, 102, 0.1)', borderColor: 'rgba(37, 211, 102, 0.3)', justifyContent: 'center', paddingVertical: 12 }]}>
+              <ThemedText style={{ color: '#25D366', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>Chat us on WhatsApp if you have any issue</ThemedText>
+            </View>
           </View>
         </View>
 
         <View style={{ flex: 1 }} />
-        <Footer themeColor={themeColor} schoolName={schoolData?.name} onLogout={handleLogout} />
+        <Footer themeColor={themeColor} schoolName="SABINO EDU" onLogout={handleLogout} />
       </ScrollView>
 
-      {/* Alert Modal */}
-      <Modal 
-        visible={statusAlert.visible} 
-        transparent 
-        animationType="fade"
-        onRequestClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-      >
+      <Modal visible={statusAlert.visible} transparent animationType="fade" onRequestClose={() => setStatusAlert({ ...statusAlert, visible: false })}>
         <View style={styles.alertOverlay}>
-          <CustomAlert
-            type={statusAlert.type}
-            title={statusAlert.title}
-            message={statusAlert.message}
-            onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-            onConfirm={statusAlert.onConfirm}
-            confirmLabel={statusAlert.confirmLabel}
-            style={{ width: '100%' }}
-          />
+          <CustomAlert {...statusAlert} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} style={{ width: '100%' }} />
         </View>
       </Modal>
     </ThemedView>
@@ -294,76 +248,73 @@ export default function DashboardPage() {
 function ActionListItem({ title, icon, onPress, themeColor, highlight, C, styles }: any) {
   return (
     <TouchableOpacity
-      style={[
-        styles.actionListItem,
-        {
-          backgroundColor: highlight ? themeColor + '10' : C.actionItemBg,
-          borderColor: highlight ? themeColor + '40' : C.actionItemBorder,
-        }
-      ]}
+      style={[styles.actionListItem, { backgroundColor: highlight ? themeColor + '10' : C.actionItemBg, borderColor: highlight ? themeColor + '40' : C.actionItemBorder }]}
       onPress={onPress}
       activeOpacity={0.7}
     >
       <View style={styles.actionListLeft}>
-        <View style={[
-          styles.actionListIconWrap,
-          { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }
-        ]}>
-          <Ionicons
-            name={icon}
-            size={22}
-            color={highlight ? themeColor : Colors.accent.gold}
-          />
+        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}>
+          <Ionicons name={icon} size={18} color={highlight ? themeColor : Colors.accent.gold} />
         </View>
-        <ThemedText
-          style={[
-            styles.actionListTitle,
-            { fontWeight: highlight ? '800' : '700' }
-          ]}
-          numberOfLines={2}
-        >
-          {title}
-        </ThemedText>
+        <ThemedText style={[styles.actionListTitle, { fontWeight: highlight ? '800' : '700' }]} numberOfLines={1}>{title}</ThemedText>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
+      <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
     </TouchableOpacity>
   );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function DetailItem({ icon, label, value, C, styles }: any) {
+  return (
+    <View style={[styles.actionListItem, { backgroundColor: C.actionItemBg, borderColor: C.actionItemBorder }]}>
+      <View style={styles.actionListLeft}>
+        <View style={[styles.actionListIconWrap, { backgroundColor: C.actionIconWrap }]}>
+          <Ionicons name={icon} size={18} color={Colors.accent.gold} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <ThemedText style={{ color: C.textMuted, fontSize: 9, fontWeight: '900', letterSpacing: 1, marginBottom: 2 }}>{label.toUpperCase()}</ThemedText>
+          <ThemedText style={{ color: C.text, fontSize: 13, fontWeight: '800' }} numberOfLines={2}>{value}</ThemedText>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const makeStyles = (C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) => {
+  const isTiny = width < 320;
+  const isNano = width < 280;
   return StyleSheet.create({
-    mainWrapper:     { flex: 1, backgroundColor: C.background },
-    loader:          { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
-    loadingText:     { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+    mainWrapper: { flex: 1, backgroundColor: C.background },
+    loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
+    loadingText: { color: Colors.accent.gold, marginTop: 12, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
 
-    hero:            { height: 360, width: '100%', zIndex: 1 },
-    heroOverlay:     { flex: 1, paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 70 : 50, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
-    header:          { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
-    logoContainer:   { width: 65, height: 65, borderRadius: 18, padding: 3, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
-    schoolLogo:      { width: '100%', height: '100%', borderRadius: 15 },
-    logoPlaceholder: { width: '100%', height: '100%', borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
-    powerBtn:        { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+    hero: { height: isTiny ? 280 : 340, width: '100%', zIndex: 100, marginBottom: 2, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+    heroOverlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24, paddingTop: Platform.OS === 'ios' ? 60 : 45 },
+    header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 },
+    logoContainer: { width: isNano ? 48 : 56, height: isNano ? 48 : 56, borderRadius: 16, padding: 3, elevation: 4 },
+    schoolLogo: { width: '100%', height: '100%', borderRadius: 14 },
+    logoPlaceholder: { width: '100%', height: '100%', borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+    powerBtn: { width: isNano ? 32 : 36, height: isNano ? 32 : 36, borderRadius: 18, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center' },
 
-    heroContent:     { marginTop: 'auto', marginBottom: 80 },
-    schoolType:      { color: C.isDark ? Colors.accent.gold : '#2563EB', fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
-    schoolName:      { color: C.text, fontSize: 32, fontWeight: '900', letterSpacing: -0.5, marginBottom: 12 },
+    heroContent: { marginTop: 'auto', marginBottom: isTiny ? 60 : 70 },
+    schoolType: { color: C.isDark ? Colors.accent.gold : '#2563EB', fontSize: isNano ? 8 : 9, fontWeight: '900', letterSpacing: 1.5, marginBottom: 6 },
+    schoolName: { color: C.text, fontSize: isNano ? 20 : isTiny ? 24 : 28, fontWeight: '900', letterSpacing: -0.5, marginBottom: 10 },
 
-    schoolMetaRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    metaBadge:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, gap: 6 },
-    schoolReg:       { color: C.textSecondary, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+    schoolMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    metaBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, gap: 4, backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
+    schoolReg: { color: C.textSecondary, fontSize: isNano ? 8 : 9, fontWeight: '700' },
 
-    scrollView:      { flex: 1, marginTop: -45, zIndex: 10, elevation: 10 },
-    scrollContent:   { paddingHorizontal: 24, paddingBottom: 60, flexGrow: 1 },
+    scrollView: { flex: 1, marginTop: 0, zIndex: 1 },
+    scrollContent: { paddingHorizontal: isTiny ? 16 : 24, paddingBottom: 60, flexGrow: 1 },
 
-    alertOverlay:    { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: C.modalOverlay },
+    alertOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: C.modalOverlay },
 
-    card:            { backgroundColor: C.card, borderRadius: 32, padding: 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 24 },
-    cardLabel:       { color: C.textMuted, fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 30, marginLeft: 4 },
+    card: { backgroundColor: C.card, borderRadius: 28, padding: isTiny ? 16 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 20 },
+    cardLabel: { color: C.textMuted, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 20 },
 
-    actionList:      { gap: 12 },
-    actionListItem:  { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20, paddingVertical: 12, paddingLeft: 12, borderRadius: 20, borderWidth: 1 },
-    actionListLeft:  { flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1, paddingRight: 10 },
-    actionListIconWrap: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-    actionListTitle: { color: C.text, fontSize: 13, letterSpacing: 0.5, flexShrink: 1 },
+    actionList: { gap: 14 },
+    actionListItem: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16, paddingVertical: 10, paddingLeft: 10, borderRadius: 16, borderWidth: 1 },
+    actionListLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+    actionListIconWrap: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    actionListTitle: { color: C.text, fontSize: 12, letterSpacing: 0.5 },
   });
 }

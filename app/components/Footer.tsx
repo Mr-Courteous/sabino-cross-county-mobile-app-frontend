@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -9,34 +9,37 @@ type FooterProps = {
   onLogout: () => void;
 };
 
-export default function Footer({ themeColor = '#FACC15', schoolName = 'Sabino Academy', onLogout }: FooterProps) {
+export default function Footer({ themeColor = '#FACC15', schoolName = 'SABINO EDU', onLogout }: FooterProps) {
+  const { width } = useWindowDimensions();
+  const isTiny = width < 300;
+
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { paddingHorizontal: isTiny ? 14 : 20 }]}>
       <LinearGradient colors={[themeColor + '10', '#ffffff00']} style={[styles.container, { borderColor: themeColor + '22' }]}> 
         <View style={styles.row}>
           <View style={styles.brandRow}>
-            <View style={[styles.brandCircle, { backgroundColor: themeColor + '20' }]}>
-              <Ionicons name="school" size={18} color={themeColor} />
+            <View style={[styles.brandCircle, { backgroundColor: themeColor + '20', width: isTiny ? 34 : 42, height: isTiny ? 34 : 42 }]}>
+              <Ionicons name="school" size={isTiny ? 16 : 18} color={themeColor} />
             </View>
-            <Text style={styles.schoolName} numberOfLines={1}>{schoolName || 'SABINO ACADEMY'}</Text>
+            <Text style={[styles.schoolName, { fontSize: isTiny ? 11 : 13 }]} numberOfLines={1}>{schoolName || 'SABINO EDU'}</Text>
           </View>
 
-          <TouchableOpacity style={[styles.logoutBtn, { borderColor: themeColor }]} onPress={onLogout} activeOpacity={0.8}>
-            <Ionicons name="power" size={16} color={themeColor} />
-            <Text style={[styles.logoutText, { color: themeColor }]}>Logout</Text>
+          <TouchableOpacity style={[styles.logoutBtn, { borderColor: themeColor, paddingVertical: isTiny ? 6 : 8, paddingHorizontal: isTiny ? 10 : 12 }]} onPress={onLogout} activeOpacity={0.8}>
+            <Ionicons name="power" size={isTiny ? 14 : 16} color={themeColor} />
+            {!isTiny && <Text style={[styles.logoutText, { color: themeColor }]}>Logout</Text>}
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.copy}>© {new Date().getFullYear()} {schoolName || 'Sabino Academy'}. All rights reserved.</Text>
+        <Text style={[styles.copy, { fontSize: isTiny ? 9 : 11 }]}>© {new Date().getFullYear()} {schoolName || 'SABINO EDU'}. All rights reserved.</Text>
       </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingTop: 18, paddingHorizontal: 20, paddingBottom: 8 },
+  wrap: { paddingTop: 18, paddingBottom: 8 },
   container: {
-    padding: 14,
+    padding: 12,
     borderRadius: 14,
     borderWidth: 1,
     backgroundColor: '#FFFFFF',
@@ -46,10 +49,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brandRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
-  brandCircle: { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10 },
-  schoolName: { fontSize: 13, fontWeight: '900', color: '#0F172A', flexShrink: 1 },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1 },
-  logoutText: { marginLeft: 8, fontWeight: '900', fontSize: 12 },
-  copy: { marginTop: 10, fontSize: 11, color: '#64748B', fontWeight: '700' }
+  brandRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
+  brandCircle: { borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  schoolName: { fontWeight: '900', color: '#0F172A', flexShrink: 1 },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, borderWidth: 1 },
+  logoutText: { marginLeft: 8, fontWeight: '900', fontSize: 11 },
+  copy: { marginTop: 8, color: '#64748B', fontWeight: '700' }
 });

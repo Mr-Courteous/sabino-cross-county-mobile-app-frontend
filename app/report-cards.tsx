@@ -1,19 +1,18 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  View, 
-  TextInput, 
-  FlatList, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  StyleSheet, 
-  Platform, 
-  Alert, 
-  Modal, 
-  ImageBackground, 
+import {
+  View,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  StyleSheet,
+  Platform,
+  Alert,
+  Modal,
+  ImageBackground,
   ScrollView,
-  Dimensions
+  useWindowDimensions
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { API_BASE_URL } from '@/utils/api-service';
@@ -26,22 +25,17 @@ import { CustomAlert } from '@/components/custom-alert';
 import { useRouter } from 'expo-router';
 import { useAppColors } from '@/hooks/use-app-colors';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const IS_TINY = SCREEN_WIDTH < 320;
-const IS_MICRO = SCREEN_WIDTH < 280;
-const IS_ULTRA = SCREEN_WIDTH < 260;
-
 const getToken = async () => {
   if (Platform.OS !== 'web') return await SecureStore.getItemAsync('userToken');
   return localStorage.getItem('userToken');
 };
 
-
-
 export default function ReportSearchScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isTiny = width < 300;
   const C = useAppColors();
-  const styles = useMemo(() => makeStyles(C), [C.scheme]);
+  const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
   const [mode, setMode] = useState<'student' | 'class'>('student');
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -57,7 +51,8 @@ export default function ReportSearchScreen() {
   const [classes, setClasses] = useState<any[]>([]);
   const [classReportData, setClassReportData] = useState<any[]>([]);
   const [showingReportData, setShowingReportData] = useState(false);
-  
+  const [batchSearchQuery, setBatchSearchQuery] = useState('');
+
   // Track successful emails for visual feedback
   const [sentSuccessIds, setSentSuccessIds] = useState<Record<string, boolean>>({});
 
@@ -119,6 +114,8 @@ export default function ReportSearchScreen() {
         },
       });
 
+      if (response.status === 402) { router.replace('/pricing'); return; }
+
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
@@ -143,7 +140,13 @@ export default function ReportSearchScreen() {
           return item;
         });
 
-        setResults(normalizedData);
+        if (mode === 'student') {
+          setResults(normalizedData);
+        } else {
+          setClasses(normalizedData);
+          setResults([]); // Clear search results when in class selection mode
+        }
+
         if (normalizedData.length === 0 && query) {
           setError(`No ${mode === 'student' ? 'students' : 'classes'} found matching your search.`);
         }
@@ -177,6 +180,7 @@ export default function ReportSearchScreen() {
       const response = await fetch(`${API_BASE_URL}/api/academic-sessions`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const json = await response.json();
       if (json.success && json.data) {
         setSessions(json.data);
@@ -198,6 +202,7 @@ export default function ReportSearchScreen() {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const json = await response.json();
       if (json.success) {
         setClassReportData(json.data);
@@ -218,7 +223,7 @@ export default function ReportSearchScreen() {
       setStatusAlert({ visible: true, type: 'error', title: 'Invalid Email', message: 'Enter a valid address.' });
       return;
     }
-    
+
     const request = currentEmailRequest;
     setCurrentEmailRequest(null);
     setLoading(true);
@@ -231,6 +236,8 @@ export default function ReportSearchScreen() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ term: request.term, sessionId: request.sessionId, email: emailInput.trim() }),
       });
+
+      if (response.status === 402) { router.replace('/pricing'); return; }
 
       const result = await response.json();
       if (response.ok && result.success) {
@@ -262,6 +269,7 @@ export default function ReportSearchScreen() {
   };
 
   const handleRegenerateRemark = async () => {
+    setStatusAlert(prev => ({ ...prev, visible: false }));
     if (!selectedPreviewStudent) return;
     const enrollmentId = selectedPreviewStudent.enrollment_id;
     const term = selectedPreviewStudent.displayTerm || '1';
@@ -281,6 +289,7 @@ export default function ReportSearchScreen() {
           body: JSON.stringify({ term: parseInt(term), sessionId: parseInt(sessionId) }),
         }
       );
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const result = await response.json();
       if (response.ok && result.success) {
         setStatusAlert({
@@ -312,22 +321,29 @@ export default function ReportSearchScreen() {
   const renderStudentItem = ({ item }: { item: any }) => {
     const term = selectedStudentTerms[item.enrollment_id] || '1';
     const isSent = sentSuccessIds[`${item.enrollment_id}-${term}`];
+    const isTiny = width < 300;
 
     return (
-      <View style={[styles.resultCard, IS_TINY && { flexDirection: 'column', alignItems: 'flex-start' }]}>
-        <View style={[styles.avatarContainer, IS_TINY && { marginBottom: 12 }]}>
+      <View style={[styles.resultCard, isTiny && { flexDirection: 'column', alignItems: 'flex-start' }]}>
+        <View style={[styles.avatarContainer, isTiny && { marginBottom: 12 }]}>
           <ThemedText style={styles.avatarText}>{(item.first_name?.[0] || '') + (item.last_name?.[0] || '')}</ThemedText>
         </View>
-        <View style={[styles.studentInfo, IS_TINY && { marginLeft: 0, width: '100%' }]}>
+        <View style={[styles.studentInfo, isTiny && { marginLeft: 0, width: '100%' }]}>
           <ThemedText style={styles.resultTitle}>{item.first_name} {item.last_name}</ThemedText>
           <View style={styles.metaRow}>
-            <Ionicons name="school-outline" size={12} color={C.textSecondary} />
-            <ThemedText style={styles.resultSubtitle}>{item.class_name}</ThemedText>
+            <Ionicons name="school-outline" size={11} color={C.textSecondary} />
+            <ThemedText style={styles.resultSubtitle}>{item.class_name} • {item.session_name || 'Current'}</ThemedText>
           </View>
-          
-          <View style={[styles.termSection, IS_TINY && { flexWrap: 'wrap' }]}>
+          <View style={[styles.metaRow, { marginTop: 2 }]}>
+            <Ionicons name="calendar-outline" size={11} color={Colors.accent.gold} />
+            <ThemedText style={[styles.resultSubtitle, { color: Colors.accent.gold, fontWeight: '800' }]}>
+              {term === '1' ? 'First' : term === '2' ? 'Second' : 'Third'} Term
+            </ThemedText>
+          </View>
+
+          <View style={[styles.termSection, isTiny && { flexWrap: 'wrap' }]}>
             {['1', '2', '3'].map((t) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={t}
                 style={[styles.miniChip, term === t && styles.activeMiniChip]}
                 onPress={() => setSelectedStudentTerms(prev => ({ ...prev, [item.enrollment_id]: t }))}
@@ -338,15 +354,15 @@ export default function ReportSearchScreen() {
           </View>
 
           <View style={styles.cardActions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.fullActionBtn}
               onPress={() => handleNativePreview(item, term)}
             >
-              <Ionicons name="eye-outline" size={IS_TINY ? 14 : 16} color={C.text} />
+              <Ionicons name="eye-outline" size={isTiny ? 12 : 14} color={C.text} />
               <ThemedText style={styles.actionBtnText}>Preview</ThemedText>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={[styles.fullActionBtn, isSent && { borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.05)' }]}
               onPress={() => setCurrentEmailRequest({
                 enrollmentId: item.enrollment_id,
@@ -355,7 +371,7 @@ export default function ReportSearchScreen() {
                 sessionId: item.session_id
               })}
             >
-              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={IS_TINY ? 14 : 16} color={isSent ? "#10B981" : C.text} />
+              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={isTiny ? 12 : 14} color={isSent ? "#10B981" : C.text} />
               <ThemedText style={[styles.actionBtnText, isSent && { color: '#10B981' }]}>
                 {isSent ? "Sent" : "Email"}
               </ThemedText>
@@ -368,25 +384,30 @@ export default function ReportSearchScreen() {
 
   const renderClassReportStudent = ({ item }: { item: any }) => {
     const isSent = sentSuccessIds[`${item.enrollment_id}-${selectedTerm}`];
+    const isTiny = width < 300;
     return (
-      <View style={[styles.resultCard, IS_TINY && { flexDirection: 'column', alignItems: 'flex-start' }]}>
-        <View style={[styles.rankBadge, IS_TINY && { marginBottom: 12 }]}>
+      <View style={[styles.resultCard, isTiny && { flexDirection: 'column', alignItems: 'flex-start' }]}>
+        <View style={[styles.rankBadge, isTiny && { marginBottom: 12 }]}>
           <ThemedText style={styles.rankText}>{classReportData.indexOf(item) + 1}</ThemedText>
         </View>
-        <View style={[styles.studentInfo, IS_TINY && { marginLeft: 0, width: '100%' }]}>
+        <View style={[styles.studentInfo, isTiny && { marginLeft: 0, width: '100%' }]}>
           <ThemedText style={styles.resultTitle}>{item.name}</ThemedText>
-          <ThemedText style={styles.scoreMeta}>CUMULATIVE: {Math.round(item.grand_total)} POINTS</ThemedText>
-          
+          <View style={styles.metaRow}>
+            <Ionicons name="calendar-outline" size={11} color={Colors.accent.gold} />
+            <ThemedText style={[styles.resultSubtitle, { color: Colors.accent.gold, fontWeight: '800' }]}>
+              {sessions.find(s => String(s.id) === selectedSession)?.session_name || 'Current'} • {selectedTerm === '1' ? 'First' : selectedTerm === '2' ? 'Second' : 'Third'} Term
+            </ThemedText>
+          </View>
           <View style={styles.cardActions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.fullActionBtn}
               onPress={() => handleNativePreview(item, selectedTerm)}
             >
-              <Ionicons name="eye-outline" size={IS_TINY ? 14 : 16} color={C.text} />
+              <Ionicons name="eye-outline" size={isTiny ? 12 : 14} color={C.text} />
               <ThemedText style={styles.actionBtnText}>Preview</ThemedText>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={[styles.fullActionBtn, isSent && { borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.05)' }]}
               onPress={() => setCurrentEmailRequest({
                 enrollmentId: item.enrollment_id,
@@ -395,7 +416,7 @@ export default function ReportSearchScreen() {
                 sessionId: Number(selectedSession)
               })}
             >
-              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={IS_TINY ? 14 : 16} color={isSent ? "#10B981" : C.text} />
+              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={isTiny ? 12 : 14} color={isSent ? "#10B981" : C.text} />
               <ThemedText style={[styles.actionBtnText, isSent && { color: '#10B981' }]}>
                 {isSent ? "Sent" : "Email Official"}
               </ThemedText>
@@ -418,43 +439,43 @@ export default function ReportSearchScreen() {
         >
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="chevron-back" size={24} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
+              <Ionicons name="chevron-back" size={20} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
             </TouchableOpacity>
             <ThemedText style={styles.headerTitle}>Report Center</ThemedText>
-            <View style={{ width: 44 }} />
+            <View style={{ width: 40 }} />
           </View>
 
           <View style={styles.heroContent}>
             <ThemedText style={styles.heroSubtitle}>ACADEMIC LOGISTICS</ThemedText>
-            <ThemedText style={styles.heroTitle}>Student Records</ThemedText>
+            <ThemedText style={styles.heroTitle}>Reports</ThemedText>
           </View>
         </LinearGradient>
       </ImageBackground>
 
-      <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.contentWrapper}>
           <View style={styles.glassCard}>
             <View style={styles.modeToggle}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modeBtn, mode === 'student' && styles.activeModeBtn]}
                 onPress={() => { setMode('student'); setShowingReportData(false); setResults([]); }}
               >
-                <ThemedText style={[styles.modeBtnText, mode === 'student' && styles.activeModeBtnText]}>Direct Search</ThemedText>
+                <ThemedText style={[styles.modeBtnText, mode === 'student' && styles.activeModeBtnText]}>Search</ThemedText>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modeBtn, mode === 'class' && styles.activeModeBtn]}
                 onPress={() => { setMode('class'); setResults([]); }}
               >
-                <ThemedText style={[styles.modeBtnText, mode === 'class' && styles.activeModeBtnText]}>Class Batching</ThemedText>
+                <ThemedText style={[styles.modeBtnText, mode === 'class' && styles.activeModeBtnText]}>Batching</ThemedText>
               </TouchableOpacity>
             </View>
 
             {mode === 'student' ? (
               <View style={styles.searchWrapper}>
-                <Ionicons name="search" size={20} color={C.textMuted} />
+                <Ionicons name="search" size={18} color={C.textMuted} />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Enter student name to search..."
+                  placeholder="Enter student name..."
                   placeholderTextColor={C.textMuted}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
@@ -464,12 +485,12 @@ export default function ReportSearchScreen() {
               <View style={styles.filtersArea}>
                 <View style={styles.filterRow}>
                   <View style={styles.filterGroup}>
-                    <ThemedText style={styles.filterLabel}>ACADEMIC YEAR</ThemedText>
+                    <ThemedText style={styles.filterLabel}>YEAR</ThemedText>
                     <TouchableOpacity style={styles.inputSelector} onPress={() => setShowSessionSelector(!showSessionSelector)}>
-                      <ThemedText style={styles.selectorText}>
-                        {sessions.find((s: any) => String(s.id) === selectedSession)?.session_name || 'Select Session'}
+                      <ThemedText style={styles.selectorText} numberOfLines={1}>
+                        {sessions.find((s: any) => String(s.id) === selectedSession)?.session_name || 'Select'}
                       </ThemedText>
-                      <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
+                      <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={16} color={Colors.accent.gold} />
                     </TouchableOpacity>
                     {showSessionSelector && (
                       <View style={styles.selectorList}>
@@ -477,7 +498,7 @@ export default function ReportSearchScreen() {
                           {sessions.map((sess: any) => (
                             <TouchableOpacity key={sess.id} style={[styles.selectorItem, selectedSession === String(sess.id) && styles.selectorItemActive]} onPress={() => { setSelectedSession(String(sess.id)); setShowSessionSelector(false); }}>
                               <ThemedText style={[styles.selectorItemText, selectedSession === String(sess.id) && styles.selectorItemTextActive]}>{sess.session_name}</ThemedText>
-                              {selectedSession === String(sess.id) && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                              {selectedSession === String(sess.id) && <Ionicons name="checkmark-circle" size={16} color={Colors.accent.gold} />}
                             </TouchableOpacity>
                           ))}
                         </ScrollView>
@@ -488,8 +509,8 @@ export default function ReportSearchScreen() {
                   <View style={styles.filterGroup}>
                     <ThemedText style={styles.filterLabel}>PERIOD</ThemedText>
                     <TouchableOpacity style={styles.inputSelector} onPress={() => setShowTermSelector(!showTermSelector)}>
-                      <ThemedText style={styles.selectorText}>Term {selectedTerm}</ThemedText>
-                      <Ionicons name={showTermSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
+                      <ThemedText style={styles.selectorText}>T{selectedTerm}</ThemedText>
+                      <Ionicons name={showTermSelector ? "chevron-up" : "chevron-down"} size={16} color={Colors.accent.gold} />
                     </TouchableOpacity>
                     {showTermSelector && (
                       <View style={styles.selectorList}>
@@ -497,7 +518,7 @@ export default function ReportSearchScreen() {
                           {['1', '2', '3'].map((term) => (
                             <TouchableOpacity key={term} style={[styles.selectorItem, selectedTerm === term && styles.selectorItemActive]} onPress={() => { setSelectedTerm(term); setShowTermSelector(false); }}>
                               <ThemedText style={[styles.selectorItemText, selectedTerm === term && styles.selectorItemTextActive]}>Term {term}</ThemedText>
-                              {selectedTerm === term && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                              {selectedTerm === term && <Ionicons name="checkmark-circle" size={16} color={Colors.accent.gold} />}
                             </TouchableOpacity>
                           ))}
                         </ScrollView>
@@ -512,7 +533,7 @@ export default function ReportSearchScreen() {
                     <ThemedText style={styles.selectorText}>
                       {classes.find((c: any) => String(c.id) === selectedClass)?.display_name || 'Select Class'}
                     </ThemedText>
-                    <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={20} color={Colors.accent.gold} />
+                    <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={16} color={Colors.accent.gold} />
                   </TouchableOpacity>
                   {showClassSelector && (
                     <View style={styles.selectorList}>
@@ -520,7 +541,7 @@ export default function ReportSearchScreen() {
                         {classes.map((cls: any) => (
                           <TouchableOpacity key={cls.id} style={[styles.selectorItem, selectedClass === String(cls.id) && styles.selectorItemActive]} onPress={() => { setSelectedClass(String(cls.id)); setShowClassSelector(false); }}>
                             <ThemedText style={[styles.selectorItemText, selectedClass === String(cls.id) && styles.selectorItemTextActive]}>{cls.display_name}</ThemedText>
-                            {selectedClass === String(cls.id) && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                            {selectedClass === String(cls.id) && <Ionicons name="checkmark-circle" size={16} color={Colors.accent.gold} />}
                           </TouchableOpacity>
                         ))}
                       </ScrollView>
@@ -529,7 +550,7 @@ export default function ReportSearchScreen() {
                 </View>
 
                 {selectedClass && (
-                  <CustomButton title="Initialize Report Generation" onPress={fetchClassReportData} loading={loading} variant="premium" />
+                  <CustomButton title="Load Class Batch" onPress={fetchClassReportData} loading={loading} variant="premium" style={{ paddingVertical: 14 }} />
                 )}
               </View>
             )}
@@ -537,43 +558,67 @@ export default function ReportSearchScreen() {
         </View>
 
         {mode === 'class' && showingReportData && (
-          <View style={{ paddingHorizontal: 24, paddingTop: 10, flexDirection: 'row', gap: 12 }}>
-             <TouchableOpacity style={styles.backLink} onPress={() => setShowingReportData(false)}>
-              <Ionicons name="chevron-back" size={20} color={Colors.accent.gold} />
-              <ThemedText style={{ color: Colors.accent.gold, fontWeight: '800' }}>Change Filters</ThemedText>
-            </TouchableOpacity>
+          <View style={{ paddingHorizontal: 20, paddingTop: 12, gap: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <TouchableOpacity style={styles.backLink} onPress={() => { setShowingReportData(false); setBatchSearchQuery(''); }}>
+                <Ionicons name="chevron-back" size={18} color={Colors.accent.gold} />
+                <ThemedText style={{ color: Colors.accent.gold, fontWeight: '800', fontSize: 11 }}>BACK TO FILTERS</ThemedText>
+              </TouchableOpacity>
+              {batchSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setBatchSearchQuery('')}>
+                   <ThemedText style={{ color: Colors.accent.gold, fontSize: 10, fontWeight: '700' }}>CLEAR</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            <View style={[styles.searchWrapper, { height: 42, borderRadius: 12, backgroundColor: C.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}>
+              <Ionicons name="search" size={16} color={C.textMuted} />
+              <TextInput
+                style={[styles.searchInput, { fontSize: 12 }]}
+                placeholder="Filter students in this class..."
+                placeholderTextColor={C.textMuted}
+                value={batchSearchQuery}
+                onChangeText={setBatchSearchQuery}
+              />
+            </View>
           </View>
         )}
 
         <View style={styles.listContent}>
           {loading ? (
-             <View style={styles.centerLoader}>
-                <ActivityIndicator color={Colors.accent.gold} />
-                <ThemedText style={styles.loaderText}>SYNCHRONIZING RECORDS</ThemedText>
-             </View>
+            <View style={styles.centerLoader}>
+              <ActivityIndicator color={Colors.accent.gold} />
+              <ThemedText style={styles.loaderText}>FETCHING RECORDS</ThemedText>
+            </View>
           ) : error ? (
             <View style={styles.errorCard}>
-              <Ionicons name="alert-circle" size={20} color="#EF4444" />
+              <Ionicons name="alert-circle" size={18} color="#EF4444" />
               <ThemedText style={styles.errorText}>{error}</ThemedText>
             </View>
           ) : (
             <FlatList
-              data={showingReportData ? classReportData : results}
+              data={showingReportData 
+                ? classReportData.filter(s => 
+                    (s.name || `${s.first_name} ${s.last_name}`)
+                    .toLowerCase()
+                    .includes(batchSearchQuery.toLowerCase())
+                  ) 
+                : results}
               keyExtractor={(item) => `report-${item.enrollment_id}`}
               renderItem={showingReportData ? renderClassReportStudent : renderStudentItem}
               scrollEnabled={false}
               ListEmptyComponent={
-                <View style={{ alignItems: 'center', padding: 60 }}>
+                <View style={{ alignItems: 'center', padding: 40 }}>
                   <View style={styles.emptyIconCircle}>
-                    <Ionicons name="document-text-outline" size={40} color={C.textMuted} />
+                    <Ionicons name="document-text-outline" size={32} color={C.textMuted} />
                   </View>
                   <ThemedText style={styles.emptyTitle}>
-                    {showingReportData ? "No Records Found" : "Initiate Selection"}
+                    {showingReportData ? "No Records" : "Start Here"}
                   </ThemedText>
                   <ThemedText style={styles.emptySubtitle}>
-                    {showingReportData 
-                      ? "No academic reports found for this class and term." 
-                      : (searchQuery ? "No matching student records found." : "Configure parameters above to view records.")}
+                    {showingReportData
+                      ? "No reports found for this period."
+                      : (searchQuery ? "No matching records." : "Configure parameters above.")}
                   </ThemedText>
                 </View>
               }
@@ -584,21 +629,21 @@ export default function ReportSearchScreen() {
 
       {/* Preview Modal */}
       <Modal visible={selectedPreviewStudent !== null} transparent animationType="slide" onRequestClose={() => setSelectedPreviewStudent(null)}>
-        <View style={styles.previewOverlay}>
+        <View style={[styles.previewOverlay, isTiny && { padding: 0 }]}>
           <View style={[styles.previewContainer, { backgroundColor: C.modalBg }]}>
             <View style={styles.previewHeader}>
-              <View>
-                <ThemedText style={styles.previewTitle}>Performance Preview</ThemedText>
-                <ThemedText style={styles.previewSubtitle}>
-                  {selectedPreviewStudent?.name || `${selectedPreviewStudent?.first_name || ''} ${selectedPreviewStudent?.last_name || ''}`.trim()} - Term {selectedPreviewStudent?.displayTerm}
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.previewTitle}>Performance</ThemedText>
+                <ThemedText style={styles.previewSubtitle} numberOfLines={1}>
+                  {selectedPreviewStudent?.name || `${selectedPreviewStudent?.first_name || ''} ${selectedPreviewStudent?.last_name || ''}`.trim()} - T{selectedPreviewStudent?.displayTerm}
                 </ThemedText>
               </View>
               <TouchableOpacity onPress={() => setSelectedPreviewStudent(null)} style={styles.previewCloseBtn}>
-                <Ionicons name="close" size={24} color={Colors.accent.gold} />
+                <Ionicons name="close" size={20} color={Colors.accent.gold} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
               {(() => {
                 const termToDisplay = selectedPreviewStudent?.displayTerm || '1';
                 const subjectList = selectedPreviewStudent?.scores_by_term ? selectedPreviewStudent.scores_by_term[termToDisplay] : selectedPreviewStudent?.subjects;
@@ -609,15 +654,15 @@ export default function ReportSearchScreen() {
                       <View key={idx} style={styles.previewSubjectCard}>
                         <ThemedText style={styles.previewSubjectTitle}>{subject.subject_name || subject.subject || 'Subject'}</ThemedText>
                         <View style={styles.previewScoreRow}>
-                          <ThemedText style={styles.previewScoreLabel}>Continuous Assessment:</ThemedText>
+                          <ThemedText style={styles.previewScoreLabel}>CA Marks:</ThemedText>
                           <ThemedText style={styles.previewScoreValue}>{Number(subject.ca1_score || 0) + Number(subject.ca2_score || 0) + Number(subject.ca3_score || 0) + Number(subject.ca4_score || 0)} / 40</ThemedText>
                         </View>
                         <View style={styles.previewScoreRow}>
-                          <ThemedText style={styles.previewScoreLabel}>Terminal Examination:</ThemedText>
+                          <ThemedText style={styles.previewScoreLabel}>Exam:</ThemedText>
                           <ThemedText style={styles.previewScoreValue}>{subject.exam_score || 0} / 60</ThemedText>
                         </View>
                         <View style={styles.previewTotalRow}>
-                          <ThemedText style={styles.previewTotalLabel}>CUMULATIVE SCORE:</ThemedText>
+                          <ThemedText style={styles.previewTotalLabel}>TOTAL:</ThemedText>
                           <ThemedText style={styles.previewTotalValue}>{total}%</ThemedText>
                         </View>
                       </View>
@@ -625,34 +670,27 @@ export default function ReportSearchScreen() {
                   });
                 }
                 return (
-                  <View style={{ padding: 40, alignItems: 'center' }}>
-                    <Ionicons name="document-text-outline" size={48} color={C.textMuted} />
-                    <ThemedText style={{ color: C.textSecondary, marginTop: 16, textAlign: 'center' }}>No detailed scores recorded for this term yet.</ThemedText>
+                  <View style={{ padding: 30, alignItems: 'center' }}>
+                    <Ionicons name="document-text-outline" size={40} color={C.textMuted} />
+                    <ThemedText style={{ color: C.textSecondary, marginTop: 12, textAlign: 'center', fontSize: 12 }}>No scores yet.</ThemedText>
                   </View>
                 );
               })()}
             </ScrollView>
 
             <View style={styles.previewFooter}>
-              <View style={styles.footerInfo}>
-                <Ionicons name="shield-checkmark" size={16} color={Colors.accent.gold} />
-                <ThemedText style={styles.footerInfoText}>Local Data Preview</ThemedText>
-              </View>
               <View style={styles.previewActionRow}>
-                <TouchableOpacity style={styles.previewCancel} onPress={() => setSelectedPreviewStudent(null)}>
-                  <ThemedText style={styles.previewCancelText}>Discard</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.previewRegenerate, regeneratingRemark && styles.previewRegenerateDisabled]} 
+                <TouchableOpacity
+                  style={[styles.previewRegenerate, regeneratingRemark && styles.previewRegenerateDisabled]}
                   onPress={() => {
-                    Alert.alert(
-                      'Regenerate AI Remark',
-                      'This will generate a new AI remark for this student. Continue?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Regenerate', onPress: handleRegenerateRemark },
-                      ]
-                    );
+                    setStatusAlert({
+                      visible: true,
+                      type: 'warning',
+                      title: 'AI Synthesis',
+                      message: 'This will reset and regenerate fresh AI remarks for this report card. Proceed?',
+                      confirmLabel: 'Regenerate',
+                      onConfirm: handleRegenerateRemark
+                    });
                   }}
                   disabled={regeneratingRemark}
                 >
@@ -660,14 +698,13 @@ export default function ReportSearchScreen() {
                     <ActivityIndicator size="small" color={Colors.accent.navy} />
                   ) : (
                     <>
-                      <Ionicons name="refresh" size={16} color={Colors.accent.navy} />
-                      <ThemedText style={styles.previewRegenerateText}>Regenerate AI</ThemedText>
+                      <Ionicons name="sparkles" size={16} color={Colors.accent.navy} />
+                      <ThemedText style={styles.previewRegenerateText}>AI Refine</ThemedText>
                     </>
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.previewSubmit} onPress={handleProceedToEmail}>
-                  <Ionicons name="mail" size={18} color={Colors.accent.navy} />
-                  <ThemedText style={styles.previewSubmitText}>Proceed to Email</ThemedText>
+                  <ThemedText style={styles.previewSubmitText}>Send Email</ThemedText>
                 </TouchableOpacity>
               </View>
             </View>
@@ -679,19 +716,18 @@ export default function ReportSearchScreen() {
       <Modal visible={currentEmailRequest !== null} transparent animationType="fade" onRequestClose={() => setCurrentEmailRequest(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <ThemedText style={styles.modalTitle}>Secure Dispatch</ThemedText>
-            <ThemedText style={styles.modalSubtitle}>Enter destination address for official academic credentials</ThemedText>
+            <ThemedText style={styles.modalTitle}>Dispatch</ThemedText>
+            <ThemedText style={styles.modalSubtitle}>Recipient's email address</ThemedText>
             <View style={styles.inputWrapper}>
-              <Ionicons name="at" size={20} color={C.textMuted} />
-              <TextInput style={styles.modalInput} placeholder="recipient@institution.edu" placeholderTextColor={C.textMuted} value={emailInput} onChangeText={setEmailInput} keyboardType="email-address" autoCapitalize="none" />
+              <Ionicons name="at" size={18} color={C.textMuted} />
+              <TextInput style={styles.modalInput} placeholder="name@email.com" placeholderTextColor={C.textMuted} value={emailInput} onChangeText={setEmailInput} keyboardType="email-address" autoCapitalize="none" />
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setCurrentEmailRequest(null)}>
                 <ThemedText style={styles.modalCancelText}>Cancel</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalSubmit} onPress={handleEmailModalSubmit}>
-                <Ionicons name="send" size={18} color={Colors.accent.navy} />
-                <ThemedText style={styles.modalSubmitText}>Send to Email</ThemedText>
+                <ThemedText style={styles.modalSubmitText}>Send</ThemedText>
               </TouchableOpacity>
             </View>
           </View>
@@ -702,123 +738,119 @@ export default function ReportSearchScreen() {
       <Modal visible={showSuccessModal} transparent animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.successIcon}><Ionicons name="checkmark-circle" size={64} color="#10B981" /></View>
-            <ThemedText style={styles.modalTitle}>Transmission Success</ThemedText>
-            <ThemedText style={styles.modalSubtitle}>Official records have been verified and transmitted successfully.</ThemedText>
-            <CustomButton title="ACKNOWLEDGE" onPress={() => setShowSuccessModal(false)} variant="premium" />
+            <View style={styles.successIcon}><Ionicons name="checkmark-circle" size={48} color="#10B981" /></View>
+            <ThemedText style={styles.modalTitle}>Sent!</ThemedText>
+            <ThemedText style={styles.modalSubtitle}>Report has been transmitted.</ThemedText>
+            <CustomButton title="OK" onPress={() => setShowSuccessModal(false)} variant="premium" style={{ width: '100%', paddingVertical: 14 }} />
           </View>
         </View>
       </Modal>
 
       {statusAlert.visible && (
-        <CustomAlert type={statusAlert.type} title={statusAlert.title} message={statusAlert.message} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} onConfirm={statusAlert.onConfirm} style={{ margin: 24 }} />
+        <CustomAlert type={statusAlert.type} title={statusAlert.title} message={statusAlert.message} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} onConfirm={statusAlert.onConfirm} style={{ margin: 20 }} />
       )}
     </ThemedView>
   );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+  const isTiny = width < 300;
   return StyleSheet.create({
     mainWrapper: { flex: 1, backgroundColor: C.background },
-    hero: { height: IS_TINY ? 200 : 260, width: '100%' },
-    heroOverlay: { flex: 1, paddingHorizontal: IS_TINY ? 16 : 24, paddingTop: IS_TINY ? 40 : 60 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: IS_TINY ? 12 : 20 },
-    backButton: { width: IS_TINY ? 36 : 44, height: IS_TINY ? 36 : 44, borderRadius: IS_TINY ? 10 : 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { color: C.text, fontSize: IS_TINY ? 14 : 16, fontWeight: '800', letterSpacing: 0.5 },
-    heroContent: { marginTop: 'auto', marginBottom: IS_TINY ? 12 : 20 },
-    heroSubtitle: { color: Colors.accent.gold, fontSize: IS_TINY ? 9 : 11, fontWeight: '800', letterSpacing: 2, marginBottom: IS_TINY ? 2 : 6 },
-    heroTitle: { color: C.text, fontSize: IS_TINY ? 24 : 32, fontWeight: '900', letterSpacing: -1 },
+    hero: { height: isTiny ? 160 : 220, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 22, paddingTop: isTiny ? 40 : 50 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: isTiny ? 10 : 16 },
+    backButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: C.text, fontSize: isTiny ? 12 : 14, fontWeight: '800', letterSpacing: 0.5 },
+    heroContent: { marginTop: 'auto', marginBottom: isTiny ? 12 : 18 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: isTiny ? 8 : 9, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
+    heroTitle: { color: C.text, fontSize: isTiny ? 22 : 28, fontWeight: '900', letterSpacing: -1 },
 
-    contentWrapper: { paddingHorizontal: IS_TINY ? 16 : 24, marginTop: IS_TINY ? -20 : -30 },
-    glassCard: { backgroundColor: C.card, borderRadius: IS_TINY ? 24 : 32, padding: IS_TINY ? 16 : 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 12 },
-    modeToggle: { flexDirection: 'row', backgroundColor: C.inputBg, borderRadius: 16, padding: 4, marginBottom: IS_TINY ? 16 : 24 },
-    modeBtn: { flex: 1, paddingVertical: IS_TINY ? 8 : 10, alignItems: 'center', borderRadius: 12 },
+    contentWrapper: { paddingHorizontal: isTiny ? 16 : 20, marginTop: 0 },
+    glassCard: { backgroundColor: C.card, borderRadius: isTiny ? 20 : 28, padding: isTiny ? 14 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 16 },
+    modeToggle: { flexDirection: 'row', backgroundColor: C.inputBg, borderRadius: 14, padding: 3, marginBottom: isTiny ? 14 : 20 },
+    modeBtn: { flex: 1, paddingVertical: isTiny ? 7 : 9, alignItems: 'center', borderRadius: 11 },
     activeModeBtn: { backgroundColor: Colors.accent.gold },
-    modeBtnText: { color: C.textSecondary, fontSize: IS_TINY ? 11 : 13, fontWeight: '700' },
+    modeBtnText: { color: C.textSecondary, fontSize: isTiny ? 10 : 12, fontWeight: '700' },
     activeModeBtnText: { color: Colors.accent.navy, fontWeight: '800' },
 
-    searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 16, height: IS_TINY ? 48 : 52, borderWidth: 1, borderColor: C.inputBorder },
-    searchInput: { flex: 1, marginLeft: 12, color: C.inputText, fontSize: IS_TINY ? 12 : 14, fontWeight: '600' },
-    
-    filtersArea: { gap: IS_TINY ? 12 : 16 },
-    filterRow: { flexDirection: IS_TINY ? 'column' : 'row', gap: IS_TINY ? 12 : 16 },
-    filterGroup: { flex: 1 },
-    filterLabel: { color: C.textLabel, fontSize: IS_TINY ? 8 : 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: IS_TINY ? 6 : 10 },
-    inputSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 16, height: IS_TINY ? 48 : 52, borderWidth: 1, borderColor: C.inputBorder },
-    selectorText: { color: C.inputText, fontSize: IS_TINY ? 12 : 14, fontWeight: '700' },
-    selectorList: { backgroundColor: C.modalBg, borderRadius: 16, marginTop: 8, padding: 8, borderWidth: 1, borderColor: C.cardBorder },
-    selectorItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 10 },
+    searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 14, paddingHorizontal: 14, height: isTiny ? 44 : 48, borderWidth: 1, borderColor: C.inputBorder },
+    searchInput: { flex: 1, marginLeft: 10, color: C.inputText, fontSize: isTiny ? 11 : 13, fontWeight: '600' },
+
+    filtersArea: { gap: 12, marginBottom: 10 },
+    filterRow: { flexDirection: 'column', gap: 12 },
+    filterGroup: { marginBottom: 4 },
+    filterLabel: { color: C.textLabel, fontSize: 8, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
+    inputSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 12, paddingHorizontal: 12, height: isTiny ? 42 : 46, borderWidth: 1, borderColor: C.inputBorder },
+    selectorText: { color: C.inputText, fontSize: isTiny ? 11 : 13, fontWeight: '700' },
+    selectorList: { backgroundColor: C.modalBg, borderRadius: 12, marginTop: 6, padding: 6, borderWidth: 1, borderColor: C.cardBorder },
+    selectorItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderRadius: 8 },
     selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
-    selectorItemText: { color: C.textSecondary, fontSize: IS_TINY ? 12 : 13, fontWeight: '600' },
+    selectorItemText: { color: C.textSecondary, fontSize: 11, fontWeight: '600' },
     selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
 
     backLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    listContent: { paddingHorizontal: IS_TINY ? 16 : 24, paddingTop: 10, paddingBottom: 100 },
-    resultCard: { backgroundColor: C.card, borderRadius: 24, padding: IS_TINY ? 12 : 16, flexDirection: 'row', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: C.cardBorder },
-    avatarContainer: { width: IS_TINY ? 44 : 52, height: IS_TINY ? 44 : 52, borderRadius: 16, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
-    avatarText: { color: Colors.accent.gold, fontSize: IS_TINY ? 14 : 16, fontWeight: '800' },
-    rankBadge: { width: IS_TINY ? 44 : 52, height: IS_TINY ? 44 : 52, borderRadius: 16, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
-    rankText: { color: Colors.accent.navy, fontSize: IS_TINY ? 16 : 18, fontWeight: '900' },
-    studentInfo: { flex: 1, marginLeft: IS_TINY ? 12 : 16 },
-    resultTitle: { fontSize: IS_TINY ? 14 : 16, fontWeight: '800', color: C.text, marginBottom: 4 },
-    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: IS_TINY ? 8 : 12 },
-    resultSubtitle: { fontSize: IS_TINY ? 11 : 12, color: C.textSecondary, fontWeight: '600' },
-    scoreMeta: { fontSize: IS_TINY ? 10 : 11, color: Colors.accent.gold, fontWeight: '800', marginBottom: 12 },
-    termSection: { flexDirection: 'row', gap: 6, marginBottom: 16 },
-    miniChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: C.actionItemBg },
+    listContent: { paddingHorizontal: isTiny ? 16 : 20, paddingTop: 8, paddingBottom: 100 },
+    resultCard: { backgroundColor: C.card, borderRadius: 20, padding: isTiny ? 12 : 14, flexDirection: 'row', alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder },
+    avatarContainer: { width: isTiny ? 40 : 48, height: isTiny ? 40 : 48, borderRadius: 14, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+    avatarText: { color: Colors.accent.gold, fontSize: isTiny ? 12 : 14, fontWeight: '800' },
+    rankBadge: { width: isTiny ? 40 : 48, height: isTiny ? 40 : 48, borderRadius: 14, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
+    rankText: { color: Colors.accent.navy, fontSize: isTiny ? 14 : 16, fontWeight: '900' },
+    studentInfo: { flex: 1, marginLeft: isTiny ? 10 : 14 },
+    resultTitle: { fontSize: isTiny ? 13 : 15, fontWeight: '800', color: C.text, marginBottom: 3 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
+    resultSubtitle: { fontSize: 10, color: C.textSecondary, fontWeight: '600' },
+    scoreMeta: { fontSize: 9, color: Colors.accent.gold, fontWeight: '800', marginBottom: 10 },
+    termSection: { flexDirection: 'row', gap: 5, marginBottom: 12 },
+    miniChip: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, backgroundColor: C.actionItemBg },
     activeMiniChip: { backgroundColor: Colors.accent.gold },
-    miniChipText: { fontSize: 9, color: C.textSecondary, fontWeight: '800' },
+    miniChipText: { fontSize: 8, color: C.textSecondary, fontWeight: '800' },
     activeMiniChipText: { color: Colors.accent.navy },
-    cardActions: { gap: IS_TINY ? 8 : 10, flexDirection: IS_TINY ? 'row' : 'column' },
-    fullActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: IS_TINY ? 10 : 12, borderRadius: 12, backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.cardBorder },
-    actionBtnText: { fontSize: IS_TINY ? 10 : 12, fontWeight: '700', color: C.text },
+    cardActions: { gap: 8, flexDirection: 'row' },
+    fullActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.cardBorder },
+    actionBtnText: { fontSize: 10, fontWeight: '700', color: C.text },
 
-    centerLoader: { padding: 60, alignItems: 'center' },
-    loaderText: { color: Colors.accent.gold, marginTop: 12, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
-    errorCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 16, borderRadius: 16 },
-    errorText: { color: '#EF4444', fontSize: 13, fontWeight: '600', flex: 1 },
+    centerLoader: { padding: 40, alignItems: 'center' },
+    loaderText: { color: Colors.accent.gold, marginTop: 10, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+    errorCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 12, borderRadius: 12 },
+    errorText: { color: '#EF4444', fontSize: 12, fontWeight: '600', flex: 1 },
 
-    emptyIconCircle: { width: IS_TINY ? 60 : 80, height: IS_TINY ? 60 : 80, borderRadius: 40, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-    emptyTitle: { color: C.text, fontSize: IS_TINY ? 16 : 18, fontWeight: '800', marginBottom: 8 },
-    emptySubtitle: { color: C.textSecondary, fontSize: IS_TINY ? 12 : 13, textAlign: 'center', lineHeight: 18 },
+    emptyIconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+    emptyTitle: { color: C.text, fontSize: 14, fontWeight: '800', marginBottom: 6 },
+    emptySubtitle: { color: C.textSecondary, fontSize: 11, textAlign: 'center', lineHeight: 16 },
 
-    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: IS_TINY ? 16 : 24 },
-    modalContent: { backgroundColor: C.modalBg, borderRadius: IS_TINY ? 24 : 32, padding: IS_TINY ? 20 : 32, borderWidth: 1, borderColor: C.cardBorder, alignItems: 'center' },
-    modalTitle: { color: C.text, fontSize: IS_TINY ? 20 : 24, fontWeight: '900', marginBottom: 8 },
-    modalSubtitle: { color: C.textSecondary, fontSize: IS_TINY ? 12 : 14, textAlign: 'center', marginBottom: 24, lineHeight: 18 },
-    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 16, height: IS_TINY ? 48 : 56, marginBottom: 24, borderWidth: 1, borderColor: C.inputBorder, width: '100%' },
-    modalInput: { flex: 1, marginLeft: 12, color: C.inputText, fontSize: IS_TINY ? 14 : 16, fontWeight: '600' },
-    modalActions: { flexDirection: IS_TINY ? 'column-reverse' : 'row', gap: 12, width: '100%' },
-    modalCancel: { height: IS_TINY ? 48 : 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: C.actionItemBg, flex: IS_TINY ? 0 : 1 },
-    modalCancelText: { color: C.text, fontSize: 14, fontWeight: '700' },
-    modalSubmit: { height: IS_TINY ? 48 : 56, justifyContent: 'center', alignItems: 'center', borderRadius: 16, backgroundColor: Colors.accent.gold, flex: IS_TINY ? 0 : 2 },
-    modalSubmitText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
-    successIcon: { marginBottom: 20 },
+    previewOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: isTiny ? 4 : 20 },
+    previewContainer: { borderRadius: isTiny ? 16 : 24, flex: 1, maxHeight: isTiny ? '98%' : '85%', overflow: 'hidden', borderWidth: 1, borderColor: C.cardBorder },
+    previewHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: C.divider },
+    previewTitle: { fontSize: 18, fontWeight: '900', color: C.text },
+    previewSubtitle: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
+    previewCloseBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+    previewSubjectCard: { backgroundColor: C.card, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.divider },
+    previewSubjectTitle: { fontSize: 12, fontWeight: '800', color: Colors.accent.gold, marginBottom: 8 },
+    previewScoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+    previewScoreLabel: { fontSize: 10, color: C.textSecondary },
+    previewScoreValue: { fontSize: 10, fontWeight: '700', color: C.text },
+    previewTotalRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.divider },
+    previewTotalLabel: { fontSize: 10, fontWeight: '800', color: C.text },
+    previewTotalValue: { fontSize: 12, fontWeight: '900', color: Colors.accent.gold },
+    previewFooter: { padding: 16, borderTopWidth: 1, borderTopColor: C.divider, backgroundColor: C.modalBg },
+    previewActionRow: { flexDirection: 'row', gap: 10 },
+    previewRegenerate: { flex: 1, height: 44, borderRadius: 14, backgroundColor: Colors.accent.gold, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+    previewRegenerateText: { color: Colors.accent.navy, fontWeight: '800', fontSize: 13 },
+    previewRegenerateDisabled: { opacity: 0.5 },
+    previewSubmit: { flex: 1, height: 44, backgroundColor: Colors.accent.gold, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+    previewSubmitText: { color: Colors.accent.navy, fontWeight: '900', fontSize: 13 },
 
-    previewOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
-    previewContainer: { height: '90%', width: '100%', borderTopLeftRadius: IS_TINY ? 24 : 32, borderTopRightRadius: IS_TINY ? 24 : 32, overflow: 'hidden' },
-    previewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: IS_TINY ? 16 : 24, borderBottomWidth: 1, borderBottomColor: C.divider },
-    previewTitle: { color: C.text, fontSize: IS_TINY ? 18 : 20, fontWeight: '900' },
-    previewSubtitle: { color: Colors.accent.gold, fontSize: IS_TINY ? 11 : 12, fontWeight: '700', marginTop: 4 },
-    previewCloseBtn: { width: IS_TINY ? 36 : 44, height: IS_TINY ? 36 : 44, borderRadius: IS_TINY ? 10 : 14, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
-    previewSubjectCard: { marginBottom: 12, padding: IS_TINY ? 12 : 16, backgroundColor: C.actionItemBg, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder },
-    previewSubjectTitle: { color: Colors.accent.gold, fontWeight: '800', marginBottom: 12, fontSize: IS_TINY ? 14 : 16 },
-    previewScoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-    previewScoreLabel: { color: C.textSecondary, fontSize: IS_TINY ? 11 : 13 },
-    previewScoreValue: { color: C.text, fontWeight: '700', fontSize: IS_TINY ? 11 : 13 },
-    previewTotalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12, marginTop: 4, borderTopWidth: 1, borderTopColor: C.divider },
-    previewTotalLabel: { color: C.text, fontWeight: '900', fontSize: IS_TINY ? 12 : 13 },
-    previewTotalValue: { color: Colors.accent.gold, fontWeight: '900', fontSize: IS_TINY ? 16 : 18 },
-    previewFooter: { padding: IS_TINY ? 16 : 24, borderTopWidth: 1, borderTopColor: C.divider },
-    footerInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: IS_TINY ? 12 : 20 },
-    footerInfoText: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-    previewActionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' },
-    previewCancel: { paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 12, borderWidth: 1, borderColor: C.divider },
-    previewCancelText: { color: C.text, fontSize: 12, fontWeight: '700' },
-    previewRegenerate: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: Colors.accent.gold, borderWidth: 1, borderColor: Colors.accent.gold },
-    previewRegenerateDisabled: { opacity: 0.6 },
-    previewRegenerateText: { color: Colors.accent.navy, fontSize: 12, fontWeight: '800' },
-    previewSubmit: { paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, backgroundColor: Colors.accent.gold },
-    previewSubmitText: { color: Colors.accent.navy, fontSize: 12, fontWeight: '900' },
+    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: 20 },
+    modalContent: { backgroundColor: C.modalBg, borderRadius: 24, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: C.cardBorder },
+    modalSubtitle: { color: C.textSecondary, fontSize: 12, textAlign: 'center', marginBottom: 18, lineHeight: 18 },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 14, paddingHorizontal: 14, height: 48, marginBottom: 18, borderWidth: 1, borderColor: C.inputBorder, width: '100%' },
+    modalInput: { flex: 1, marginLeft: 10, color: C.inputText, fontSize: 14, fontWeight: '600' },
+    modalActions: { flexDirection: 'row', gap: 10, width: '100%' },
+    modalCancel: { flex: 1, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: C.actionItemBg },
+    modalCancelText: { color: C.text, fontSize: 13, fontWeight: '700' },
+    modalSubmit: { flex: 2, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: Colors.accent.gold },
+    modalSubmitText: { color: Colors.accent.navy, fontSize: 13, fontWeight: '800' },
+    successIcon: { marginBottom: 12 }
   });
 }

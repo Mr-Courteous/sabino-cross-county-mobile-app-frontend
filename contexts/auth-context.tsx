@@ -1,6 +1,6 @@
-import React, { createContext, ReactNode, useCallback, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useEffect, useState, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { authApi, User, schoolApi } from '@/utils/api-calls-new';
 import { apiService } from '@/utils/api-service';
 import { clearAllStorage } from '@/utils/storage';
@@ -36,14 +36,49 @@ interface AuthContextType {
     schoolType?: string;
   }) => Promise<AuthResponse>;
   logout: () => Promise<void>;
+  recordActivity: () => void;
 };
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null); // ✅ Added token state
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const lastActivityRef = useRef(Date.now());
+
+  const logout = useCallback(async () => {
+    setUser(null);
+    setToken(null);
+    apiService.setToken(null);
+    
+    // 🔴 REVENUECAT: Reset on logout
+    if (Platform.OS !== 'web') {
+      await resetUser();
+    }
+    
+    await clearAllStorage();
+  }, []);
+
+  const recordActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  const checkInactivity = useCallback(async () => {
+    // Only check if user is signed in
+    const storedToken = Platform.OS !== 'web' 
+      ? await SecureStore.getItemAsync('userToken')
+      : localStorage.getItem('userToken');
+      
+    if (!storedToken) return;
+
+    const now = Date.now();
+    const diff = now - lastActivityRef.current;
+    if (diff >= 3600000) { // 1 hour in ms
+      console.log('🚪 [Auth] Inactivity timeout reached. Logging out...');
+      await logout();
+    }
+  }, [logout]);
 
   useEffect(() => {
     const bootstrapAsync = async () => {
@@ -51,7 +86,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         let savedToken = null;
         let savedUser = null;
 
-        // Only try SecureStore on mobile platforms
         if (Platform.OS !== 'web') {
           try {
             savedToken = await SecureStore.getItemAsync('userToken');
@@ -59,7 +93,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           } catch (secureStoreErr) {
           }
         } else {
-          // Fallback to localStorage on web
           try {
             savedToken = localStorage.getItem('userToken');
             savedUser = localStorage.getItem('userData');
@@ -76,7 +109,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const parsedUser = JSON.parse(savedUser);
             setUser(parsedUser);
 
-            // 🟢 REVENUECAT: Configure and identify on bootstrap
             if (parsedUser.schoolId && Platform.OS !== 'web') {
               await configurePurchases(parsedUser.schoolId.toString());
             }
@@ -91,22 +123,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     bootstrapAsync();
   }, []);
 
-  // 🟢 REVENUECAT: Listen for CustomerInfo updates globally
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    // Check periodically for inactivity
+    const interval = setInterval(checkInactivity, 60000); // Check every minute
 
-    const listener = (info: CustomerInfo) => {
-      console.log('💎 [RevenueCat] Customer info updated:', info.entitlements.active);
-      // You can trigger a global refetch or local state update here if needed
-      // Most routes will re-check via backend middleware anyway.
+    // Check when app state changes (e.g. comes back from background)
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkInactivity();
+      } else if (nextAppState === 'background') {
+        // Record timestamp when going to background to ensure we can check it on resume
+        recordActivity();
+      }
+    });
+
+    // 🌐 WEB: Add global activity listeners
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    if (Platform.OS === 'web') {
+      activityEvents.forEach(ev => {
+        window.addEventListener(ev, recordActivity);
+      });
+    }
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+      if (Platform.OS === 'web') {
+        activityEvents.forEach(ev => {
+          window.removeEventListener(ev, recordActivity);
+        });
+      }
     };
-
-    Purchases.addCustomerInfoUpdateListener(listener);
-
-    // Clean up
-    // return () => Purchases.removeCustomerInfoUpdateListener(listener); 
-    // ^ Note: react-native-purchases 7.x+ handles cleanup internally or uses different pattern
-  }, []);
+  }, [checkInactivity, recordActivity]);
 
   const login = useCallback(async (email: string, password: string) => {
     try {
@@ -117,11 +165,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const userToken = response.data.token;
         const userData = response.data.user;
 
-        // Update state
         setToken(userToken);
         setUser(userData as any);
 
-        // Store token securely based on platform
         if (Platform.OS !== 'web') {
           try {
             await SecureStore.setItemAsync('userToken', userToken);
@@ -142,8 +188,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         apiService.setToken(userToken);
+        recordActivity();
 
-        // 🟢 REVENUECAT: Identify user on login
         if (userData.schoolId && Platform.OS !== 'web') {
           await configurePurchases(userData.schoolId.toString());
           await identifyUser(userData.schoolId.toString());
@@ -157,7 +203,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [recordActivity]);
 
   const sendOTP = useCallback(async (email: string) => {
     try {
@@ -199,11 +245,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           type: 'school'
         };
 
-        // Update state
         setToken(userToken);
         setUser(userData as any);
 
-        // Store token securely based on platform
         if (Platform.OS !== 'web') {
           try {
             await SecureStore.setItemAsync('userToken', userToken);
@@ -224,6 +268,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         apiService.setToken(userToken);
+        recordActivity();
 
         return { success: true, message: response.message || 'Registration successful!' };
       }
@@ -235,20 +280,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  const logout = useCallback(async () => {
-    setUser(null);
-    setToken(null);
-    apiService.setToken(null);
-    
-    // 🔴 REVENUECAT: Reset on logout
-    if (Platform.OS !== 'web') {
-      await resetUser();
-    }
-    
-    await clearAllStorage();
-  }, []);
+  }, [recordActivity]);
 
   const value: AuthContextType = {
     user,
@@ -259,6 +291,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     sendOTP,
     completeRegistration,
     logout,
+    recordActivity,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

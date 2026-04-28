@@ -1,665 +1,197 @@
-import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, ScrollView, Alert, Platform } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, TextInput, TouchableOpacity, Text, ActivityIndicator, ScrollView, Alert, Platform, useWindowDimensions, StyleSheet } from 'react-native';
+import { useState, useEffect, useMemo } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { Student } from '@/utils/api-calls';
 import { API_BASE_URL } from '@/utils/api-service';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Colors, Spacing } from '@/constants/design-system';
+import { Ionicons } from '@expo/vector-icons';
 
 interface ScoreRecord {
-  student_id: number;
-  first_name: string;
-  last_name: string;
-  registration_number: string;
-  ca1_score?: number;
-  ca2_score?: number;
-  ca3_score?: number;
-  ca4_score?: number;
-  exam_score?: number;
-  teacher_remark?: string;
-}
-
-interface ScoreEntry {
-  student_id: number;
-  subject_id: number;
-  class_id: number;
-  academic_year: string;
-  term: number;
-  ca1_score?: number;
-  ca2_score?: number;
-  ca3_score?: number;
-  ca4_score?: number;
-  exam_score?: number;
-  teacher_remark?: string;
+  student_id: number; first_name: string; last_name: string; registration_number: string;
+  ca1_score?: number; ca2_score?: number; ca3_score?: number; ca4_score?: number; exam_score?: number; teacher_remark?: string;
 }
 
 export default function ManageScoresScreen() {
-  // Data
-  const [academicYears, setAcademicYears] = useState<Array<{ id: number; year: string }>>([]);
-  const [classes, setClasses] = useState<Array<{ id: number; name: string }>>([]);
-  const [subjects, setSubjects] = useState<Array<{ id: number; name: string }>>([]);
-
-  // Filters
+  const { width } = useWindowDimensions();
+  const isTiny = width < 300;
+  
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedYear, setSelectedYear] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('1');
-  const [selectedClass, setSelectedClass] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(null);
-
-  // Scores data
   const [scoreRecords, setScoreRecords] = useState<ScoreRecord[]>([]);
-  const [scores, setScores] = useState<{ [key: string]: Partial<ScoreEntry> }>({});
-  const [loadingData, setLoadingData] = useState(true);
-  const [loadingScores, setLoadingScores] = useState(false);
-  const [savingScores, setSavingScores] = useState(false);
+  const [scores, setScores] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
-  // Load initial data on mount
-  useEffect(() => {
-    loadInitialData();
-  }, []);
+  useEffect(() => { loadInitialData(); }, []);
 
   const loadInitialData = async () => {
-    setLoadingData(true);
-    setError('');
-
+    setLoading(true);
     try {
-      let token = localStorage.getItem('userToken');
-      if (!token && Platform.OS !== 'web') {
-        try {
-          token = await SecureStore.getItemAsync('userToken');
-        } catch (e) {}
-      }
-
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` }),
-      };
-
-      // Load academic years
-      const yearsResponse = await fetch(`${API_BASE_URL}/academic-years`, {
-        method: 'GET',
-        headers,
-      });
-      const yearsData = await yearsResponse.json();
-      const yearsArray = Array.isArray(yearsData?.data) ? yearsData.data : [];
-      setAcademicYears(yearsArray);
-
-      if (yearsArray.length > 0) {
-        setSelectedYear(yearsArray[0].year);
-      }
-
-      // Load classes
-      const classesResponse = await fetch(`${API_BASE_URL}/classes`, {
-        method: 'GET',
-        headers,
-      });
-      const classesData = await classesResponse.json();
-      const classesArray = Array.isArray(classesData?.data) ? classesData.data : [];
-      setClasses(classesArray);
-
-      // Load subjects
-      const subjectsResponse = await fetch(`${API_BASE_URL}/classes/subjects`, {
-        method: 'GET',
-        headers,
-      });
-      const subjectsData = await subjectsResponse.json();
-      const subjectsArray = Array.isArray(subjectsData?.data) ? subjectsData.data : [];
-      setSubjects(subjectsArray);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load initial data';
-      setError(errorMessage);
-    } finally {
-      setLoadingData(false);
-    }
+      let token = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+      const headers = { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) };
+      const [y, c, s] = await Promise.all([
+        fetch(`${API_BASE_URL}/academic-years`, { headers }).then(r => r.json()),
+        fetch(`${API_BASE_URL}/classes`, { headers }).then(r => r.json()),
+        fetch(`${API_BASE_URL}/classes/subjects`, { headers }).then(r => r.json())
+      ]);
+      setAcademicYears(y.data || []);
+      setClasses(c.data || []);
+      setSubjects(s.data || []);
+      if (y.data?.length) setSelectedYear(y.data[0].year);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   };
 
-  // Load scores when filters change
   useEffect(() => {
-    if (selectedYear && selectedTerm && selectedClassId && selectedSubjectId) {
-      loadScoresForClass();
-    }
+    if (selectedYear && selectedClassId && selectedSubjectId) fetchScores();
   }, [selectedYear, selectedTerm, selectedClassId, selectedSubjectId]);
 
-  const loadScoresForClass = async () => {
-    if (!selectedClassId || !selectedSubjectId) {
-      return;
-    }
-
-    setLoadingScores(true);
-    setError('');
-
+  const fetchScores = async () => {
     try {
-      let token = localStorage.getItem('userToken');
-      if (!token && Platform.OS !== 'web') {
-        try {
-          token = await SecureStore.getItemAsync('userToken');
-        } catch (e) {}
-      }
-
-      const response = await fetch(
-        `${API_BASE_URL}/scores/class?classId=${selectedClassId}&subjectId=${selectedSubjectId}&academicYear=${selectedYear}&term=${selectedTerm}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token && { 'Authorization': `Bearer ${token}` }),
-          },
-        }
-      );
-
-      const data = await response.json();
-      const records = Array.isArray(data?.data) ? data.data : [];
-
-      setScoreRecords(records);
-
-      // Populate scores state with existing scores
-      const scoresMap: { [key: string]: Partial<ScoreEntry> } = {};
-      records.forEach((record: ScoreRecord) => {
-        scoresMap[`${record.student_id}-ca1_score`] = { ca1_score: record.ca1_score };
-        scoresMap[`${record.student_id}-ca2_score`] = { ca2_score: record.ca2_score };
-        scoresMap[`${record.student_id}-ca3_score`] = { ca3_score: record.ca3_score };
-        scoresMap[`${record.student_id}-ca4_score`] = { ca4_score: record.ca4_score };
-        scoresMap[`${record.student_id}-exam_score`] = { exam_score: record.exam_score };
-        scoresMap[`${record.student_id}-teacher_remark`] = { teacher_remark: record.teacher_remark };
+      let token = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+      const r = await fetch(`${API_BASE_URL}/scores/class?classId=${selectedClassId}&subjectId=${selectedSubjectId}&academicYear=${selectedYear}&term=${selectedTerm}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      setScores(scoresMap);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load scores';
-      setError(errorMessage);
-    } finally {
-      setLoadingScores(false);
-    }
+      const data = await r.json();
+      setScoreRecords(data.data || []);
+      const map: any = {};
+      (data.data || []).forEach((rec: any) => {
+        ['ca1_score', 'ca2_score', 'ca3_score', 'ca4_score', 'exam_score'].forEach(f => {
+          map[`${rec.student_id}-${f}`] = rec[f];
+        });
+      });
+      setScores(map);
+    } catch (e: any) { setError(e.message); }
   };
 
-  const handleScoreChange = (studentId: number, field: string, value: string) => {
-    const key = `${studentId}-${field}`;
-    
-    let numValue: number | undefined;
-    if (field === 'teacher_remark') {
-      // Allow text for remarks
-      numValue = undefined;
-    } else {
-      numValue = value === '' ? undefined : Math.max(0, Math.min(100, parseInt(value) || 0));
-    }
-
-    setScores({
-      ...scores,
-      [key]: {
-        ...scores[key],
-        [field]: field === 'teacher_remark' ? value : numValue,
-      },
-    });
-    setError('');
-  };
-
-  const handleSaveScores = async () => {
-    if (!selectedClassId || !selectedSubjectId) {
-      setError('Please select both class and subject');
-      return;
-    }
-
-    // Prepare score data for all students
-    const scoresData: ScoreEntry[] = [];
-
-    scoreRecords.forEach((record) => {
-      const ca1_score = scores[`${record.student_id}-ca1_score`]?.ca1_score;
-      const ca2_score = scores[`${record.student_id}-ca2_score`]?.ca2_score;
-      const ca3_score = scores[`${record.student_id}-ca3_score`]?.ca3_score;
-      const ca4_score = scores[`${record.student_id}-ca4_score`]?.ca4_score;
-      const exam_score = scores[`${record.student_id}-exam_score`]?.exam_score;
-      const teacher_remark = scores[`${record.student_id}-teacher_remark`]?.teacher_remark;
-
-      scoresData.push({
-        student_id: record.student_id,
-        subject_id: selectedSubjectId,
-        class_id: selectedClassId,
-        academic_year: selectedYear,
-        term: parseInt(selectedTerm),
-        ca1_score,
-        ca2_score,
-        ca3_score,
-        ca4_score,
-        exam_score,
-        teacher_remark,
-      });
-    });
-
-    setSavingScores(true);
-    setError('');
-    setSuccessMsg('');
-
+  const saveAll = async () => {
+    setSaving(true);
     try {
-      let token = localStorage.getItem('userToken');
-      if (!token && Platform.OS !== 'web') {
-        try {
-          token = await SecureStore.getItemAsync('userToken');
-        } catch (e) {}
-      }
-
-      const result = await fetch(`${API_BASE_URL}/scores/bulk-upsert`, {
+      const payload = scoreRecords.map(r => ({
+        student_id: r.student_id, subject_id: selectedSubjectId, class_id: selectedClassId,
+        academic_year: selectedYear, term: parseInt(selectedTerm),
+        ca1_score: scores[`${r.student_id}-ca1_score`],
+        ca2_score: scores[`${r.student_id}-ca2_score`],
+        ca3_score: scores[`${r.student_id}-ca3_score`],
+        ca4_score: scores[`${r.student_id}-ca4_score`],
+        exam_score: scores[`${r.student_id}-exam_score`],
+      }));
+      let token = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+      await fetch(`${API_BASE_URL}/scores/bulk-upsert`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-        body: JSON.stringify({ scores: scoresData }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ scores: payload })
       });
-
-      const data = await result.json();
-
-      if (result.ok && data.success) {
-        setSuccessMsg(`Saved scores for ${scoresData.length} student${scoresData.length !== 1 ? 's' : ''}`);
-
-        // Clear message after 2 seconds
-        setTimeout(() => {
-          setSuccessMsg('');
-        }, 2000);
-      } else {
-        setError(data.message || 'Failed to save scores');
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to save scores';
-      setError(errorMessage);
-    } finally {
-      setSavingScores(false);
-    }
+      Alert.alert('Success', 'Scores synchronized.');
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
   };
 
-  if (loadingData) {
-    return (
-      <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <ThemedText style={{ marginTop: 16 }}>Loading data...</ThemedText>
-      </ThemedView>
-    );
-  }
+  if (loading) return <ThemedView style={styles.center}><ActivityIndicator color="#FACC15" /></ThemedView>;
 
   return (
     <ThemedView style={{ flex: 1 }}>
-      <ScrollView
-        style={{ flex: 1, padding: 16 }}
-        contentContainerStyle={{ paddingBottom: 30 }}
-      >
-        {/* Header */}
-        <View style={{ marginBottom: 24 }}>
-          <ThemedText type="title" style={{ marginBottom: 8 }}>
-            Manage Scores
-          </ThemedText>
-          <ThemedText style={{ opacity: 0.7, fontSize: 14 }}>
-            Update and manage student scores
-          </ThemedText>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: isTiny ? 12 : 16 }}>
+        <View style={{ marginBottom: 16 }}>
+          <ThemedText type="subtitle" style={{ fontSize: isTiny ? 16 : 18 }}>Manage Scores</ThemedText>
+          <ThemedText style={{ opacity: 0.6, fontSize: 11 }}>Update student academic performance</ThemedText>
         </View>
 
-        {/* Filters */}
-        <View style={{ marginBottom: 20 }}>
-          <ThemedText style={{ fontWeight: '600', marginBottom: 10 }}>
-            Filters
-          </ThemedText>
-
-          {/* Academic Year */}
-          <View style={{ marginBottom: 12 }}>
-            <ThemedText style={{ fontSize: 12, marginBottom: 6, opacity: 0.7 }}>
-              Academic Year *
-            </ThemedText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {academicYears.map((year) => (
-                  <TouchableOpacity
-                    key={year.id}
-                    style={{
-                      paddingVertical: 8,
-                      paddingHorizontal: 14,
-                      borderRadius: 6,
-                      borderWidth: 2,
-                      borderColor: selectedYear === year.year ? '#4CAF50' : '#ddd',
-                      backgroundColor: selectedYear === year.year ? '#e8f5e9' : '#fff',
-                    }}
-                    onPress={() => setSelectedYear(year.year)}
-                  >
-                    <ThemedText
-                      style={{
-                        fontWeight: '600',
-                        color: selectedYear === year.year ? '#4CAF50' : '#666',
-                        fontSize: 13,
-                      }}
-                    >
-                      {year.year}
-                    </ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
+        <View style={styles.filterBox}>
+          <ThemedText style={styles.filterLabel}>Year & Term</ThemedText>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            {academicYears.map(y => (
+              <TouchableOpacity key={y.id} style={[styles.pill, selectedYear === y.year && styles.pillActive]} onPress={() => setSelectedYear(y.year)}>
+                <Text style={[styles.pillText, selectedYear === y.year && styles.pillTextActive]}>{y.year}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={styles.row}>
+            {['1', '2', '3'].map(t => (
+              <TouchableOpacity key={t} style={[styles.pill, { flex: 1 }, selectedTerm === t && styles.pillActive]} onPress={() => setSelectedTerm(t)}>
+                <Text style={[styles.pillText, selectedTerm === t && styles.pillTextActive]}>T{t}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        </View>
 
-          {/* Term */}
-          <View style={{ marginBottom: 12 }}>
-            <ThemedText style={{ fontSize: 12, marginBottom: 6, opacity: 0.7 }}>
-              Term *
-            </ThemedText>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {['1', '2', '3'].map((term) => (
-                <TouchableOpacity
-                  key={term}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 10,
-                    borderRadius: 6,
-                    borderWidth: 2,
-                    borderColor: selectedTerm === term ? '#4CAF50' : '#ddd',
-                    backgroundColor: selectedTerm === term ? '#e8f5e9' : '#fff',
-                    alignItems: 'center',
-                  }}
-                  onPress={() => setSelectedTerm(term)}
-                >
-                  <ThemedText
-                    style={{
-                      fontWeight: '600',
-                      color: selectedTerm === term ? '#4CAF50' : '#666',
-                    }}
-                  >
-                    Term {term}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+        <View style={styles.filterBox}>
+          <ThemedText style={styles.filterLabel}>Class & Subject</ThemedText>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            {classes.map(c => (
+              <TouchableOpacity key={c.id} style={[styles.pill, selectedClassId === c.id && styles.pillActive]} onPress={() => setSelectedClassId(c.id)}>
+                <Text style={[styles.pillText, selectedClassId === c.id && styles.pillTextActive]}>{c.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {subjects.map(s => (
+              <TouchableOpacity key={s.id} style={[styles.pill, selectedSubjectId === s.id && styles.pillActive]} onPress={() => setSelectedSubjectId(s.id)}>
+                <Text style={[styles.pillText, selectedSubjectId === s.id && styles.pillTextActive]}>{s.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {selectedClassId && selectedSubjectId ? (
+          <View>
+            <View style={styles.tableHeader}>
+              <View style={{ flex: 2 }}><Text style={styles.headerText}>STUDENT</Text></View>
+              {['C1', 'C2', 'C3', 'EX'].map(h => <View key={h} style={{ flex: 1, alignItems: 'center' }}><Text style={styles.headerText}>{h}</Text></View>)}
             </View>
-          </View>
-
-          {/* Class */}
-          <View style={{ marginBottom: 12 }}>
-            <ThemedText style={{ fontSize: 12, marginBottom: 6, opacity: 0.7 }}>
-              Class *
-            </ThemedText>
-            {classes.length === 0 ? (
-              <ThemedText style={{ color: '#999', fontSize: 13 }}>
-                No classes available.
-              </ThemedText>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {classes.map((cls) => (
-                    <TouchableOpacity
-                      key={cls.id}
-                      style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 14,
-                        borderRadius: 6,
-                        borderWidth: 2,
-                        borderColor: selectedClassId === cls.id ? '#4CAF50' : '#ddd',
-                        backgroundColor: selectedClassId === cls.id ? '#e8f5e9' : '#fff',
-                      }}
-                      onPress={() => {
-                        setSelectedClassId(cls.id);
-                        setSelectedClass(cls.name);
-                      }}
-                    >
-                      <ThemedText
-                        style={{
-                          fontWeight: '600',
-                          color: selectedClassId === cls.id ? '#4CAF50' : '#666',
-                          fontSize: 13,
-                        }}
-                      >
-                        {cls.name}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  ))}
+            {scoreRecords.map(rec => (
+              <View key={rec.student_id} style={styles.rowItem}>
+                <View style={{ flex: 2 }}>
+                  <Text style={styles.studentName} numberOfLines={1}>{rec.first_name} {rec.last_name}</Text>
+                  <Text style={styles.studentReg}>{rec.registration_number}</Text>
                 </View>
-              </ScrollView>
-            )}
-          </View>
-
-          {/* Subject */}
-          <View>
-            <ThemedText style={{ fontSize: 12, marginBottom: 6, opacity: 0.7 }}>
-              Subject *
-            </ThemedText>
-            {subjects.length === 0 ? (
-              <ThemedText style={{ color: '#999', fontSize: 13 }}>
-                No subjects available.
-              </ThemedText>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {subjects.map((subject) => (
-                    <TouchableOpacity
-                      key={subject.id}
-                      style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 14,
-                        borderRadius: 6,
-                        borderWidth: 2,
-                        borderColor: selectedSubjectId === subject.id ? '#4CAF50' : '#ddd',
-                        backgroundColor: selectedSubjectId === subject.id ? '#e8f5e9' : '#fff',
-                      }}
-                      onPress={() => {
-                        setSelectedSubjectId(subject.id);
-                        setSelectedSubject(subject.name);
-                      }}
-                    >
-                      <ThemedText
-                        style={{
-                          fontWeight: '600',
-                          color: selectedSubjectId === subject.id ? '#4CAF50' : '#666',
-                          fontSize: 13,
-                        }}
-                      >
-                        {subject.name}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-
-        {/* Error Message */}
-        {error ? (
-          <View
-            style={{
-              backgroundColor: '#ffebee',
-              borderLeftColor: '#d32f2f',
-              borderLeftWidth: 5,
-              padding: 14,
-              borderRadius: 6,
-              marginBottom: 20,
-              borderWidth: 1,
-              borderColor: '#ffcdd2',
-            }}
-          >
-            <ThemedText style={{ color: '#c62828', fontSize: 15, fontWeight: '600', marginBottom: 4 }}>
-              ❌ Error
-            </ThemedText>
-            <ThemedText style={{ color: '#b71c1c', fontSize: 14 }}>
-              {error}
-            </ThemedText>
-          </View>
-        ) : null}
-
-        {/* Success Message */}
-        {successMsg ? (
-          <View
-            style={{
-              backgroundColor: '#e8f5e9',
-              borderLeftColor: '#4CAF50',
-              borderLeftWidth: 5,
-              padding: 14,
-              borderRadius: 6,
-              marginBottom: 20,
-              borderWidth: 1,
-              borderColor: '#c8e6c9',
-            }}
-          >
-            <ThemedText style={{ color: '#2e7d32', fontSize: 14, fontWeight: '600' }}>
-              ✅ {successMsg}
-            </ThemedText>
-          </View>
-        ) : null}
-
-        {/* Loading Scores */}
-        {loadingScores ? (
-          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-            <ActivityIndicator size="large" color="#4CAF50" />
-            <ThemedText style={{ marginTop: 12 }}>Loading scores...</ThemedText>
-          </View>
-        ) : selectedClassId && selectedSubjectId ? (
-          // Score Table
-          <View>
-            <ThemedText style={{ fontWeight: '600', marginBottom: 12, fontSize: 14 }}>
-              {selectedClass} - {selectedSubject}
-            </ThemedText>
-
-            {scoreRecords.length === 0 ? (
-              <View
-                style={{
-                  backgroundColor: '#f5f5f5',
-                  padding: 16,
-                  borderRadius: 8,
-                  alignItems: 'center',
-                }}
-              >
-                <ThemedText style={{ opacity: 0.7 }}>
-                  No students in this class
-                </ThemedText>
-              </View>
-            ) : (
-              <View>
-                {/* Column Headers */}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    backgroundColor: '#4CAF50',
-                    borderRadius: 6,
-                    overflow: 'hidden',
-                    marginBottom: 8,
-                  }}
-                >
-                  <View style={{ flex: 2, padding: 10 }}>
-                    <ThemedText style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>
-                      Student
-                    </ThemedText>
-                  </View>
-                  {['CA1', 'CA2', 'CA3', 'CA4', 'Exam'].map((col) => (
-                    <View key={col} style={{ flex: 1, padding: 8, alignItems: 'center' }}>
-                      <ThemedText style={{ color: '#fff', fontWeight: '600', fontSize: 11 }}>
-                        {col}
-                      </ThemedText>
-                    </View>
-                  ))}
-                </View>
-
-                {/* Score Rows */}
-                {scoreRecords.map((record) => (
-                  <View
-                    key={record.student_id}
-                    style={{
-                      flexDirection: 'row',
-                      backgroundColor: '#f9f9f9',
-                      borderWidth: 1,
-                      borderColor: '#eee',
-                      borderRadius: 6,
-                      marginBottom: 8,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {/* Student Name */}
-                    <View style={{ flex: 2, padding: 10, justifyContent: 'center' }}>
-                      <ThemedText style={{ fontWeight: '600', fontSize: 13 }}>
-                        {record.first_name} {record.last_name}
-                      </ThemedText>
-                      {record.registration_number && (
-                        <ThemedText style={{ fontSize: 10, opacity: 0.6 }}>
-                          {record.registration_number}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* Score Inputs */}
-                    {[
-                      { key: 'ca1_score', label: 'CA1' },
-                      { key: 'ca2_score', label: 'CA2' },
-                      { key: 'ca3_score', label: 'CA3' },
-                      { key: 'ca4_score', label: 'CA4' },
-                      { key: 'exam_score', label: 'Exam' },
-                    ].map((field) => (
-                      <View key={field.key} style={{ flex: 1, padding: 6 }}>
-                        <TextInput
-                          style={{
-                            borderWidth: 1,
-                            borderColor: '#ddd',
-                            borderRadius: 4,
-                            padding: 6,
-                            fontSize: 12,
-                            backgroundColor: '#fff',
-                            textAlign: 'center',
-                          }}
-                          placeholder="0"
-                          placeholderTextColor="#ccc"
-                          value={
-                            scores[`${record.student_id}-${field.key}`]?.[field.key as keyof ScoreEntry]
-                              ?.toString() || ''
-                          }
-                          onChangeText={(text) =>
-                            handleScoreChange(record.student_id, field.key, text)
-                          }
-                          keyboardType="numeric"
-                          maxLength={3}
-                        />
-                      </View>
-                    ))}
+                {['ca1_score', 'ca2_score', 'ca3_score', 'exam_score'].map(f => (
+                  <View key={f} style={{ flex: 1, padding: 2 }}>
+                    <TextInput
+                      style={styles.input} keyboardType="numeric" maxLength={3}
+                      value={scores[`${rec.student_id}-${f}`]?.toString() || ''}
+                      onChangeText={t => setScores({ ...scores, [`${rec.student_id}-${f}`]: t })}
+                    />
                   </View>
                 ))}
-
-                {/* Save Button */}
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: savingScores ? '#ccc' : '#4CAF50',
-                    padding: 14,
-                    borderRadius: 8,
-                    alignItems: 'center',
-                    marginTop: 16,
-                    opacity: savingScores ? 0.6 : 1,
-                  }}
-                  onPress={handleSaveScores}
-                  disabled={savingScores}
-                >
-                  {savingScores ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />
-                      <ThemedText style={{ color: '#fff', fontWeight: '600' }}>
-                        Saving Scores...
-                      </ThemedText>
-                    </View>
-                  ) : (
-                    <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-                      Save All Scores
-                    </ThemedText>
-                  )}
-                </TouchableOpacity>
               </View>
-            )}
+            ))}
+            <TouchableOpacity style={styles.saveBtn} onPress={saveAll} disabled={saving}>
+              {saving ? <ActivityIndicator color="#000" size="small" /> : <Text style={styles.saveBtnText}>SYNC ALL SCORES</Text>}
+            </TouchableOpacity>
           </View>
         ) : (
-          <View
-            style={{
-              backgroundColor: '#e3f2fd',
-              padding: 16,
-              borderRadius: 8,
-              alignItems: 'center',
-            }}
-          >
-            <ThemedText style={{ fontSize: 14, marginBottom: 4, fontWeight: '600' }}>
-              Select Class & Subject
-            </ThemedText>
-            <ThemedText style={{ fontSize: 12, opacity: 0.7, textAlign: 'center' }}>
-              Use the filters above to view and edit scores for a specific class and subject
-            </ThemedText>
-          </View>
+          <View style={styles.empty}><Ionicons name="filter" size={32} color="#94A3B8" /><Text style={styles.emptyText}>Select class and subject to view entries</Text></View>
         )}
       </ScrollView>
     </ThemedView>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  filterBox: { marginBottom: 14, backgroundColor: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 12 },
+  filterLabel: { fontSize: 10, fontWeight: '900', color: '#94A3B8', marginBottom: 8, letterSpacing: 1 },
+  pill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)', marginRight: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  pillActive: { backgroundColor: '#FACC15', borderColor: '#FACC15' },
+  pillText: { fontSize: 11, fontWeight: '700', color: '#94A3B8' },
+  pillTextActive: { color: '#000' },
+  row: { flexDirection: 'row', gap: 6 },
+  tableHeader: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', padding: 8, borderRadius: 8, marginBottom: 6 },
+  headerText: { fontSize: 9, fontWeight: '900', color: '#64748B' },
+  rowItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8, marginBottom: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  studentName: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  studentReg: { fontSize: 9, color: '#64748B' },
+  input: { backgroundColor: '#000', color: '#FACC15', textAlign: 'center', padding: 4, borderRadius: 4, fontSize: 11, fontWeight: '800' },
+  saveBtn: { backgroundColor: '#FACC15', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 16 },
+  saveBtnText: { color: '#000', fontWeight: '900', fontSize: 12, letterSpacing: 1 },
+  empty: { padding: 40, alignItems: 'center' },
+  emptyText: { color: '#64748B', fontSize: 11, marginTop: 10, textAlign: 'center' }
+});

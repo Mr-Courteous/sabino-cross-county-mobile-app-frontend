@@ -4,7 +4,7 @@
     "slug": "sabino-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/sabino.png",
+    "icon": "./assets/images/sabino.jpeg",
     "scheme": "sabinomobileapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -21,11 +21,15 @@
       "versionCode": 47,
       "permissions": [
         "com.android.vending.BILLING",
-        "com.google.android.gms.permission.AD_ID"
+        "com.google.android.gms.permission.AD_ID",
+        "READ_MEDIA_IMAGES"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_VIDEO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/sabino.png"
+        "foregroundImage": "./assets/images/sabino.jpeg"
       },
       "edgeToEdgeEnabled": true
     },
@@ -38,7 +42,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/sabino.png",
+          "image": "./assets/images/sabino.jpeg",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"

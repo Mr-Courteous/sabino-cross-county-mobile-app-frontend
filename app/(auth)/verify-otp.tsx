@@ -1,5 +1,5 @@
-import { View, ActivityIndicator, Alert, ScrollView, ImageBackground, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, ActivityIndicator, ScrollView, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,13 +8,12 @@ import { CustomButton } from '@/components/custom-button';
 import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
-import {
-    Colors,
-    Spacing,
-} from '@/constants/design-system';
+import { Colors } from '@/constants/design-system';
 
 export default function VerifyOTPScreen() {
     const router = useRouter();
+    const { width } = useWindowDimensions();
+    const styles = useMemo(() => makeStyles(width), [width]);
     const params = useLocalSearchParams();
     const email = params.email as string;
 
@@ -25,30 +24,12 @@ export default function VerifyOTPScreen() {
         type: 'success' | 'error' | 'warning' | 'info';
         title: string;
         message: string;
-        onConfirm?: () => void;
-    }>({
-        visible: false,
-        type: 'info',
-        title: '',
-        message: '',
-    });
+    }>({ visible: false, type: 'info', title: '', message: '' });
     const [verifying, setVerifying] = useState(false);
 
     useEffect(() => {
-        if (timeLeft <= 0) {
-            setStatusAlert({
-                visible: true,
-                type: 'warning',
-                title: 'Code Expired',
-                message: 'OTP has expired. Please request a new one.'
-            });
-            return;
-        }
-
-        const timer = setInterval(() => {
-            setTimeLeft((prev) => prev - 1);
-        }, 1000);
-
+        if (timeLeft <= 0) return;
+        const timer = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
         return () => clearInterval(timer);
     }, [timeLeft]);
 
@@ -59,151 +40,45 @@ export default function VerifyOTPScreen() {
     };
 
     const handleVerifyOTP = async () => {
-        if (!otp.trim()) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'Input Required',
-                message: 'Please enter the OTP'
-            });
-            return;
-        }
-
-        if (otp.length !== 6 || !/^\d+$/.test(otp)) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'Invalid Format',
-                message: 'OTP must be 6 digits'
-            });
-            return;
-        }
-
+        if (otp.length !== 6) return;
         setVerifying(true);
-        setStatusAlert({ ...statusAlert, visible: false });
-
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/verify-otp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, otp }),
             });
-
             const data = await response.json();
-            if (response.ok && data.success) {
-                router.push({
-                    pathname: '/(auth)/complete-registration',
-                    params: { email },
-                });
-            } else {
-                setStatusAlert({
-                    visible: true,
-                    type: 'error',
-                    title: 'Verification Failed',
-                    message: data.message || 'OTP verification failed'
-                });
-            }
-        } catch (err) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'Connection Fault',
-                message: 'Failed to verify OTP'
-            });
-        } finally {
-            setVerifying(false);
-        }
+            if (response.ok && data.success) router.push({ pathname: '/(auth)/complete-registration', params: { email } });
+            else throw new Error(data.message || 'OTP verification failed');
+        } catch (err: any) {
+            setStatusAlert({ visible: true, type: 'error', title: 'Error', message: err.message || 'Verify failed' });
+        } finally { setVerifying(false); }
     };
 
-    const handleRequestNewOTP = () => {
-        router.back();
-    };
-
-    const isExpired = timeLeft <= 0;
-    const isAlmostExpired = timeLeft <= 60;
+    const isTiny = width < 300;
 
     return (
         <ThemedView style={{ flex: 1, backgroundColor: Colors.accent.navy }}>
-            <ImageBackground
-                source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
-                style={styles.hero}
-            >
-                <LinearGradient
-                    colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']}
-                    style={styles.overlay}
-                >
-                    <ScrollView
-                        contentContainerStyle={styles.scrollContainer}
-                        showsVerticalScrollIndicator={false}
-                    >
+            <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }} style={styles.hero}>
+                <LinearGradient colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']} style={styles.overlay}>
+                    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                         <View style={styles.header}>
-                            <View style={styles.logoBadge}>
-                                <Ionicons name="ribbon" size={24} color="#FACC15" />
-                                <Text style={styles.logoText}>SABINO PORTAL</Text>
-                            </View>
-                            <Text style={styles.title}>Email Verification</Text>
+                            <View style={styles.logoBadge}><Ionicons name="ribbon" size={20} color="#FACC15" /><Text style={styles.logoText}>SABINO EDU</Text></View>
+                            <Text style={styles.title}>Verification</Text>
                             <View style={styles.goldBar} />
-                            <Text style={styles.subtitle}>SECURE ACCESS CODE REQUIRED</Text>
                         </View>
 
                         <View style={styles.card}>
-                            <View style={styles.iconCircle}>
-                                <Ionicons name="mail-open" size={32} color="#FACC15" />
-                            </View>
-
-                            <View style={styles.infoBox}>
-                                <Text style={styles.infoLabel}>CODE SENT TO:</Text>
-                                <Text style={styles.infoValue}>{email}</Text>
-                            </View>
-
-                            {statusAlert.visible && (
-                                <CustomAlert
-                                    type={statusAlert.type}
-                                    title={statusAlert.title}
-                                    message={statusAlert.message}
-                                    onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-                                    onConfirm={statusAlert.onConfirm}
-                                    style={{ marginBottom: 20 }}
-                                />
-                            )}
-
-                            <CustomInput
-                                label="6-Digit Verification Code *"
-                                placeholder="000000"
-                                value={otp}
-                                onChangeText={(text) => {
-                                    const digitsOnly = text.replace(/\D/g, '').slice(0, 6);
-                                    setOtp(digitsOnly);
-                                    setStatusAlert({ ...statusAlert, visible: false });
-                                }}
-                                keyboardType="numeric"
-                                maxLength={6}
-                                editable={!isExpired && !verifying}
-                                inputStyle={styles.otpInput}
-                                containerStyle={styles.inputContainer}
-                            />
-
-                            <Text style={[styles.timerText, isAlmostExpired && { color: '#EF4444' }]}>
-                                {isExpired ? '⏰ Code expired' : `⏱ Code expires in ${formatTime(timeLeft)}`}
-                            </Text>
-
-                            <CustomButton
-                                title={verifying ? "VERIFYING..." : "ACTIVATE & CONTINUE"}
-                                onPress={handleVerifyOTP}
-                                disabled={isExpired || verifying}
-                                loading={verifying}
-                                variant="premium"
-                                style={styles.ctaButton}
-                            />
-
-                            <TouchableOpacity style={styles.resendButton} onPress={handleRequestNewOTP} disabled={verifying}>
-                                <Text style={styles.resendText}>REQUEST NEW CODE</Text>
-                            </TouchableOpacity>
+                            {!isTiny && <View style={styles.iconCircle}><Ionicons name="mail-open" size={28} color="#FACC15" /></View>}
+                            <View style={styles.infoBox}><Text style={styles.infoValue}>{email}</Text></View>
+                            {statusAlert.visible && <CustomAlert {...statusAlert} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} style={{ marginBottom: 16 }} />}
+                            <CustomInput label="6-Digit OTP" placeholder="000000" value={otp} onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 6))} keyboardType="numeric" maxLength={6} editable={timeLeft > 0 && !verifying} inputStyle={styles.otpInput} />
+                            <Text style={[styles.timerText, timeLeft <= 60 && { color: '#EF4444' }]}>{timeLeft > 0 ? `Code expires in ${formatTime(timeLeft)}` : 'Code expired'}</Text>
+                            <CustomButton title={verifying ? "VERIFYING..." : "CONTINUE"} onPress={handleVerifyOTP} disabled={timeLeft <= 0 || verifying} loading={verifying} variant="premium" style={styles.ctaButton} />
+                            <TouchableOpacity style={styles.resendBtn} onPress={() => router.back()} disabled={verifying}><Text style={styles.resendText}>REQUEST NEW CODE</Text></TouchableOpacity>
                         </View>
-
-                        <View style={styles.footer}>
-                            <Text style={styles.footerText}>ENCRYPTED HANDSHAKE ESTABLISHED</Text>
-                        </View>
+                        <View style={styles.footer}><Text style={styles.footerText}>ENCRYPTED HANDSHAKE</Text></View>
                     </ScrollView>
                 </LinearGradient>
             </ImageBackground>
@@ -211,70 +86,27 @@ export default function VerifyOTPScreen() {
     );
 }
 
-const styles = StyleSheet.create({
-    hero: { flex: 1, width: '100%' },
-    overlay: { flex: 1, paddingHorizontal: 24 },
-    scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
-    
-    header: { alignItems: 'center', marginBottom: 40 },
-    logoBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.08)',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 12,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
-    },
-    logoText: { color: '#FACC15', fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
-    title: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-    goldBar: { width: 50, height: 4, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 15 },
-    subtitle: { fontSize: 12, color: '#94A3B8', fontWeight: '800', letterSpacing: 1 },
-
-    card: {
-        backgroundColor: 'rgba(30, 41, 59, 0.7)',
-        borderRadius: 35,
-        padding: 30,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    iconCircle: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        backgroundColor: 'rgba(250, 204, 21, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        marginBottom: 25,
-        borderWidth: 1,
-        borderColor: 'rgba(250, 204, 21, 0.2)'
-    },
-    infoBox: {
-        backgroundColor: 'rgba(15, 23, 42, 0.4)',
-        padding: 15,
-        borderRadius: 15,
-        marginBottom: 25,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
-        alignItems: 'center'
-    },
-    infoLabel: { color: '#64748B', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 5 },
-    infoValue: { color: '#E2E8F0', fontSize: 14, fontWeight: '700' },
-    
-    inputContainer: {
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    otpInput: { letterSpacing: 8, textAlign: 'center', fontSize: 24, fontWeight: '900' },
-    timerText: { fontSize: 11, color: '#94A3B8', marginTop: 12, textAlign: 'center', fontWeight: '700' },
-    
-    ctaButton: { height: 60, borderRadius: 15, marginTop: 25 },
-    resendButton: { marginTop: 20, alignItems: 'center' },
-    resendText: { color: '#FACC15', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
-    
-    footer: { marginTop: 40, alignItems: 'center' },
-    footerText: { color: '#334155', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-});
+function makeStyles(width: number) {
+    const isTiny = width < 300;
+    return StyleSheet.create({
+        hero: { flex: 1, width: '100%' },
+        overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
+        scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
+        header: { alignItems: 'center', marginBottom: isTiny ? 24 : 32 },
+        logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+        logoText: { color: '#FACC15', fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
+        title: { fontSize: isTiny ? 26 : 30, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+        goldBar: { width: 40, height: 3, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 12 },
+        card: { backgroundColor: 'rgba(30, 41, 59, 0.7)', borderRadius: 28, padding: isTiny ? 20 : 26, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+        iconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 20, borderWidth: 1, borderColor: 'rgba(250, 204, 21, 0.2)' },
+        infoBox: { backgroundColor: 'rgba(15, 23, 42, 0.4)', padding: 10, borderRadius: 12, marginBottom: 16, alignItems: 'center' },
+        infoValue: { color: '#E2E8F0', fontSize: 12, fontWeight: '700' },
+        otpInput: { letterSpacing: 6, textAlign: 'center', fontSize: 20, fontWeight: '900' },
+        timerText: { fontSize: 10, color: '#94A3B8', marginTop: 10, textAlign: 'center', fontWeight: '700' },
+        ctaButton: { height: 52, borderRadius: 12, marginTop: 20 },
+        resendBtn: { marginTop: 16, alignItems: 'center' },
+        resendText: { color: '#FACC15', fontSize: 11, fontWeight: '800' },
+        footer: { marginTop: 30, alignItems: 'center' },
+        footerText: { color: '#334155', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+    });
+}

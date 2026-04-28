@@ -1,37 +1,25 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 
-export default function TenantPill({ tenants = ['Sabino HS', 'Green Valley', "St. Mary's"] }: { tenants?: string[] }) {
+export default function TenantPill({ tenants = ['OAGS PORTAL', 'OAGS ACADEMY', 'OAGS PRIMARY'] }: { tenants?: string[] }) {
   const [index, setIndex] = useState(0);
-
-  function next() {
-    setIndex((i) => (i + 1) % tenants.length);
-  }
+  const { width } = useWindowDimensions();
+  const isTiny = width < 300;
 
   return (
-    <TouchableOpacity style={styles.pill} onPress={next} activeOpacity={0.85}>
+    <TouchableOpacity style={[styles.pill, { minWidth: isTiny ? 100 : 130 }]} onPress={() => setIndex((i) => (i + 1) % tenants.length)} activeOpacity={0.85}>
       <View>
-        <Text style={styles.title}>Tenant</Text>
-        <Text style={styles.name}>{tenants[index]}</Text>
+        <Text style={[styles.title, { fontSize: isTiny ? 8 : 9 }]}>Organization</Text>
+        <Text style={[styles.name, { fontSize: isTiny ? 11 : 12 }]}>{tenants[index]}</Text>
       </View>
-      <Text style={styles.hint}>Switch</Text>
+      {!isTiny && <Text style={styles.hint}>Switch</Text>}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    elevation: 2,
-    minWidth: 140,
-  },
-  title: { fontSize: 10, color: '#666' },
-  name: { fontSize: 14, fontWeight: '700', color: '#1a73e8' },
-  hint: { fontSize: 12, color: '#888' },
+  pill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, elevation: 2 },
+  title: { color: '#64748B', fontWeight: '800', letterSpacing: 0.5 },
+  name: { fontWeight: '900', color: '#0F172A' },
+  hint: { fontSize: 10, color: '#94A3B8', fontWeight: '600' },
 });

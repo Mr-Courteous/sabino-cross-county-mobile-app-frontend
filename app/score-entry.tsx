@@ -8,10 +8,10 @@ import {
   FlatList,
   KeyboardAvoidingView,
   ImageBackground,
-  Dimensions,
   Modal,
   StyleSheet,
-  TouchableWithoutFeedback
+  TouchableWithoutFeedback,
+  useWindowDimensions
 } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import * as SecureStore from 'expo-secure-store';
@@ -24,17 +24,7 @@ import { ThemedView } from '@/components/themed-view';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { useRouter } from 'expo-router';
-import { getStorageItem as getToken } from '@/utils/storage';
 import { useAppColors } from '@/hooks/use-app-colors';
-
-// ── Responsive helpers ────────────────────────────────────────────────
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const IS_TINY = SCREEN_WIDTH < 320;
-const IS_SMALL = SCREEN_WIDTH < 380;
-const FROZEN_COL_W  = IS_SMALL ? 110 : 150;
-const CELL_W        = IS_TINY ? 34 : (IS_SMALL ? 40 : 46);
-const SUBJECT_COL_W = CELL_W * 6 + 28;
-// ─────────────────────────────────────────────────────────────────────
 
 interface Subject {
   id: number;
@@ -64,13 +54,15 @@ interface StudentMatrixRow {
   student_id: string | number;
   first_name: string;
   last_name: string;
+  registration_number: string;
   scores: { [subjectId: number]: SubjectScore };
 }
 
 export default function ScoreEntryScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const C = useAppColors();
-  const styles = useMemo(() => makeStyles(C), [C.scheme]);
+  const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
   
   // Authentication & Token
   const [token, setToken] = useState<string>('');
@@ -113,6 +105,7 @@ export default function ScoreEntryScreen() {
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [savingScores, setSavingScores] = useState(false);
   const [initialError, setInitialError] = useState('');
+  const [sheetErrorMessage, setSheetErrorMessage] = useState<string | null>(null);
   const [scoreErrors, setScoreErrors] = useState<{ [key: string]: string }>({});
 
   const terms = ['First', 'Second', 'Third'];
@@ -225,6 +218,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(`${API_BASE_URL}/api/classes`, {
         headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
       });
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
         setClasses(data.data);
@@ -238,6 +232,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(`${API_BASE_URL}/api/classes/subjects`, {
         headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
       });
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
         setSubjects(data.data);
@@ -256,6 +251,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(`${API_BASE_URL}/api/subjects/search?keyword=${encodeURIComponent(keyword)}`, {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
         setSubjects(data.data);
@@ -271,6 +267,7 @@ export default function ScoreEntryScreen() {
       const response = await fetch(`${API_BASE_URL}/api/academic-sessions`, {
         headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
       });
+      if (response.status === 402) { router.replace('/pricing'); return; }
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
         const sessions = data.data.map((s: any) => ({
@@ -291,11 +288,18 @@ export default function ScoreEntryScreen() {
     if (!token || !selectedSessionId || !selectedTermId || selectedSheetSubjects.length === 0) return;
     try {
       setLoadingSheet(true);
+      setSheetErrorMessage(null);
       const promises = selectedSheetSubjects.map(sub => 
         fetch(
           `${API_BASE_URL}/api/scores/sheet?classId=${classId}&subjectId=${sub.id}&sessionId=${selectedSessionId}&termId=${selectedTermId}`,
           { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
-        ).then(r => r.json())
+        ).then(async r => {
+          const json = await r.json();
+          if (!r.ok || !json.success) {
+            throw new Error(json.message || json.error || 'Failed to load sheet');
+          }
+          return json;
+        })
       );
 
       const results = await Promise.all(promises);
@@ -311,6 +315,7 @@ export default function ScoreEntryScreen() {
                 student_id: item.student_id,
                 first_name: item.first_name,
                 last_name: item.last_name,
+                registration_number: item.registration_number || 'N/A',
                 scores: {}
               };
             }
@@ -337,7 +342,9 @@ export default function ScoreEntryScreen() {
       });
 
       setMatrixData(allRows);
-    } catch (err) {
+    } catch (err: any) {
+      setSheetErrorMessage(err.message || 'Unable to load scoring matrix.');
+      setMatrixData([]);
     } finally {
       setLoadingSheet(false);
     }
@@ -470,6 +477,8 @@ export default function ScoreEntryScreen() {
         body: JSON.stringify({ scores: scoresPayload }),
       });
 
+      if (response.status === 402) { router.replace('/pricing'); return; }
+
       const data = await response.json();
       if (response.ok && data.success) {
         setStatusAlert({ visible: true, type: 'success', title: 'System Updated', message: `${data.count} score(s) saved.` });
@@ -484,11 +493,52 @@ export default function ScoreEntryScreen() {
     }
   };
 
+  const handleDeleteScore = async (scoreId: number) => {
+    if (!scoreId || !token) return;
+    
+    try {
+      setSavingScores(true);
+      const response = await fetch(`${API_BASE_URL}/api/scores/${scoreId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+
+      if (response.status === 402) { router.replace('/pricing'); return; }
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setStatusAlert({ 
+          visible: true, 
+          type: 'success', 
+          title: 'Deleted', 
+          message: 'Score record deleted successfully.' 
+        });
+        if (selectedClass) loadScoringMatrix(selectedClass.id);
+      } else {
+        setStatusAlert({ 
+          visible: true, 
+          type: 'error', 
+          title: 'Delete Failed', 
+          message: data.message || 'Unable to delete score.' 
+        });
+      }
+    } catch (err) {
+      setStatusAlert({ 
+        visible: true, 
+        type: 'error', 
+        title: 'Error', 
+        message: 'Connection error during deletion.' 
+      });
+    } finally {
+      setSavingScores(false);
+    }
+  };
+
   if (loadingInitial) {
     return (
       <View style={[styles.mainWrapper, { backgroundColor: C.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={Colors.accent.gold} />
-        <ThemedText style={{ marginTop: 24, fontSize: 10, fontWeight: '800', letterSpacing: 2, color: Colors.accent.gold }}>INITIALIZING PORTAL...</ThemedText>
+        <ThemedText style={{ marginTop: 24, fontSize: 9, fontWeight: '800', letterSpacing: 2, color: Colors.accent.gold }}>INITIALIZING PORTAL...</ThemedText>
       </View>
     );
   }
@@ -504,22 +554,22 @@ export default function ScoreEntryScreen() {
           animationType="slide"
           onRequestClose={() => setActiveModal(null)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { height: '85%', width: '90%', backgroundColor: C.modalBg, borderColor: C.cardBorder }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <View>
+          <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+            <View style={[styles.modalContent, { height: '80%', width: '100%', backgroundColor: C.modalBg, borderColor: C.cardBorder, borderRadius: 32, borderTopLeftRadius: 32, borderTopRightRadius: 32, borderBottomWidth: 1, overflow: 'hidden' }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <View style={{ flex: 1 }}>
                   <ThemedText style={styles.modalTitle}>Load Score Sheet</ThemedText>
-                  <ThemedText style={{ color: C.textSecondary, fontSize: 12 }}>Select subjects to load scores for all students</ThemedText>
+                  <ThemedText style={{ color: C.textSecondary, fontSize: 10 }}>Select subjects to load matrix</ThemedText>
                 </View>
                 <TouchableOpacity onPress={() => setActiveModal(null)}>
-                  <Ionicons name="close-circle" size={32} color={C.textMuted} />
+                  <Ionicons name="close-circle" size={28} color={C.textMuted} />
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.pickerButton, { marginBottom: 16 }]}>
-                <Ionicons name="search" size={20} color={C.textMuted} />
+              <View style={[styles.pickerButton, { marginBottom: 12, height: 44 }]}>
+                <Ionicons name="search" size={18} color={C.textMuted} />
                 <TextInput
-                  style={[styles.pickerText, { flex: 1, marginLeft: 12 }]}
+                  style={[styles.pickerText, { flex: 1, marginLeft: 10, fontSize: 13 }]}
                   placeholder="Search subjects..."
                   value={subjectSearchQuery}
                   onChangeText={setSubjectSearchQuery}
@@ -544,11 +594,11 @@ export default function ScoreEntryScreen() {
                       }}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
-                        <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText]}>
+                        <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText, { fontSize: 13 }]}>
                           {item.name}
                         </ThemedText>
-                        <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
-                          {isSelected && <Ionicons name="checkmark" size={16} color={Colors.accent.navy} />}
+                        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+                          {isSelected && <Ionicons name="checkmark" size={14} color={Colors.accent.navy} />}
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -557,12 +607,13 @@ export default function ScoreEntryScreen() {
                 contentContainerStyle={{ paddingBottom: 20 }}
               />
 
-              <View style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: C.divider }}>
+              <View style={{ paddingTop: 16, borderTopWidth: 1, borderTopColor: C.divider }}>
                 <CustomButton 
                   title={`Load ${selectedSheetSubjects.length} Subject${selectedSheetSubjects.length !== 1 ? 's' : ''}`}
                   onPress={() => setActiveModal(null)}
                   disabled={selectedSheetSubjects.length === 0}
                   variant="premium"
+                  style={{ paddingVertical: 14 }}
                 />
               </View>
             </View>
@@ -621,10 +672,10 @@ export default function ScoreEntryScreen() {
           <TouchableWithoutFeedback>
             <View style={[
               styles.bottomSheet, 
-              { backgroundColor: C.modalBg, borderColor: C.cardBorder }
+              { backgroundColor: C.modalBg, borderColor: C.cardBorder, padding: width < 300 ? 16 : 24 }
             ]}>
               <View style={styles.sheetHandle} />
-              <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+              <ThemedText style={[styles.modalTitle, { fontSize: 18 }]}>{title}</ThemedText>
               <FlatList
                 data={data}
                 keyExtractor={(item) => String(item.id)}
@@ -639,11 +690,11 @@ export default function ScoreEntryScreen() {
                       }}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
-                        <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText]}>
+                        <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText, { fontSize: 13 }]}>
                           {item.display_name || item.session_name || item.name}
                         </ThemedText>
-                        <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
-                          {isSelected && <Ionicons name="checkmark" size={14} color={Colors.accent.navy} />}
+                        <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+                          {isSelected && <Ionicons name="checkmark" size={12} color={Colors.accent.navy} />}
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -674,15 +725,15 @@ export default function ScoreEntryScreen() {
           >
             <View style={styles.header}>
               <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                <Ionicons name="arrow-back" size={24} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
+                <Ionicons name="arrow-back" size={20} color={C.isDark ? "#FFFFFF" : Colors.accent.navy} />
               </TouchableOpacity>
               <ThemedText style={styles.headerTitle}>Academic Registry</ThemedText>
-              <View style={{ width: 44 }} />
+              <View style={{ width: 40 }} />
             </View>
 
             <View style={styles.heroContent}>
               <ThemedText style={styles.heroSubtitle}>DATA ARCHITECTURE</ThemedText>
-              <ThemedText style={styles.heroTitle}>Score Management</ThemedText>
+              <ThemedText style={styles.heroTitle}>Score Entry</ThemedText>
             </View>
           </LinearGradient>
         </ImageBackground>
@@ -695,35 +746,35 @@ export default function ScoreEntryScreen() {
                   <ThemedText style={styles.label}>SESSION</ThemedText>
                   <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('session')}>
                     <ThemedText style={styles.miniPickerText} numberOfLines={1}>{selectedSession || 'Select'}</ThemedText>
-                    <Ionicons name="calendar-outline" size={14} color={Colors.accent.gold} />
+                    <Ionicons name="calendar-outline" size={12} color={Colors.accent.gold} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.gridItem}>
                   <ThemedText style={styles.label}>TERM</ThemedText>
                   <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('term')}>
                     <ThemedText style={styles.miniPickerText}>{selectedTerm}</ThemedText>
-                    <Ionicons name="time-outline" size={14} color={Colors.accent.gold} />
+                    <Ionicons name="time-outline" size={12} color={Colors.accent.gold} />
                   </TouchableOpacity>
                 </View>
-                <View style={[styles.gridItem, { flex: 1.5 }]}>
+                <View style={[styles.gridItem, { flex: width < 300 ? 1 : 1.5, minWidth: width < 300 ? '100%' : undefined }]}>
                   <ThemedText style={styles.label}>CLASS</ThemedText>
                   <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('class')}>
                     <ThemedText style={selectedClass ? styles.miniPickerText : styles.placeholderText} numberOfLines={1}>
                       {selectedClass ? selectedClass.display_name : 'Choose...'}
                     </ThemedText>
-                    <Ionicons name="school-outline" size={14} color={Colors.accent.gold} />
+                    <Ionicons name="school-outline" size={12} color={Colors.accent.gold} />
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <View style={{ marginBottom: 24 }}>
+              <View style={{ marginBottom: 20 }}>
                 <ThemedText style={styles.label}>SUBJECT PAYLOAD CONFIGURATION</ThemedText>
                 <TouchableOpacity 
                   style={[styles.payloadButton, { borderColor: selectedSheetSubjects.length > 0 ? Colors.accent.gold : C.inputBorder }]} 
                   onPress={() => setActiveModal('subjects-sheet')}
                 >
                   <View style={styles.payloadIconBox}>
-                    <Ionicons name="layers" size={20} color={selectedSheetSubjects.length > 0 ? Colors.accent.gold : C.textMuted} />
+                    <Ionicons name="layers" size={18} color={selectedSheetSubjects.length > 0 ? Colors.accent.gold : C.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <ThemedText style={selectedSheetSubjects.length > 0 ? styles.pickerText : styles.placeholderText}>
@@ -731,9 +782,8 @@ export default function ScoreEntryScreen() {
                         ? `${selectedSheetSubjects.length} Subjects Loaded` 
                         : 'Tap to load score sheet...'}
                     </ThemedText>
-                    <ThemedText style={{ color: C.textMuted, fontSize: 10, fontWeight: '600' }}>Select multiple subjects for bulk entry</ThemedText>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={C.textMuted} />
+                  <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
                 </TouchableOpacity>
               </View>
 
@@ -743,6 +793,7 @@ export default function ScoreEntryScreen() {
                 loading={savingScores}
                 variant="premium"
                 disabled={matrixData.length === 0}
+                style={{ paddingVertical: 16 }}
               />
             </View>
 
@@ -763,13 +814,13 @@ export default function ScoreEntryScreen() {
                         <ThemedText style={styles.studentNameText}>
                           {row.first_name} {row.last_name}
                         </ThemedText>
-                        <ThemedText style={styles.studentIdText}>ID: {row.student_id}</ThemedText>
+                        <ThemedText style={styles.studentIdText}>REG: {row.registration_number}</ThemedText>
                       </View>
                       <View style={styles.totalBadgeMini}>
                         <ThemedText style={styles.totalTextMini}>
                           {selectedSheetSubjects.reduce((acc, sub) => acc + calculateTotal(row.scores[sub.id]), 0)}
                         </ThemedText>
-                        <ThemedText style={styles.totalLabelMini}>AVG</ThemedText>
+                        <ThemedText style={styles.totalLabelMini}>TOTAL</ThemedText>
                       </View>
                     </View>
 
@@ -780,11 +831,28 @@ export default function ScoreEntryScreen() {
                         return (
                           <View key={sub.id} style={styles.subjectBlock}>
                             <View style={styles.subjectTitleRow}>
-                              <Ionicons name="book-outline" size={14} color={Colors.accent.gold} />
+                              <Ionicons name="book-outline" size={12} color={Colors.accent.gold} />
                               <ThemedText style={styles.subjectNameText}>{sub.name.toUpperCase()}</ThemedText>
                               <View style={styles.totalIndicator}>
                                 <ThemedText style={[styles.totalValueText, { color: total > 0 ? Colors.accent.gold : C.textMuted }]}>{total}%</ThemedText>
                               </View>
+                              {score?.score_id && (
+                                <TouchableOpacity 
+                                  onPress={() => {
+                                    setStatusAlert({
+                                      visible: true,
+                                      type: 'warning',
+                                      title: 'Delete Score?',
+                                      message: `Are you sure you want to delete ${sub.name} score for ${row.first_name}?`,
+                                      confirmLabel: 'Delete',
+                                      onConfirm: () => handleDeleteScore(score.score_id as number)
+                                    });
+                                  }}
+                                  style={{ marginLeft: 8 }}
+                                >
+                                  <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                                </TouchableOpacity>
+                              )}
                             </View>
 
                             <View style={styles.scoreGrid}>
@@ -828,9 +896,25 @@ export default function ScoreEntryScreen() {
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="layers-outline" size={64} color={C.textMuted} />
-                <ThemedText style={styles.emptyTitle}>Matrix Offline</ThemedText>
-                <ThemedText style={styles.emptySubtitle}>Select a class and at least one subject payload to initialize the scoring matrix.</ThemedText>
+                <Ionicons 
+                  name={sheetErrorMessage ? "alert-circle-outline" : "layers-outline"} 
+                  size={56} 
+                  color={sheetErrorMessage ? "#EF4444" : C.textMuted} 
+                />
+                <ThemedText style={styles.emptyTitle}>
+                  {sheetErrorMessage ? "No Data Available" : "Matrix Uninitialized"}
+                </ThemedText>
+                <ThemedText style={styles.emptySubtitle}>
+                  {sheetErrorMessage || "Select class and subjects to initialize the scoring sheet matrix."}
+                </ThemedText>
+                {sheetErrorMessage && (
+                  <TouchableOpacity 
+                    onPress={() => loadScoringMatrix(selectedClass!.id)}
+                    style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: C.actionItemBg, borderRadius: 12 }}
+                  >
+                    <ThemedText style={{ color: Colors.accent.gold, fontSize: 10, fontWeight: '800' }}>RETRY SYNC</ThemedText>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -844,6 +928,8 @@ export default function ScoreEntryScreen() {
             title={statusAlert.title}
             message={statusAlert.message}
             onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
+            onConfirm={statusAlert.onConfirm}
+            confirmLabel={statusAlert.confirmLabel}
             style={styles.alert}
           />
         )}
@@ -852,77 +938,77 @@ export default function ScoreEntryScreen() {
   );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+  const isTiny = width < 300;
+  const isSmall = width < 380;
+
   return StyleSheet.create({
     mainWrapper: { flex: 1, backgroundColor: C.background },
-    hero: { height: IS_TINY ? 180 : 260, width: '100%' },
-    heroOverlay: { flex: 1, paddingHorizontal: IS_TINY ? 16 : 24, paddingTop: IS_TINY ? 40 : 60 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: IS_TINY ? 10 : 20 },
-    backButton: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { color: C.text, fontSize: IS_TINY ? 14 : 16, fontWeight: '800', letterSpacing: 0.5 },
+    hero: { height: isTiny ? 160 : 230, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24, paddingTop: isTiny ? 40 : 50 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: isTiny ? 10 : 16 },
+    backButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: C.text, fontSize: isTiny ? 12 : 14, fontWeight: '800', letterSpacing: 0.5 },
     heroContent: { marginTop: 'auto', marginBottom: 20 },
-    heroSubtitle: { color: Colors.accent.gold, fontSize: IS_TINY ? 9 : 11, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
-    heroTitle: { color: C.text, fontSize: IS_TINY ? 24 : 32, fontWeight: '900', letterSpacing: -1 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: isTiny ? 8 : 9, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
+    heroTitle: { color: C.text, fontSize: isTiny ? 22 : 28, fontWeight: '900', letterSpacing: -1 },
 
-    contentWrapper: { paddingHorizontal: IS_TINY ? 12 : 20, marginTop: IS_TINY ? -20 : -30, paddingBottom: 100 },
-    glassCard: { backgroundColor: C.card, borderRadius: IS_TINY ? 24 : 32, padding: IS_TINY ? 16 : 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 20 },
-    label: { color: C.textLabel, fontSize: IS_TINY ? 8 : 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 10 },
-    
-    filterRow: { flexDirection: 'row', gap: 16, marginBottom: 20 },
-    filterItem: { flex: 1 },
-    pickerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 16, paddingHorizontal: 16, height: 52, borderWidth: 1, borderColor: C.inputBorder },
-    pickerText: { color: C.inputText, fontSize: 14, fontWeight: '700' },
-    placeholderText: { color: C.textMuted, fontSize: 14, fontWeight: '600' },
-    
-    loaderContainer: { padding: 60, alignItems: 'center' },
-    loaderText: { marginTop: 24, color: C.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+    contentWrapper: { paddingHorizontal: isTiny ? 12 : 20, marginTop: 0, paddingBottom: 100 },
+    glassCard: { backgroundColor: C.card, borderRadius: isTiny ? 20 : 28, padding: isTiny ? 14 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 20 },
+    label: { color: C.textLabel, fontSize: isTiny ? 7 : 8, fontWeight: '800', letterSpacing: 1.2, marginBottom: 8 },
     
     filterGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-    gridItem: { minWidth: IS_TINY ? '45%' : 90, flex: 1, gap: 6 },
-    miniPicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 10, paddingHorizontal: 10, height: 40, borderWidth: 1, borderColor: C.inputBorder },
-    miniPickerText: { color: C.inputText, fontSize: IS_TINY ? 10 : 12, fontWeight: '700' },
+    gridItem: { minWidth: isTiny ? '45%' : 90, flex: 1, gap: 4 },
+    miniPicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 8, paddingHorizontal: 8, height: 36, borderWidth: 1, borderColor: C.inputBorder },
+    miniPickerText: { color: C.inputText, fontSize: isTiny ? 9 : 10, fontWeight: '700' },
+    placeholderText: { color: C.textMuted, fontSize: isTiny ? 9 : 10, fontWeight: '600' },
     
-    payloadButton: { flexDirection: 'row', alignItems: 'center', gap: IS_TINY ? 10 : 16, backgroundColor: C.inputBg, borderRadius: 16, padding: IS_TINY ? 12 : 16, borderWidth: 1, borderColor: C.inputBorder },
-    payloadIconBox: { width: IS_TINY ? 36 : 44, height: IS_TINY ? 36 : 44, borderRadius: 12, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+    loaderContainer: { padding: 40, alignItems: 'center' },
+    loaderText: { marginTop: 16, color: C.textSecondary, fontSize: 8, fontWeight: '800', letterSpacing: 2 },
+    
+    payloadButton: { flexDirection: 'row', alignItems: 'center', gap: isTiny ? 8 : 12, backgroundColor: C.inputBg, borderRadius: 14, padding: isTiny ? 10 : 14, borderWidth: 1, borderColor: C.inputBorder },
+    payloadIconBox: { width: isTiny ? 32 : 38, height: isTiny ? 32 : 38, borderRadius: 10, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+    pickerText: { color: C.inputText, fontSize: isTiny ? 11 : 12, fontWeight: '700' },
 
     matrixContainer: { gap: 16 },
-    studentCard: { backgroundColor: C.card, borderRadius: IS_TINY ? 20 : 28, padding: IS_TINY ? 12 : 16, borderWidth: 1, borderColor: C.cardBorder, overflow: 'hidden' },
-    studentHeader: { flexDirection: 'row', alignItems: 'center', gap: IS_TINY ? 8 : 12, marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.divider },
-    avatarMini: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
-    avatarText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
-    studentNameText: { color: Colors.accent.gold, fontSize: IS_TINY ? 14 : 16, fontWeight: '900', letterSpacing: 0.2 },
-    studentIdText: { color: C.textSecondary, fontSize: IS_TINY ? 9 : 11, fontWeight: '600', marginTop: 1 },
-    totalBadgeMini: { backgroundColor: Colors.accent.gold + '15', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignItems: 'center', minWidth: 40 },
-    totalTextMini: { color: Colors.accent.gold, fontSize: IS_TINY ? 11 : 13, fontWeight: '900' },
-    totalLabelMini: { color: Colors.accent.gold, fontSize: 7, fontWeight: '800' },
+    studentCard: { backgroundColor: C.card, borderRadius: isTiny ? 18 : 24, padding: isTiny ? 10 : 14, borderWidth: 1, borderColor: C.cardBorder, overflow: 'hidden', marginBottom: 4 },
+    studentHeader: { flexDirection: 'row', alignItems: 'center', gap: isTiny ? 8 : 10, marginBottom: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.divider },
+    avatarMini: { width: 30, height: 30, borderRadius: 8, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
+    avatarText: { color: Colors.accent.gold, fontSize: 10, fontWeight: '800' },
+    studentNameText: { color: Colors.accent.gold, fontSize: isTiny ? 12 : 14, fontWeight: '900', letterSpacing: 0.2 },
+    studentIdText: { color: C.textSecondary, fontSize: isTiny ? 8 : 9, fontWeight: '600', marginTop: 1 },
+    totalBadgeMini: { backgroundColor: Colors.accent.gold + '15', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, alignItems: 'center', minWidth: 36 },
+    totalTextMini: { color: Colors.accent.gold, fontSize: isTiny ? 10 : 11, fontWeight: '900' },
+    totalLabelMini: { color: Colors.accent.gold, fontSize: 6, fontWeight: '800' },
 
-    subjectsList: { gap: IS_TINY ? 16 : 20 },
-    subjectBlock: { gap: 8 },
-    subjectTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    subjectNameText: { color: C.textSecondary, fontSize: IS_TINY ? 9 : 11, fontWeight: '900', letterSpacing: 0.5, flex: 1 },
-    totalIndicator: { backgroundColor: C.actionItemBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
-    totalValueText: { fontSize: IS_TINY ? 9 : 11, fontWeight: '900' },
+    subjectsList: { gap: isTiny ? 12 : 16 },
+    subjectBlock: { gap: 6 },
+    subjectTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    subjectNameText: { color: C.textSecondary, fontSize: isTiny ? 8 : 9, fontWeight: '900', letterSpacing: 0.5, flex: 1 },
+    totalIndicator: { backgroundColor: C.actionItemBg, paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4 },
+    totalValueText: { fontSize: isTiny ? 8 : 10, fontWeight: '900' },
 
-    scoreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: IS_TINY ? 6 : 8 },
-    scoreInputGroup: { flex: 1, minWidth: IS_TINY ? 40 : 45, gap: 2 },
-    scoreLabel: { fontSize: IS_TINY ? 7 : 9, fontWeight: '800', color: C.textMuted, textAlign: 'center' },
-    scoreInput: { height: IS_TINY ? 36 : 42, backgroundColor: C.inputBg, borderRadius: 10, textAlign: 'center', color: C.inputText, fontSize: IS_TINY ? 12 : 14, fontWeight: '800', borderWidth: 1, borderColor: C.inputBorder },
+    scoreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: isTiny ? 5 : 6 },
+    scoreInputGroup: { flex: 1, minWidth: isTiny ? 36 : 40, gap: 2 },
+    scoreLabel: { fontSize: isTiny ? 6 : 8, fontWeight: '800', color: C.textMuted, textAlign: 'center' },
+    scoreInput: { height: isTiny ? 32 : 38, backgroundColor: C.inputBg, borderRadius: 8, textAlign: 'center', color: C.inputText, fontSize: isTiny ? 11 : 12, fontWeight: '800', borderWidth: 1, borderColor: C.inputBorder },
     examInput: { borderColor: Colors.accent.gold + '40', backgroundColor: Colors.accent.gold + '05' },
     inputError: { borderColor: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.05)' },
 
-    emptyState: { padding: 60, alignItems: 'center' },
-    emptyTitle: { color: C.text, fontSize: 20, fontWeight: '900', marginTop: 24, marginBottom: 8 },
-    emptySubtitle: { color: C.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+    emptyState: { padding: 40, alignItems: 'center' },
+    emptyTitle: { color: C.text, fontSize: 16, fontWeight: '900', marginTop: 16, marginBottom: 6 },
+    emptySubtitle: { color: C.textSecondary, fontSize: 11, textAlign: 'center', lineHeight: 18 },
 
     modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
-    bottomSheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, borderTopWidth: 1, maxHeight: '80%' },
-    sheetHandle: { width: 40, height: 4, backgroundColor: C.divider, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-    modalTitle: { color: C.text, fontSize: 20, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
-    dropdownItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, marginBottom: 6 },
+    modalContent: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, borderTopWidth: 1 },
+    bottomSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, borderTopWidth: 1, maxHeight: '80%' },
+    sheetHandle: { width: 36, height: 3, backgroundColor: C.divider, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+    modalTitle: { color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 16, textAlign: 'center' },
+    dropdownItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, marginBottom: 4 },
     selectedItem: { backgroundColor: Colors.accent.gold + '10' },
-    dropdownItemText: { color: C.textSecondary, fontSize: 15, fontWeight: '600' },
+    dropdownItemText: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
     selectedItemText: { color: Colors.accent.gold, fontWeight: '800' },
     
-    alert: { position: 'absolute', top: 60, left: 20, right: 20, zIndex: 9999 }
+    alert: { position: 'absolute', top: 50, left: 16, right: 16, zIndex: 9999 }
   });
 }

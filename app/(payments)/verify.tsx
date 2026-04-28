@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert, Platform, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAppColors } from '@/hooks/use-app-colors';
 import { ThemedView } from '@/components/themed-view';
@@ -9,46 +9,35 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 
 export default function VerifyPayment() {
-  const routeTxRef = undefined;
-  const routePlanId = undefined;
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const C = useAppColors();
-  const styles = useMemo(() => makeStyles(C), [C.scheme]);
-  const [txRef, setTxRef] = useState(routeTxRef || '');
+  const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
+  const [txRef, setTxRef] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [loading, setLoading] = useState(false);
 
   const getToken = async () => {
-    if (typeof window !== 'undefined') return localStorage.getItem('userToken');
+    if (Platform.OS === 'web') return localStorage.getItem('userToken');
     return await SecureStore.getItemAsync('userToken');
   };
 
   useEffect(() => {
-    // Parse web query params as a fallback when available
-    try {
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        const sp = new URLSearchParams(window.location.search);
-        const t = sp.get('tx_ref') || sp.get('txref') || sp.get('txRef');
-        const p = sp.get('plan_id') || sp.get('planId') || sp.get('plan');
-        if (t) setTxRef(t);
-        if (p) {
-          // will be sent automatically during verify if present
-        }
-      }
-    } catch (e) {
-      // ignore
+    if (Platform.OS === 'web') {
+      const sp = new URLSearchParams(window.location.search);
+      const t = sp.get('tx_ref') || sp.get('txref') || sp.get('txRef');
+      if (t) setTxRef(t);
     }
   }, []);
 
   const verify = async () => {
-    if (!txRef && !transactionId) return Alert.alert('Error', 'Provide tx_ref or transaction id');
+    if (!txRef && !transactionId) return Alert.alert('Error', 'Input required.');
     setLoading(true);
     try {
       const token = await getToken();
       const body: any = {};
       if (transactionId) body.transaction_id = transactionId;
       if (txRef) body.tx_ref = txRef;
-      if (routePlanId) body.plan_id = Number(routePlanId);
 
       const res = await fetch(`${API_BASE_URL}/api/payments/verify`, {
         method: 'POST',
@@ -59,20 +48,22 @@ export default function VerifyPayment() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Verification failed');
 
-      Alert.alert('Success', 'Subscription activated');
+      Alert.alert('Success', 'Subscription active');
       router.push('/(student)/dashboard');
     } catch (err: any) {
-      Alert.alert('Verification Error', err.message || 'Could not verify payment');
+      Alert.alert('Verification Error', err.message || 'Verification failed.');
     } finally {
       setLoading(false);
     }
   };
 
+  const isTiny = width < 300;
+
   return (
     <ThemedView style={styles.container}>
-      <ThemedText style={styles.title}>Verify Payment</ThemedText>
+      <ThemedText style={styles.title}>Verify Receipt</ThemedText>
 
-      <ThemedText style={styles.label}>Transaction Reference (tx_ref)</ThemedText>
+      <ThemedText style={styles.label}>Transaction Ref</ThemedText>
       <TextInput 
         value={txRef} 
         onChangeText={setTxRef} 
@@ -81,29 +72,30 @@ export default function VerifyPayment() {
         style={styles.input} 
       />
 
-      <ThemedText style={styles.label}>Transaction ID (optional)</ThemedText>
+      <ThemedText style={styles.label}>Trans ID (Optional)</ThemedText>
       <TextInput 
         value={transactionId} 
         onChangeText={setTransactionId} 
-        placeholder="transaction id" 
+        placeholder="id" 
         placeholderTextColor={C.textMuted}
         style={styles.input} 
       />
 
       <TouchableOpacity onPress={verify} disabled={loading} style={styles.button}>
-        {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>VERIFY PAYMENT</ThemedText>}
+        {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>CONFIRM PAYMENT</ThemedText>}
       </TouchableOpacity>
     </ThemedView>
   );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+  const isTiny = width < 300;
   return StyleSheet.create({
-    container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: C.background },
-    title: { fontSize: 24, fontWeight: '900', color: C.text, marginBottom: 24 },
-    label: { fontSize: 12, fontWeight: '800', color: C.textLabel, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-    input: { padding: 16, backgroundColor: C.inputBg, color: C.inputText, borderWidth: 1, borderColor: C.inputBorder, borderRadius: 16, marginBottom: 20, fontSize: 16, fontWeight: '600' },
-    button: { backgroundColor: '#10B981', height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-    buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 }
+    container: { flex: 1, padding: isTiny ? 20 : 26, justifyContent: 'center', backgroundColor: C.background },
+    title: { fontSize: isTiny ? 20 : 22, fontWeight: '900', color: C.text, marginBottom: 20 },
+    label: { fontSize: 10, fontWeight: '800', color: C.textLabel, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 },
+    input: { padding: 14, backgroundColor: C.inputBg, color: C.inputText, borderWidth: 1, borderColor: C.inputBorder, borderRadius: 12, marginBottom: 16, fontSize: 14, fontWeight: '600' },
+    button: { backgroundColor: '#10B981', height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1, fontSize: 12 }
   });
 }

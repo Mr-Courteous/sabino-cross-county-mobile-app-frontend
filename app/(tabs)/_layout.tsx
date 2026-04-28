@@ -1,41 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { TouchableOpacity, Text, Alert, Platform } from 'react-native';
+import { TouchableOpacity, Text, Alert, Platform, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { clearAllStorage } from '@/utils/storage';
 
 export default function TabLayout() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isTiny = width < 300;
 
   const handleLogout = async () => {
     if (Platform.OS === 'web') {
-      try {
-        const ok = window.confirm('Are you sure you want to logout?');
-        if (ok) {
-          try { await clearAllStorage(); } catch (e) { }
-          router.replace('/');
-        }
-      } catch (e) {
-        Alert.alert(
-          'Logout',
-          'Are you sure you want to logout?',
-          [
-            { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-            { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { } router.replace('/'); }, style: 'destructive' }
-          ]
-        );
+      const ok = window.confirm('Logout of Sabino Edu?');
+      if (ok) {
+        try { await clearAllStorage(); } catch (e) { }
+        router.replace('/');
       }
       return;
     }
 
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-        { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { } router.replace('/'); }, style: 'destructive' }
-      ]
-    );
+    Alert.alert('Logout', 'Logout of Sabino Edu?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', onPress: async () => { try { await clearAllStorage(); } catch (e) { } router.replace('/'); }, style: 'destructive' }
+    ]);
   };
 
   return (
@@ -44,26 +31,31 @@ export default function TabLayout() {
         headerRight: () => (
           <TouchableOpacity
             onPress={handleLogout}
-            style={{ marginRight: 15, flexDirection: 'row', alignItems: 'center' }}
+            style={{ marginRight: isTiny ? 10 : 15, flexDirection: 'row', alignItems: 'center' }}
           >
-            <Ionicons name="log-out" size={20} color="#d32f2f" />
-            <Text style={{ color: '#d32f2f', fontWeight: '700', marginLeft: 6 }}>Logout</Text>
+            <Ionicons name="log-out" size={18} color="#EF4444" />
+            {!isTiny && <Text style={{ color: '#EF4444', fontWeight: '700', marginLeft: 6, fontSize: 13 }}>Logout</Text>}
           </TouchableOpacity>
         ),
+        tabBarActiveTintColor: '#2563EB',
+        tabBarInactiveTintColor: '#64748B',
+        headerTitleStyle: { fontSize: isTiny ? 14 : 16, fontWeight: '800' },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="home" size={20} color={color} />,
+          tabBarLabelStyle: { fontSize: 10 },
         }}
       />
       <Tabs.Screen
         name="students"
         options={{
           title: 'Students',
-          tabBarIcon: ({ color }) => <Ionicons name="people" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="people" size={20} color={color} />,
+          tabBarLabelStyle: { fontSize: 10 },
         }}
       />
     </Tabs>

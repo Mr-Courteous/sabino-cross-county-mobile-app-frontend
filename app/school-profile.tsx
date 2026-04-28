@@ -7,6 +7,7 @@ import {
   Platform,
   ActivityIndicator,
   TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -22,8 +23,9 @@ import { useAppColors } from '@/hooks/use-app-colors';
 
 export default function SchoolProfileEditPage() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const C = useAppColors();
-  const styles = useMemo(() => makeStyles(C), [C.scheme]);
+  const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [alert, setAlert] = useState<{ visible: boolean; type: 'success' | 'error'; message: string }>({
@@ -38,6 +40,7 @@ export default function SchoolProfileEditPage() {
     phone: '',
     address: '',
     city: '',
+    state: '',
     country: '',
     registration_code: '',
   });
@@ -52,6 +55,7 @@ export default function SchoolProfileEditPage() {
       const res = await fetch(`${API_BASE_URL}/api/schools/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (res.status === 402) { router.replace('/pricing'); return; }
       const result = await res.json();
       if (result.success && result.data) {
         const d = result.data;
@@ -61,6 +65,7 @@ export default function SchoolProfileEditPage() {
           phone: d.phone || '',
           address: d.address || '',
           city: d.city || '',
+          state: d.state || '',
           country: d.country || '',
           registration_code: d.registration_code || '',
         });
@@ -92,10 +97,27 @@ export default function SchoolProfileEditPage() {
         body: JSON.stringify(formData),
       });
 
+      if (res.status === 402) { router.replace('/pricing'); return; }
+
       const result = await res.json();
 
       if (result.success) {
+        const stored = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userData') : localStorage.getItem('userData');
+        if (stored) {
+          const userData = JSON.parse(stored);
+          userData.firstName = formData.name;
+          if (Platform.OS !== 'web') {
+            await SecureStore.setItemAsync('userData', JSON.stringify(userData));
+          } else {
+            localStorage.setItem('userData', JSON.stringify(userData));
+          }
+        }
+
         setAlert({ visible: true, type: 'success', message: 'Institution details updated successfully!' });
+
+        setTimeout(() => {
+          router.replace('/dashboard');
+        }, 1500);
       } else {
         setAlert({ visible: true, type: 'error', message: result.error || result.message || 'Failed to update details.' });
       }
@@ -120,19 +142,19 @@ export default function SchoolProfileEditPage() {
       <StatusBar style={C.isDark ? 'light' : 'dark'} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={C.text} />
+          <Ionicons name="arrow-back" size={width < 300 ? 18 : 22} color={C.text} />
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>Institution Profile</ThemedText>
-        <View style={{ width: 44 }} />
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {alert.visible && (
-          <CustomAlert 
-            type={alert.type} 
-            message={alert.message} 
-            onClose={() => setAlert({ ...alert, visible: false })} 
-            style={{ marginBottom: 20 }}
+          <CustomAlert
+            type={alert.type}
+            message={alert.message}
+            onClose={() => setAlert({ ...alert, visible: false })}
+            style={{ marginBottom: 16 }}
           />
         )}
 
@@ -190,57 +212,69 @@ export default function SchoolProfileEditPage() {
         </View>
 
         <View style={styles.row}>
-          <View style={[styles.formGroup, { flex: 1, marginRight: 10 }]}>
-            <ThemedText style={styles.label}>City/State</ThemedText>
+          <View style={[styles.formGroup, { flex: width < 380 ? 0 : 1, width: width < 380 ? '100%' : undefined, marginRight: width < 380 ? 0 : 10 }]}>
+            <ThemedText style={styles.label}>City</ThemedText>
             <TextInput
               style={styles.input}
               value={formData.city}
               onChangeText={(text) => setFormData({ ...formData, city: text })}
-              placeholder="E.g. Lagos, LA"
+              placeholder="E.g. Ikeja"
               placeholderTextColor={C.textMuted}
             />
           </View>
-          <View style={[styles.formGroup, { flex: 1 }]}>
-            <ThemedText style={styles.label}>Country</ThemedText>
+          <View style={[styles.formGroup, { flex: width < 380 ? 0 : 1, width: width < 380 ? '100%' : undefined }]}>
+            <ThemedText style={styles.label}>State</ThemedText>
             <TextInput
-              style={[styles.input, { opacity: 0.6, backgroundColor: C.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]}
-              value={formData.country}
-              editable={false}
-              placeholder="Cannot be modified"
+              style={styles.input}
+              value={formData.state}
+              onChangeText={(text) => setFormData({ ...formData, state: text })}
+              placeholder="E.g. Lagos State"
               placeholderTextColor={C.textMuted}
             />
           </View>
         </View>
 
-        <CustomButton 
-          title="Save Changes" 
-          onPress={handleUpdate} 
-          loading={saving} 
+        <View style={styles.formGroup}>
+          <ThemedText style={styles.label}>Country</ThemedText>
+          <TextInput
+            style={[styles.input, { opacity: 0.6, backgroundColor: C.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]}
+            value={formData.country}
+            editable={false}
+            placeholder="Cannot be modified"
+            placeholderTextColor={C.textMuted}
+          />
+        </View>
+
+        <CustomButton
+          title="Save Changes"
+          onPress={handleUpdate}
+          loading={saving}
           variant="premium"
-          style={styles.submitBtn} 
+          style={styles.submitBtn}
         />
       </ScrollView>
     </ThemedView>
   );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+  const isTiny = width < 300;
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: C.background },
     loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
-    loadingText: { color: Colors.accent.gold, marginTop: 15, fontWeight: '800', fontSize: 12, letterSpacing: 2 },
-    
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 20, paddingBottom: 20, backgroundColor: C.modalBg, borderBottomWidth: 1, borderColor: C.divider },
-    backBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { color: C.text, fontSize: 18, fontWeight: '800' },
+    loadingText: { color: Colors.accent.gold, marginTop: 15, fontWeight: '800', fontSize: 10, letterSpacing: 2 },
 
-    scrollContent: { padding: 24, paddingBottom: 100 },
-    
-    formGroup: { marginBottom: 24 },
-    row: { flexDirection: 'row' },
-    label: { color: C.textLabel, fontSize: 11, fontWeight: '800', marginBottom: 10, letterSpacing: 1, marginLeft: 4 },
-    input: { backgroundColor: C.inputBg, borderRadius: 16, padding: 16, color: C.inputText, fontSize: 15, fontWeight: '600', borderWidth: 1, borderColor: C.inputBorder },
-    
-    submitBtn: { marginTop: 10, borderRadius: 16, paddingVertical: 18 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: isTiny ? 15 : 20, paddingBottom: 16, backgroundColor: C.modalBg, borderBottomWidth: 1, borderColor: C.divider },
+    backBtn: { width: isTiny ? 36 : 40, height: isTiny ? 36 : 40, borderRadius: 12, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: C.text, fontSize: isTiny ? 14 : 16, fontWeight: '800' },
+
+    scrollContent: { padding: isTiny ? 16 : 22, paddingBottom: 100 },
+
+    formGroup: { marginBottom: isTiny ? 18 : 22 },
+    row: { flexDirection: width < 380 ? 'column' : 'row' },
+    label: { color: C.textLabel, fontSize: 9, fontWeight: '800', marginBottom: 8, letterSpacing: 1, marginLeft: 4 },
+    input: { backgroundColor: C.inputBg, borderRadius: 14, padding: isTiny ? 12 : 14, color: C.inputText, fontSize: isTiny ? 12 : 13, fontWeight: '600', borderWidth: 1, borderColor: C.inputBorder },
+
+    submitBtn: { marginTop: 12, borderRadius: 14, paddingVertical: isTiny ? 14 : 16 },
   });
 }

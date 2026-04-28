@@ -8,7 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { API_BASE_URL } from '@/utils/api-service';
 import { useTheme } from '@/contexts/theme-context';
@@ -19,7 +19,6 @@ import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { useAppColors } from '@/hooks/use-app-colors';
 
-
 const SWATCHES = [
   '#1E40AF', '#2563EB', '#0EA5E9', '#059669',
   '#10B981', '#D97706', '#EF4444', '#EC4899',
@@ -28,8 +27,9 @@ const SWATCHES = [
 
 export default function SchoolPreferencesScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const C = useAppColors();
-  const styles = useMemo(() => makeStyles(C), [C.scheme]);
+  const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
   const { themeColor, loadThemeFromPreferences, themeMode, setThemeMode } = useTheme();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,11 +37,8 @@ export default function SchoolPreferencesScreen() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerColor, setPickerColor] = useState('#2563EB');
   
-
-
-  const { width: windowWidth } = useWindowDimensions();
-  const isLargeScreen = windowWidth > 768;
-  const contentWidth = isLargeScreen ? 700 : windowWidth;
+  const isLargeScreen = width > 768;
+  const contentWidth = isLargeScreen ? 700 : width;
 
   const [statusAlert, setStatusAlert] = useState<{
     visible: boolean;
@@ -54,7 +51,6 @@ export default function SchoolPreferencesScreen() {
     title: '',
     message: '',
   });
-
 
   const [prefs, setPrefs] = useState({
     theme_color: '#2563EB',
@@ -91,6 +87,12 @@ export default function SchoolPreferencesScreen() {
         },
       });
 
+      // Redirect to pricing if subscription required - check BEFORE parsing JSON
+      if (response.status === 402) {
+        router.replace('/pricing');
+        return;
+      }
+
       const data = await response.json();
       if (data.success) {
         const color = data.data.theme_color || '#2563EB';
@@ -98,7 +100,7 @@ export default function SchoolPreferencesScreen() {
           theme_color: color,
           logo_url: data.data.logo_url || '',
           stamp_url: data.data.stamp_url || '',
-          report_footer_text: data.data.report_footer_text || '',
+          report_footer_text: data.data.header_text || data.data.report_footer_text || '',
           show_attendance: data.data.show_attendance || false,
         });
         setPickerColor(color);
@@ -127,19 +129,32 @@ export default function SchoolPreferencesScreen() {
 
   const handlePickDocument = async (type: 'logo' | 'stamp') => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'],
-        copyToCacheDirectory: true,
+      // Uses the Android Photo Picker on Android 13+ (API 33+) automatically —
+      // no READ_EXTERNAL_STORAGE permission needed. Falls back to the system
+      // file picker on older Android versions. Uses Photos/Camera Roll on iOS.
+      // The new mediaTypes array API (expo-image-picker v17+) is required to
+      // trigger the native Android Photo Picker.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        allowsMultipleSelection: false,
       });
 
-      if (result.assets && result.assets.length > 0) {
-        const file = result.assets[0];
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const file = {
+          uri: asset.uri,
+          name: asset.fileName || `${type}.jpg`,
+          mimeType: asset.mimeType || 'image/jpeg',
+        };
         if (type === 'logo') {
           setLogoFile(file);
-          setPrefs(prev => ({ ...prev, logo_url: file.uri }));
+          setPrefs(prev => ({ ...prev, logo_url: asset.uri }));
         } else {
           setStampFile(file);
-          setPrefs(prev => ({ ...prev, stamp_url: file.uri }));
+          setPrefs(prev => ({ ...prev, stamp_url: asset.uri }));
         }
       }
     } catch (err) {
@@ -147,7 +162,7 @@ export default function SchoolPreferencesScreen() {
         visible: true,
         type: 'error',
         title: 'Selection Error',
-        message: 'Failed to acquire asset from secure storage.'
+        message: 'Failed to acquire asset from device gallery.'
       });
     }
   };
@@ -163,23 +178,31 @@ export default function SchoolPreferencesScreen() {
       formData.append('show_attendance', String(prefs.show_attendance));
 
       if (logoFile) {
-        const logoData: any = {
-          uri: Platform.OS === 'ios' ? logoFile.uri.replace('file://', '') : logoFile.uri,
-          name: logoFile.name || 'logo.png',
-          type: logoFile.mimeType || 'image/png',
-        };
-        formData.append('logo', logoData);
+        if (Platform.OS === 'web' && logoFile.file) {
+          formData.append('logo', logoFile.file);
+        } else {
+          const logoData: any = {
+            uri: Platform.OS === 'ios' ? logoFile.uri.replace('file://', '') : logoFile.uri,
+            name: logoFile.name || 'logo.png',
+            type: logoFile.mimeType || 'image/png',
+          };
+          formData.append('logo', logoData);
+        }
       } else if (prefs.logo_url) {
         formData.append('logo_url', prefs.logo_url);
       }
 
       if (stampFile) {
-        const stampData: any = {
-          uri: Platform.OS === 'ios' ? stampFile.uri.replace('file://', '') : stampFile.uri,
-          name: stampFile.name || 'stamp.png',
-          type: stampFile.mimeType || 'image/png',
-        };
-        formData.append('stamp', stampData);
+        if (Platform.OS === 'web' && stampFile.file) {
+          formData.append('stamp', stampFile.file);
+        } else {
+          const stampData: any = {
+            uri: Platform.OS === 'ios' ? stampFile.uri.replace('file://', '') : stampFile.uri,
+            name: stampFile.name || 'stamp.png',
+            type: stampFile.mimeType || 'image/png',
+          };
+          formData.append('stamp', stampData);
+        }
       } else if (prefs.stamp_url) {
         formData.append('stamp_url', prefs.stamp_url);
       }
@@ -197,7 +220,7 @@ export default function SchoolPreferencesScreen() {
           visible: true,
           type: 'success',
           title: 'Success',
-          message: 'School branding has been updated and propagated.'
+          message: 'School branding updated.'
         });
         setLogoFile(null);
         setStampFile(null);
@@ -209,8 +232,8 @@ export default function SchoolPreferencesScreen() {
       setStatusAlert({
         visible: true,
         type: 'error',
-        title: 'Application Error',
-        message: err.message || 'Failed to synchronize branding changes.'
+        title: 'Error',
+        message: err.message || 'Failed to save changes.'
       });
     } finally {
       setSaving(false);
@@ -223,8 +246,8 @@ export default function SchoolPreferencesScreen() {
     setShowColorPicker(false);
   };
 
-  // Internal Sub-components to keep styles in scope
   function AssetUploader({ title, subtitle, url, onUpload, icon }: any) {
+    const isTiny = width < 300;
     return (
       <View style={styles.assetRow}>
         <View style={styles.assetPreview}>
@@ -232,7 +255,7 @@ export default function SchoolPreferencesScreen() {
             <Image source={{ uri: url }} style={styles.assetImage} contentFit="contain" />
           ) : (
             <View style={styles.assetPlaceholder}>
-              <Ionicons name={icon} size={28} color={C.isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} />
+              <Ionicons name={icon} size={22} color={C.isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} />
             </View>
           )}
         </View>
@@ -240,7 +263,7 @@ export default function SchoolPreferencesScreen() {
           <ThemedText style={styles.assetTitle}>{title}</ThemedText>
           <ThemedText style={styles.assetSubtitle}>{subtitle}</ThemedText>
           <TouchableOpacity style={styles.uploadBtn} onPress={onUpload}>
-            <Ionicons name="cloud-upload" size={14} color={Colors.accent.gold} />
+            <Ionicons name="cloud-upload" size={12} color={Colors.accent.gold} />
             <ThemedText style={styles.uploadBtnText}>Select File</ThemedText>
           </TouchableOpacity>
         </View>
@@ -248,7 +271,8 @@ export default function SchoolPreferencesScreen() {
     );
   }
 
-  function ThemeModeButton({ icon, label, subtitle, isActive, onPress }: any) {
+  function ThemeModeButton({ icon, label, isActive, onPress }: any) {
+    const isTiny = width < 300;
     return (
       <TouchableOpacity
         onPress={onPress}
@@ -258,13 +282,13 @@ export default function SchoolPreferencesScreen() {
             backgroundColor: isActive ? 'rgba(37,99,235,0.12)' : C.actionItemBg,
             borderColor: isActive ? '#2563EB' : C.cardBorder,
             borderWidth: isActive ? 2 : 1,
+            padding: isTiny ? 8 : 10,
           }
         ]}
         activeOpacity={0.85}
       >
-        <Ionicons name={icon} size={22} color={isActive ? '#2563EB' : C.textSecondary} />
-        <ThemedText style={[styles.themeModeLabel, { color: isActive ? '#2563EB' : C.textSecondary }]}>{label}</ThemedText>
-        {!!subtitle && <ThemedText style={styles.themeModeSubtitle}>{subtitle}</ThemedText>}
+        <Ionicons name={icon} size={isTiny ? 16 : 18} color={isActive ? '#2563EB' : C.textSecondary} />
+        <ThemedText style={[styles.themeModeLabel, { color: isActive ? '#2563EB' : C.textSecondary, fontSize: isTiny ? 10 : 11 }]}>{label}</ThemedText>
       </TouchableOpacity>
     );
   }
@@ -272,7 +296,7 @@ export default function SchoolPreferencesScreen() {
   if (loading) return (
     <ThemedView style={styles.loader}>
       <ActivityIndicator size="large" color={Colors.accent.gold} />
-      <ThemedText style={styles.loadingText}>SYNCHRONIZING ASSETS...</ThemedText>
+      <ThemedText style={styles.loadingText}>SYNCHRONIZING...</ThemedText>
     </ThemedView>
   );
 
@@ -280,23 +304,23 @@ export default function SchoolPreferencesScreen() {
     <ThemedView style={styles.mainWrapper}>
       <ImageBackground
         source={{ uri: 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?q=80&w=2074&auto=format&fit=crop' }}
-        style={[styles.hero, { height: isLargeScreen ? 350 : 250 }]}
+        style={[styles.hero, { height: isLargeScreen ? 350 : 220 }]}
       >
         <LinearGradient
           colors={[C.isDark ? 'rgba(15, 23, 42, 0.7)' : 'rgba(255, 255, 255, 0.7)', C.background]}
           style={styles.heroOverlay}
         >
-          <View style={[styles.header, { maxWidth: 1200, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 20 }]}>
+          <View style={[styles.header, { maxWidth: 1200, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 16 }]}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Ionicons name="chevron-back" size={24} color={C.text} />
+              <Ionicons name="chevron-back" size={20} color={C.text} />
             </TouchableOpacity>
             <ThemedText style={styles.headerTitle}>System Branding</ThemedText>
-            <View style={{ width: 44 }} />
+            <View style={{ width: 40 }} />
           </View>
 
-          <View style={[styles.heroContent, { maxWidth: contentWidth, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 30 }]}>
+          <View style={[styles.heroContent, { maxWidth: contentWidth, alignSelf: 'center', width: '100%', marginBottom: isLargeScreen ? 60 : 20 }]}>
             <ThemedText style={styles.heroSubtitle}>VISUAL IDENTITY</ThemedText>
-            <ThemedText style={styles.heroMainTitle}>Portal Customization</ThemedText>
+            <ThemedText style={styles.heroMainTitle}>Portal Theme</ThemedText>
           </View>
         </LinearGradient>
       </ImageBackground>
@@ -320,156 +344,80 @@ export default function SchoolPreferencesScreen() {
           />
         )}
 
-
-        {/* ── Theme Color ── */}
         <View style={styles.card}>
-          <ThemedText style={styles.cardLabel}>THEME SPECIFICATION</ThemedText>
-          <ThemedText style={styles.helperText}>Choose a primary color to define the portal's visual accent.</ThemedText>
-
+          <ThemedText style={styles.cardLabel}>SPECIFICATION</ThemedText>
           <TouchableOpacity
             style={[styles.colorTrigger, { borderColor: prefs.theme_color }]}
-            onPress={() => {
-              setPickerColor(prefs.theme_color);
-              setShowColorPicker(true);
-            }}
+            onPress={() => setShowColorPicker(true)}
             activeOpacity={0.85}
           >
             <View style={[styles.colorDot, { backgroundColor: prefs.theme_color }]} />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <ThemedText style={styles.colorTriggerLabel} numberOfLines={1}>Active Theme Color</ThemedText>
-              <ThemedText style={styles.colorTriggerValue} adjustsFontSizeToFit numberOfLines={1}>{prefs.theme_color.toUpperCase()}</ThemedText>
-            </View>
-            <View style={[styles.colorTriggerChip, { backgroundColor: prefs.theme_color }]}>
-              <Ionicons name="color-palette-outline" size={windowWidth < 360 ? 16 : 18} color="#FFFFFF" />
-              {windowWidth >= 360 && <ThemedText style={styles.colorTriggerChipText}>Change</ThemedText>}
+              <ThemedText style={styles.colorTriggerLabel}>Accent Color</ThemedText>
+              <ThemedText style={styles.colorTriggerValue}>{prefs.theme_color.toUpperCase()}</ThemedText>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* ── Theme Mode ── */}
         <View style={styles.card}>
           <ThemedText style={styles.cardLabel}>DISPLAY MODE</ThemedText>
-          <ThemedText style={styles.helperText}>Choose how the portal appears across all devices.</ThemedText>
-
           <View style={styles.themeModeContainer}>
-            <ThemeModeButton
-              icon="sunny"
-              label="Light"
-              isActive={themeMode === 'light'}
-              onPress={() => setThemeMode('light')}
-            />
-            <ThemeModeButton
-              icon="moon"
-              label="Dark"
-              isActive={themeMode === 'dark'}
-              onPress={() => setThemeMode('dark')}
-            />
-            <ThemeModeButton
-              icon="phone-portrait"
-              label="System"
-              isActive={themeMode === 'system'}
-              onPress={() => setThemeMode('system')}
-              subtitle="Auto"
-            />
+            <ThemeModeButton icon="sunny" label="Light" isActive={themeMode === 'light'} onPress={() => setThemeMode('light')} />
+            <ThemeModeButton icon="moon" label="Dark" isActive={themeMode === 'dark'} onPress={() => setThemeMode('dark')} />
+            <ThemeModeButton icon="phone-portrait" label="System" isActive={themeMode === 'system'} onPress={() => setThemeMode('system')} />
           </View>
         </View>
 
-        {/* ── Identity Assets ── */}
         <View style={styles.card}>
           <ThemedText style={styles.cardLabel}>IDENTITY ASSETS</ThemedText>
-
-          <AssetUploader
-            title="School Emblem"
-            subtitle="High-resolution PNG/JPG"
-            url={prefs.logo_url}
-            onUpload={() => handlePickDocument('logo')}
-            icon="image-outline"
-          />
-
+          <AssetUploader title="Emblem" subtitle="Logo file" url={prefs.logo_url} onUpload={() => handlePickDocument('logo')} icon="image-outline" />
           <View style={styles.divider} />
-
-          <AssetUploader
-            title="Official Stamp"
-            subtitle="Transparent background recommended"
-            url={prefs.stamp_url}
-            onUpload={() => handlePickDocument('stamp')}
-            icon="ribbon-outline"
-          />
+          <AssetUploader title="Official Stamp" subtitle="Verification" url={prefs.stamp_url} onUpload={() => handlePickDocument('stamp')} icon="ribbon-outline" />
         </View>
 
-        {/* ── Report Config ── */}
         <View style={styles.card}>
-          <ThemedText style={styles.cardLabel}>REPORT CONFIGURATION</ThemedText>
-          <View style={styles.inputGroup}>
-            <ThemedText style={styles.inputLabel}>Dynamic Footer Text</ThemedText>
-            <TextInput
-              style={styles.textArea}
-              value={prefs.report_footer_text}
-              onChangeText={(txt) => setPrefs({ ...prefs, report_footer_text: txt })}
-              placeholder="Enter validation disclaimer or school motto..."
-              placeholderTextColor={C.textMuted}
-              multiline
-            />
-            <ThemedText style={styles.helperText}>This text will appear at the base of all generated result certificates.</ThemedText>
-          </View>
+          <ThemedText style={styles.cardLabel}>FOOTER CONFIG</ThemedText>
+          <TextInput
+            style={styles.textArea}
+            value={prefs.report_footer_text}
+            onChangeText={(txt) => setPrefs({ ...prefs, report_footer_text: txt })}
+            placeholder="Footer text..."
+            placeholderTextColor={C.textMuted}
+            multiline
+          />
         </View>
 
         <View style={styles.actionRow}>
-          <CustomButton
-            title={saving ? "Propagating Changes..." : "Secure & Apply Branding"}
-            onPress={handleSave}
-            loading={saving}
-            variant="premium"
-          />
-          <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn}>
-            <ThemedText style={styles.cancelText}>Discard Changes</ThemedText>
-          </TouchableOpacity>
+          <CustomButton title={saving ? "Applying..." : "Save Branding"} onPress={handleSave} loading={saving} variant="premium" style={{ paddingVertical: 14 }} />
         </View>
       </ScrollView>
 
-      {/* ── Simple Color Picker Modal ── */}
-      <Modal
-        visible={showColorPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowColorPicker(false)}
-      >
+      <Modal visible={showColorPicker} transparent animationType="fade" onRequestClose={() => setShowColorPicker(false)}>
         <View style={[styles.pickerOverlay, isLargeScreen && styles.pickerOverlayLarge]}>
-          <View style={[
-            styles.pickerSheet,
-            isLargeScreen && { width: 500, borderRadius: 32, marginBottom: 0, alignSelf: 'center' }
-          ]}>
-            {/* Header */}
+          <View style={[styles.pickerSheet, isLargeScreen && { width: 450, borderRadius: 28, alignSelf: 'center' }]}>
             <View style={styles.pickerHeader}>
-              <ThemedText style={styles.pickerTitle}>Select Theme Color</ThemedText>
+              <ThemedText style={styles.pickerTitle}>Color</ThemedText>
               <TouchableOpacity onPress={() => setShowColorPicker(false)} style={styles.pickerClose}>
-                <Ionicons name="close" size={22} color={Colors.accent.gold} />
+                <Ionicons name="close" size={20} color={Colors.accent.gold} />
               </TouchableOpacity>
             </View>
-
-            <View style={{ padding: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
+            <View style={{ padding: 20, flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
               {SWATCHES.map((color) => (
                 <TouchableOpacity
                   key={color}
                   onPress={() => selectColor(color)}
                   style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 28,
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
                     backgroundColor: color,
                     borderWidth: prefs.theme_color === color ? 3 : 0,
                     borderColor: C.text,
                     justifyContent: 'center',
                     alignItems: 'center',
-                    elevation: 2,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 4,
                   }}
-                  activeOpacity={0.8}
                 >
-                  {prefs.theme_color === color && <Ionicons name="checkmark" size={28} color="#fff" />}
+                  {prefs.theme_color === color && <Ionicons name="checkmark" size={20} color="#fff" />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -480,91 +428,59 @@ export default function SchoolPreferencesScreen() {
   );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+  const isTiny = width < 300;
   return StyleSheet.create({
     mainWrapper: { flex: 1, backgroundColor: C.background },
     loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.background },
-    loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+    loadingText: { color: Colors.accent.gold, marginTop: 15, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
 
-    hero: { height: 280, width: '100%' },
-    heroOverlay: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40 },
-    backButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { color: C.text, fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+    hero: { height: 220, width: '100%' },
+    heroOverlay: { flex: 1, paddingHorizontal: 20, paddingTop: 50 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+    backButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.backButton, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { color: C.text, fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
 
-    heroContent: { marginTop: 'auto', marginBottom: 30 },
-    heroSubtitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 8 },
-    heroMainTitle: { color: C.text, fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+    heroContent: { marginTop: 'auto', marginBottom: 20 },
+    heroSubtitle: { color: Colors.accent.gold, fontSize: 9, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
+    heroMainTitle: { color: C.text, fontSize: isTiny ? 24 : 28, fontWeight: '900', letterSpacing: -1 },
 
-    scrollView: { flex: 1, marginTop: -30 },
-    scrollContent: { padding: 20, paddingBottom: 60 },
-    alert: { marginBottom: 20 },
+    scrollView: { flex: 1, marginTop: -10 },
+    scrollContent: { padding: 16, paddingBottom: 60 },
+    alert: { marginBottom: 16 },
 
-    card: { backgroundColor: C.card, borderRadius: 32, padding: 24, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 24 },
-    cardLabel: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
-    helperText: { color: C.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 12 },
+    card: { backgroundColor: C.card, borderRadius: 24, padding: isTiny ? 16 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 18 },
+    cardLabel: { color: Colors.accent.gold, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
+    helperText: { color: C.textSecondary, fontSize: 11, lineHeight: 16, marginBottom: 10 },
     
-    themeModeBtn: { flex: 1, alignItems: 'center', padding: 12, marginHorizontal: 4, borderRadius: 12 },
+    themeModeBtn: { flex: 1, alignItems: 'center', borderRadius: 10 },
     themeModeLabel: { fontWeight: 'bold', marginTop: 4 },
-    themeModeSubtitle: { color: C.textMuted, fontSize: 10 },
-    themeModeContainer: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    themeModeContainer: { flexDirection: 'row', gap: 6 },
 
-    colorTrigger: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: C.actionItemBg, borderRadius: 20, padding: 16, borderWidth: 1.5, borderColor: C.cardBorder },
-    colorDot: { width: 48, height: 48, borderRadius: 16, borderWidth: 1, borderColor: C.divider },
-    colorTriggerLabel: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
-    colorTriggerValue: { color: C.text, fontSize: 16, fontWeight: '900', letterSpacing: 1 },
-    colorTriggerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
-    colorTriggerChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+    colorTrigger: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.actionItemBg, borderRadius: 16, padding: 12, borderWidth: 1.5, borderColor: C.cardBorder },
+    colorDot: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, borderColor: C.divider },
+    colorTriggerLabel: { color: C.textLabel, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, marginBottom: 2 },
+    colorTriggerValue: { color: C.text, fontSize: 14, fontWeight: '900', letterSpacing: 1 },
 
-    pickerOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
-    pickerOverlayLarge: { justifyContent: 'center', padding: 40 },
-    pickerSheet: { backgroundColor: C.modalBg, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, borderTopWidth: 1, borderColor: C.cardBorder, maxHeight: '90%' },
+    pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+    pickerOverlayLarge: { justifyContent: 'center' },
+    pickerSheet: { backgroundColor: C.modalBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 30, borderTopWidth: 1, borderColor: C.cardBorder },
+    pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
+    pickerTitle: { color: C.text, fontSize: 18, fontWeight: '900' },
+    pickerClose: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.actionIconWrap, justifyContent: 'center', alignItems: 'center' },
 
-    pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 },
-    pickerTitle: { color: C.text, fontSize: 20, fontWeight: '900' },
-    pickerClose: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.actionIconWrap, justifyContent: 'center', alignItems: 'center' },
-
-    colorPicker: { paddingHorizontal: 20 },
-    pickerPanel: { borderRadius: 20, height: 220, marginBottom: 20 },
-
-    slidersBlock: { gap: 12, marginBottom: 20 },
-    sliderLabel: { color: C.textLabel, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 4 },
-    slider: { borderRadius: 12, height: 28 },
-
-    hexBlock: { marginBottom: 20 },
-    pickerHexText: { color: C.text, fontSize: 14, fontWeight: '800' },
-
-    swatchesLabel: { color: C.textLabel, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, paddingHorizontal: 20 },
-    swatchesContainer: { paddingHorizontal: 20, marginBottom: 8 },
-    swatch: { borderRadius: 12, height: 36, width: 36 },
-
-    pickerFooter: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: C.divider, marginTop: 8 },
-    pickerPreview: { flex: 1, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-    pickerPreviewText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-    confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent.gold, paddingHorizontal: 24, borderRadius: 16 },
-    confirmBtnText: { color: Colors.accent.navy, fontSize: 14, fontWeight: '900' },
-
-    assetRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-    assetPreview: { width: 80, height: 80, borderRadius: 20, backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder, overflow: 'hidden' },
+    assetRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    assetPreview: { width: 60, height: 60, borderRadius: 16, backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder, overflow: 'hidden' },
     assetImage: { width: '100%', height: '100%' },
     assetPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    assetInfo: { flex: 1, gap: 4 },
-    assetTitle: { color: C.text, fontSize: 15, fontWeight: '800' },
-    assetSubtitle: { color: C.textMuted, fontSize: 12, fontWeight: '600' },
-    uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-    uploadBtnText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
+    assetInfo: { flex: 1, gap: 2 },
+    assetTitle: { color: C.text, fontSize: 13, fontWeight: '800' },
+    assetSubtitle: { color: C.textMuted, fontSize: 10, fontWeight: '600' },
+    uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+    uploadBtnText: { color: Colors.accent.gold, fontSize: 10, fontWeight: '800' },
     
-    resetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4 },
-    resetBtnText: { color: Colors.accent.gold, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-
-    divider: { height: 1, backgroundColor: C.divider, marginVertical: 20 },
-
-    inputGroup: { gap: 12 },
-    inputLabel: { color: C.textSecondary, fontSize: 13, fontWeight: '700' },
-    textArea: { backgroundColor: C.inputBg, borderRadius: 20, padding: 16, color: C.inputText, fontSize: 14, height: 120, textAlignVertical: 'top', borderWidth: 1, borderColor: C.inputBorder },
-
-    actionRow: { gap: 16, marginTop: 20 },
-    cancelBtn: { alignItems: 'center', paddingVertical: 12 },
-    cancelText: { color: C.textMuted, fontSize: 14, fontWeight: '700' },
+    divider: { height: 1, backgroundColor: C.divider, marginVertical: 16 },
+    textArea: { backgroundColor: C.inputBg, borderRadius: 16, padding: 12, color: C.inputText, fontSize: 12, height: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: C.inputBorder },
+    actionRow: { marginTop: 10 },
   });
 }

@@ -8,12 +8,11 @@ import {
     ScrollView,
     Image,
     Platform,
-    Alert,
     RefreshControl,
     Modal,
-    FlatList,
     Linking,
     ImageBackground,
+    useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,14 +43,15 @@ interface StudentData {
 
 export default function StudentDashboard() {
     const router = useRouter();
+    const { width } = useWindowDimensions();
     const C = useAppColors();
-    const styles = useMemo(() => makeStyles(C), [C.scheme]);
+    const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
 
     function CompactActionCard({ icon, label, color, onPress }: any) {
         return (
             <TouchableOpacity style={styles.compactCard} onPress={onPress}>
                 <View style={[styles.compactIcon, { backgroundColor: `${color}15` }]}>
-                    <Ionicons name={icon} size={20} color={color} />
+                    <Ionicons name={icon} size={18} color={color} />
                 </View>
                 <Text style={styles.compactLabel}>{label}</Text>
             </TouchableOpacity>
@@ -86,7 +86,7 @@ export default function StudentDashboard() {
     const [showSessionSelector, setShowSessionSelector] = useState(false);
     const [showClassSelector, setShowClassSelector] = useState(false);
 
-    // Modal Feedback State (Standard React State)
+    // Modal Feedback State
     const [enrollError, setEnrollError] = useState<string | null>(null);
     const [enrollSuccess, setEnrollSuccess] = useState(false);
 
@@ -118,15 +118,12 @@ export default function StudentDashboard() {
             if (data && data.success) {
                 setEnrollments(data.data || []);
             }
-        } catch (error) {
-
-        }
+        } catch (error) {}
     };
 
     const loadStudentData = async () => {
         try {
             let studentData: string | null = null;
-
             if (Platform.OS === 'web') {
                 studentData = localStorage.getItem('studentData');
             } else {
@@ -139,12 +136,11 @@ export default function StudentDashboard() {
                 router.replace('/(student)');
             }
         } catch (error) {
-
             setStatusAlert({
                 visible: true,
                 type: 'error',
                 title: 'System Error',
-                message: 'Failed to synchronize profile data.'
+                message: 'Failed to sync profile.'
             });
         } finally {
             setLoading(false);
@@ -166,14 +162,10 @@ export default function StudentDashboard() {
         setStatusAlert({
             visible: true,
             type: 'warning',
-            title: 'Terminate Session',
-            message: 'Are you sure you want to exit the premium portal?',
+            title: 'Logout',
+            message: 'Exit the student portal?',
             onConfirm: performLogout
         });
-    };
-
-    const handleEditProfile = () => {
-        setEditProfileVisible(true);
     };
 
     const openEnrollmentModal = async () => {
@@ -203,17 +195,15 @@ export default function StudentDashboard() {
                     setSelectedSession(sessionData.data[0].year_label || sessionData.data[0].session_name);
                 }
             }
-            if (classData.success) {
-                setClasses(classData.data);
-            }
+            if (classData.success) setClasses(classData.data);
         } catch (error) {
-            setEnrollError('Failed to load enrollment protocols. Check connection.');
+            setEnrollError('Connection failure.');
         }
     };
 
     const handleSelfEnroll = async () => {
         if (!selectedSession || !selectedClassId) {
-            setEnrollError('Select session and class to proceed.');
+            setEnrollError('Selection required.');
             return;
         }
 
@@ -237,47 +227,16 @@ export default function StudentDashboard() {
             });
 
             const data = await response.json();
-
             if (data.success) {
                 setEnrollSuccess(true);
-                setEnrollError(null);
                 onRefresh();
             } else {
-                setEnrollError(data.error || data.message || 'Enrollment Sequence Failed');
+                setEnrollError(data.error || 'Enrollment failed.');
             }
         } catch (error) {
-            setEnrollError('Fatal Network Interruption');
+            setEnrollError('Network interruption.');
         } finally {
             setEnrollLoading(false);
-        }
-    };
-
-    const handleViewGrades = (enrollment: any) => {
-        const enrollmentId = enrollment.enrollment_id || enrollment.id;
-        const sessionId = enrollment.session_id || enrollment.academic_session_id;
-        router.push(`/(student)/grades?enrollmentId=${enrollmentId}&sessionId=${sessionId}`);
-    };
-
-    const handlePrintReport = async (enrollment: any) => {
-        try {
-            const enrollmentId = enrollment.enrollment_id || enrollment.id;
-            const sessionId = enrollment.session_id || enrollment.academic_session_id;
-
-
-
-            const token = Platform.OS === 'web'
-                ? localStorage.getItem('studentToken')
-                : await SecureStore.getItemAsync('studentToken');
-
-            const url = `${API_BASE_URL}/api/students/me/enrollments/${sessionId}/report?enrollmentId=${enrollmentId}&accessToken=${encodeURIComponent(token || '')}`;
-            await Linking.openURL(url);
-        } catch (error) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'Report Error',
-                message: 'Unable to retrieve printable document.'
-            });
         }
     };
 
@@ -285,12 +244,15 @@ export default function StudentDashboard() {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={Colors.accent.gold} />
-                <Text style={styles.loadingText}>Syncing portal data...</Text>
+                <Text style={styles.loadingText}>SYNCING...</Text>
             </View>
         );
     }
 
     if (!student) return null;
+
+    const isTiny = width < 320;
+    const isNano = width < 280;
 
     return (
         <View style={styles.container}>
@@ -298,22 +260,20 @@ export default function StudentDashboard() {
                 style={{ flex: 1 }}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent.gold} />}
             >
                 {statusAlert.visible && (
                     <CustomAlert
-                        type={statusAlert.type}
-                        title={statusAlert.title}
-                        message={statusAlert.message}
+                        {...statusAlert}
                         onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-                        onConfirm={statusAlert.onConfirm}
-                        style={{ marginHorizontal: 24, marginVertical: 10 }}
+                        style={{ marginHorizontal: isTiny ? 16 : 24, marginVertical: 10 }}
                     />
                 )}
-                {/* Hero Header */}
+                
                 <ImageBackground
                     source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
                     style={styles.heroHeader}
-                    imageStyle={{ borderBottomLeftRadius: 40, borderBottomRightRadius: 40 }}
+                    imageStyle={{ borderBottomLeftRadius: isTiny ? 30 : 40, borderBottomRightRadius: isTiny ? 30 : 40 }}
                 >
                     <LinearGradient
                         colors={C.isDark ? ['rgba(15, 23, 42, 0.4)', 'rgba(15, 23, 42, 0.95)'] : ['rgba(255, 255, 255, 0.2)', 'rgba(255, 255, 255, 0.95)']}
@@ -321,22 +281,22 @@ export default function StudentDashboard() {
                     >
                         <View style={styles.topRow}>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="school" size={18} color="#FACC15" />
-                                <Text style={styles.logoText}>PREMIUM PORTAL</Text>
+                                <Ionicons name="school" size={16} color="#FACC15" />
+                                <Text style={styles.logoText}>SABINO EDU</Text>
                             </View>
-                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
                                 <TouchableOpacity style={styles.settingsFab} onPress={() => router.push('/(student)/preferences' as any)}>
-                                    <Ionicons name="settings-outline" size={20} color={Colors.accent.gold} />
+                                    <Ionicons name="settings-outline" size={18} color={Colors.accent.gold} />
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.logoutFab} onPress={handleLogout}>
-                                    <Ionicons name="power" size={20} color="#EF4444" />
+                                    <Ionicons name="power" size={18} color="#EF4444" />
                                 </TouchableOpacity>
                             </View>
                         </View>
 
                         <View style={styles.welcomeInfo}>
                             <Text style={styles.greeting}>ACCESS GRANTED</Text>
-                            <Text style={styles.studentName}>{student.first_name} {student.last_name}</Text>
+                            <Text style={styles.studentName} numberOfLines={1}>{student.first_name} {student.last_name}</Text>
                             <View style={styles.regBadge}>
                                 <Text style={styles.regText}>{student.registration_number}</Text>
                             </View>
@@ -344,10 +304,19 @@ export default function StudentDashboard() {
                     </LinearGradient>
                 </ImageBackground>
 
-                {/* Profile Snapshot */}
-                <View style={[styles.section, { marginTop: -25 }]}>
+                <View style={[styles.section, { marginTop: 0 }]}>
                     <View style={styles.glassCard}>
-                        <View style={styles.profileSummary}>
+                        <View style={styles.idCardHeader}>
+                            <View style={styles.idCardBrand}>
+                                <Ionicons name="shield-checkmark" size={16} color="#FACC15" />
+                                <Text style={styles.idCardBrandText}>{(student.school_name || 'ACADEMIC IDENTITY').toUpperCase()}</Text>
+                            </View>
+                            <TouchableOpacity style={styles.idCardEdit} onPress={() => setEditProfileVisible(true)}>
+                                <Ionicons name="pencil" size={12} color="#FACC15" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={[styles.profileSummary, isNano && { flexDirection: 'column', alignItems: 'center' }]}>
                             <View style={styles.avatarLarge}>
                                 {student.photo ? (
                                     <Image source={{ uri: student.photo }} style={styles.avatarImg} />
@@ -361,19 +330,21 @@ export default function StudentDashboard() {
                                 <View style={styles.onlineSignal} />
                             </View>
 
-                            <View style={styles.idInfo}>
-                                <Text style={styles.idTitle}>ACADEMIC IDENTITY</Text>
-                                <Text style={styles.idValue}>{student.school_name || 'Global Academy'}</Text>
-                                <TouchableOpacity style={styles.editProfileBtn} onPress={handleEditProfile}>
-                                    <Ionicons name="pencil-sharp" size={14} color="#FACC15" />
-                                    <Text style={styles.editProfileText}>UPDATE PROFILE</Text>
-                                </TouchableOpacity>
+                            <View style={[styles.idInfo, isNano && { marginLeft: 0, marginTop: 12, alignItems: 'center' }]}>
+                                <Text style={styles.idNameText}>{student.first_name} {student.last_name}</Text>
+                                <Text style={styles.idRegValue}>{student.registration_number}</Text>
+                                <View style={styles.schoolTag}>
+                                    <Ionicons name="business" size={10} color={C.textMuted} />
+                                    <Text style={[styles.schoolTagText, isNano && { textAlign: 'center' }]} numberOfLines={1}>{student.school_name || 'Global Academy'}</Text>
+                                </View>
                             </View>
                         </View>
 
+                        <View style={styles.cardDivider} />
+
                         <View style={styles.miniStats}>
                             <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>ENROLLMENTS</Text>
+                                <Text style={styles.statLabel}>CLASSES</Text>
                                 <Text style={styles.statValue}>{enrollments.length}</Text>
                             </View>
                             <View style={styles.divider} />
@@ -381,378 +352,234 @@ export default function StudentDashboard() {
                                 <Text style={styles.statLabel}>GENDER</Text>
                                 <Text style={styles.statValue}>{student.gender || 'N/A'}</Text>
                             </View>
+                            <View style={styles.divider} />
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>DOB</Text>
+                                <Text style={styles.statValue}>{student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : 'N/A'}</Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    <View style={styles.contactSection}>
+                        <View style={[styles.contactGrid, isNano && { flexDirection: 'column' }]}>
+                            <View style={styles.contactCard}>
+                                <View style={styles.contactIconBox}><Ionicons name="mail" size={14} color="#3B82F6" /></View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.contactLabel}>EMAIL ADDRESS</Text>
+                                    <Text style={styles.contactValue} numberOfLines={1}>{student.email || 'N/A'}</Text>
+                                </View>
+                            </View>
+                            <View style={styles.contactCard}>
+                                <View style={styles.contactIconBox}><Ionicons name="call" size={14} color="#10B981" /></View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.contactLabel}>PHONE NUMBER</Text>
+                                    <Text style={styles.contactValue}>{student.phone || 'N/A'}</Text>
+                                </View>
+                            </View>
+                        </View>
+                        
+                        <View style={[styles.contactCard, { marginTop: 10, width: '100%' }]}>
+                            <View style={styles.contactIconBox}><Ionicons name="location" size={14} color="#F59E0B" /></View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.contactLabel}>RESIDENTIAL LOCATION</Text>
+                                <Text style={styles.contactValue} numberOfLines={2}>{student.address || 'Address not registered in system'}</Text>
+                            </View>
                         </View>
                     </View>
                 </View>
 
-                {/* Grid Actions */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionLabel}>OPERATIONS CENTER</Text>
-                    <View style={styles.actionGrid}>
-                        <CompactActionCard
-                            icon="add-circle"
-                            label="ENROLL"
-                            color="#FACC15"
-                            onPress={openEnrollmentModal}
-                        />
-                        <CompactActionCard
-                            icon="analytics"
-                            label="REPORTS"
-                            color="#3B82F6"
-                            onPress={() => router.push('/(student)/grades')}
-                        />
+                    <Text style={styles.sectionLabel}>OPERATIONS</Text>
+                    <View style={[styles.actionGrid, isTiny && { flexDirection: 'column' }]}>
+                        <CompactActionCard icon="add-circle" label="ENROLL" color="#FACC15" onPress={openEnrollmentModal} />
+                        <CompactActionCard icon="analytics" label="REPORTS" color="#3B82F6" onPress={() => router.push('/(student)/grades')} />
                     </View>
                 </View>
 
-                {/* Enrollment Registry */}
-                <View style={[styles.section, { marginBottom: 0 }]}>
+                <View style={[styles.section, { marginBottom: 24 }]}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionLabel}>ACADEMIC REGISTRY</Text>
-                        <TouchableOpacity onPress={onRefresh}>
-                            <Ionicons name="reload" size={16} color="#475569" />
-                        </TouchableOpacity>
+                        <Text style={styles.sectionLabel}>REGISTRY</Text>
+                        <TouchableOpacity onPress={onRefresh}><Ionicons name="reload" size={14} color="#475569" /></TouchableOpacity>
                     </View>
 
                     {enrollments.length === 0 ? (
                         <View style={styles.emptyRegistry}>
-                            <Ionicons name="file-tray-outline" size={40} color="#334155" />
-                            <Text style={styles.emptyTitle}>NO ACTIVE REGISTRATIONS</Text>
-                            <Text style={styles.emptyDesc}>Initialize your academic journey using the Self Enroll tool.</Text>
+                            <Ionicons name="file-tray-outline" size={32} color="#334155" />
+                            <Text style={styles.emptyTitle}>EMPTY</Text>
                         </View>
                     ) : (
                         enrollments.map((item, idx) => (
-                            <View key={idx} style={[styles.registryItem, idx === enrollments.length - 1 && { marginBottom: 0 }]}>
-                                <View style={styles.registryIcon}>
-                                    <Ionicons name="ribbon" size={24} color="#FACC15" />
-                                </View>
+                            <View key={idx} style={styles.registryItem}>
+                                <View style={styles.registryIcon}><Ionicons name="ribbon" size={20} color="#FACC15" /></View>
                                 <View style={styles.registryInfo}>
                                     <Text style={styles.regSession}>{item.session_name || item.year_label}</Text>
                                     <Text style={styles.regClass}>{item.class_name || item.display_name}</Text>
-                                    <View style={styles.regActions}>
-                                        <TouchableOpacity style={styles.regBtn} onPress={() => handleViewGrades(item)}>
-                                            <Ionicons name="eye" size={14} color="#FACC15" />
-                                            <Text style={styles.regBtnText}>VIEW GRADES</Text>
-                                        </TouchableOpacity>
-                                    </View>
+                                    <TouchableOpacity style={styles.regBtn} onPress={() => router.push(`/(student)/grades?enrollmentId=${item.enrollment_id || item.id}&sessionId=${item.session_id || item.academic_session_id}`)}>
+                                        <Ionicons name="eye" size={12} color="#FACC15" />
+                                        <Text style={styles.regBtnText}>GRADES</Text>
+                                    </TouchableOpacity>
                                 </View>
                             </View>
                         ))
                     )}
                 </View>
 
-                {/* Flexible spacer to push footer to bottom if screen is short, but keeps it close otherwise */}
-                <View style={{ flex: 1 }} />
-                <View style={{ paddingBottom: 20, paddingTop: 10 }}>
-                    <Footer onLogout={handleLogout} />
-                </View>
+                <View style={{ paddingBottom: 20 }}><Footer onLogout={handleLogout} /></View>
             </ScrollView>
 
-            {/* Premium Enrollment Modal */}
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={enrollModalVisible}
-                onRequestClose={() => setEnrollModalVisible(false)}
-            >
+            <Modal animationType="slide" transparent visible={enrollModalVisible} onRequestClose={() => setEnrollModalVisible(false)}>
                 <View style={styles.modalOverlay}>
-                    <View
-                        style={[styles.modalContent, { backgroundColor: C.modalBg }]}
-                    >
+                    <View style={[styles.modalContent, { backgroundColor: C.modalBg }]}>
                         <View style={styles.modalIndictor} />
-                        
                         {enrollSuccess ? (
                             <View style={styles.successContainer}>
-                                <View style={styles.successIconCircle}>
-                                    <Ionicons name="checkmark-done-circle" size={80} color="#10B981" />
-                                </View>
-                                <Text style={styles.successTitle}>PROTOCOL FINALIZED</Text>
-                                <Text style={styles.successDesc}>Your academic enrollment has been securely registered in the registry.</Text>
-                                
-                                <TouchableOpacity 
-                                    style={styles.doneBtn} 
-                                    onPress={() => setEnrollModalVisible(false)}
-                                >
-                                    <Text style={styles.doneBtnText}>CLOSE & REFRESH</Text>
-                                </TouchableOpacity>
+                                <Ionicons name="checkmark-done-circle" size={60} color="#10B981" />
+                                <Text style={styles.successTitle}>FINALIZED</Text>
+                                <CustomButton title="CLOSE" onPress={() => setEnrollModalVisible(false)} variant="premium" style={{ width: '100%', marginTop: 20 }} />
                             </View>
                         ) : (
-                            <>
+                            <ScrollView showsVerticalScrollIndicator={false}>
                                 <View style={styles.modalHeader}>
-                                    <Text style={styles.modalTitle}>SELF ENROLLMENT</Text>
-                                    <TouchableOpacity onPress={() => setEnrollModalVisible(false)} style={styles.closeBtn}>
-                                        <Ionicons name="close" size={24} color="#fff" />
-                                    </TouchableOpacity>
+                                    <Text style={styles.modalTitle}>ENROLLMENT</Text>
+                                    <TouchableOpacity onPress={() => setEnrollModalVisible(false)} style={styles.closeBtn}><Ionicons name="close" size={20} color="#fff" /></TouchableOpacity>
                                 </View>
 
-                                {enrollError && (
-                                    <View style={styles.errorBanner}>
-                                        <Ionicons name="alert-circle" size={20} color="#fff" />
-                                        <Text style={styles.errorBannerText}>{enrollError}</Text>
-                                        <TouchableOpacity onPress={() => setEnrollError(null)}>
-                                            <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.7)" />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
+                                {enrollError && <Text style={styles.errorBannerText}>{enrollError}</Text>}
 
-                                <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-                                    <View style={{ marginBottom: 20 }}>
-                                        <Text style={styles.formLabel}>ACADEMIC SESSION</Text>
-                                        <TouchableOpacity 
-                                            style={styles.inputSelector} 
-                                            onPress={() => setShowSessionSelector(!showSessionSelector)}
-                                        >
-                                            <Text style={styles.selectorText}>
-                                                {selectedSession || 'Select Session'}
-                                            </Text>
-                                            <Ionicons name={showSessionSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
-                                        </TouchableOpacity>
+                                <View style={{ marginBottom: 16 }}>
+                                    <Text style={styles.formLabel}>SESSION</Text>
+                                    <TouchableOpacity style={styles.inputSelector} onPress={() => setShowSessionSelector(!showSessionSelector)}>
+                                        <Text style={styles.selectorText}>{selectedSession || 'Select'}</Text>
+                                        <Ionicons name="chevron-down" size={18} color="#FACC15" />
+                                    </TouchableOpacity>
+                                    {showSessionSelector && (
+                                        <View style={styles.selectorList}>
+                                            <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                                                {sessions.map((s, i) => (
+                                                    <TouchableOpacity key={i} style={styles.selectorItem} onPress={() => { setSelectedSession(s.year_label || s.session_name); setShowSessionSelector(false); }}>
+                                                        <Text style={styles.selectorItemText}>{s.year_label || s.session_name}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    )}
+                                </View>
 
-                                        {showSessionSelector && (
-                                            <View style={styles.selectorList}>
-                                                <ScrollView style={{ maxHeight: 160 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                                                    {sessions.map((s, i) => (
-                                                        <TouchableOpacity
-                                                            key={i}
-                                                            style={[styles.selectorItem, selectedSession === (s.year_label || s.session_name) && styles.selectorItemActive]}
-                                                            onPress={() => {
-                                                                setSelectedSession(s.year_label || s.session_name);
-                                                                setShowSessionSelector(false);
-                                                            }}
-                                                        >
-                                                            <Text style={[styles.selectorItemText, selectedSession === (s.year_label || s.session_name) && styles.selectorItemTextActive]}>
-                                                                {s.year_label || s.session_name}
-                                                            </Text>
-                                                            {selectedSession === (s.year_label || s.session_name) && (
-                                                                <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
-                                                            )}
-                                                        </TouchableOpacity>
-                                                    ))}
-                                                </ScrollView>
-                                            </View>
-                                        )}
-                                    </View>
+                                <View style={{ marginBottom: 20 }}>
+                                    <Text style={styles.formLabel}>CLASS</Text>
+                                    <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassSelector(!showClassSelector)}>
+                                        <Text style={styles.selectorText}>{classes.find((c: any) => c.id === selectedClassId)?.display_name || 'Select'}</Text>
+                                        <Ionicons name="chevron-down" size={18} color="#FACC15" />
+                                    </TouchableOpacity>
+                                    {showClassSelector && (
+                                        <View style={styles.selectorList}>
+                                            <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                                                {classes.map((c, i) => (
+                                                    <TouchableOpacity key={i} style={styles.selectorItem} onPress={() => { setSelectedClassId(c.id); setShowClassSelector(false); }}>
+                                                        <Text style={styles.selectorItemText}>{c.display_name || c.class_name}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    )}
+                                </View>
 
-                                    <View style={{ marginBottom: 20 }}>
-                                        <Text style={styles.formLabel}>TARGET ACADEMIC CLASS</Text>
-                                        <TouchableOpacity 
-                                            style={styles.inputSelector} 
-                                            onPress={() => setShowClassSelector(!showClassSelector)}
-                                        >
-                                            <Text style={styles.selectorText}>
-                                                {classes.find((c: any) => c.id === selectedClassId)?.display_name || classes.find((c: any) => c.id === selectedClassId)?.class_name || 'Select Class'}
-                                            </Text>
-                                            <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={20} color="#FACC15" />
-                                        </TouchableOpacity>
-
-                                        {showClassSelector && (
-                                            <View style={styles.selectorList}>
-                                                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                                                    {classes.map((c, i) => (
-                                                        <TouchableOpacity
-                                                            key={i}
-                                                            style={[styles.selectorItem, selectedClassId === c.id && styles.selectorItemActive]}
-                                                            onPress={() => {
-                                                                setSelectedClassId(c.id);
-                                                                setShowClassSelector(false);
-                                                            }}
-                                                        >
-                                                            <Text style={[styles.selectorItemText, selectedClassId === c.id && styles.selectorItemTextActive]}>
-                                                                {c.display_name || c.class_name}
-                                                            </Text>
-                                                            {selectedClassId === c.id && (
-                                                                <Ionicons name="checkmark-circle" size={18} color="#FACC15" />
-                                                            )}
-                                                        </TouchableOpacity>
-                                                    ))}
-                                                </ScrollView>
-                                            </View>
-                                        )}
-                                    </View>
-
-
-                                    <CustomButton
-                                        title={enrollLoading ? "PROCESSING..." : "CONFIRM ENROLLMENT"}
-                                        onPress={handleSelfEnroll}
-                                        loading={enrollLoading}
-                                        variant="premium"
-                                        style={styles.modalSubmit}
-                                    />
-                                </ScrollView>
-                            </>
+                                <CustomButton title={enrollLoading ? "..." : "CONFIRM"} onPress={handleSelfEnroll} loading={enrollLoading} variant="premium" style={{ height: 52 }} />
+                            </ScrollView>
                         )}
                     </View>
                 </View>
             </Modal>
 
-            <EditProfileModal
-                visible={editProfileVisible}
-                onClose={() => setEditProfileVisible(false)}
-                student={student}
-                onUpdate={(updatedData) => setStudent(updatedData)}
-            />
+            <EditProfileModal visible={editProfileVisible} onClose={() => setEditProfileVisible(false)} student={student} onUpdate={setStudent} />
         </View>
     );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+    const isTiny = width < 320;
+    const isNano = width < 280;
     return StyleSheet.create({
         container: { flex: 1, backgroundColor: C.background },
-        loadingContainer: { flex: 1, backgroundColor: C.background, justifyContent: 'center', alignItems: 'center' },
-        loadingText: { color: C.textSecondary, marginTop: 16, fontSize: 13, fontWeight: '800', letterSpacing: 2 },
+        loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+        loadingText: { color: C.textSecondary, marginTop: 12, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
         scrollContent: { flexGrow: 1 },
-
-        heroHeader: { height: 260, width: '100%', marginBottom: 0 },
-        heroOverlay: { flex: 1, padding: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
+        heroHeader: { height: isTiny ? 220 : 260, width: '100%' },
+        heroOverlay: { flex: 1, padding: isTiny ? 16 : 24, paddingTop: Platform.OS === 'ios' ? 50 : 40 },
         topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-        logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-        logoText: { color: '#FACC15', fontSize: 10, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
-        logoutFab: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(239, 68, 68, 0.1)', justifyContent: 'center', alignItems: 'center' },
-        settingsFab: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center' },
-
-        welcomeInfo: { marginTop: 30 },
-        greeting: { color: '#FACC15', fontSize: 11, fontWeight: '900', letterSpacing: 3 },
-        studentName: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 4 },
-        regBadge: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 10, marginBottom: 5 },
-        regText: { color: '#94A3B8', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-
-        section: { paddingHorizontal: 24, marginBottom: 30 },
-        glassCard: { backgroundColor: C.card, borderRadius: 25, padding: 20, borderWidth: 1, borderColor: C.cardBorder },
-        profileSummary: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+        logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 15 },
+        logoText: { color: '#FACC15', fontSize: 9, fontWeight: '900', marginLeft: 6, letterSpacing: 1.5 },
+        logoutFab: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(239, 68, 68, 0.1)', justifyContent: 'center', alignItems: 'center' },
+        settingsFab: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center' },
+        welcomeInfo: { marginTop: isTiny ? 20 : 30 },
+        greeting: { color: '#FACC15', fontSize: 9, fontWeight: '900', letterSpacing: 2 },
+        studentName: { color: '#fff', fontSize: isTiny ? 20 : 24, fontWeight: '900', marginTop: 2 },
+        regBadge: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start', marginTop: 8 },
+        regText: { color: '#94A3B8', fontSize: 10, fontWeight: '700' },
+        section: { paddingHorizontal: isTiny ? 16 : 24, marginBottom: 30 },
+        glassCard: { backgroundColor: C.card, borderRadius: 24, padding: isTiny ? 16 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 6 },
+        profileSummary: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
         avatarLarge: { position: 'relative' },
-        avatarImg: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: '#FACC15' },
-        avatarLargePlaceholder: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FACC15' },
-        avatarLargeText: { color: '#FACC15', fontSize: 22, fontWeight: '900' },
-        onlineSignal: { position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#1E293B' },
-        idInfo: { marginLeft: 16, flex: 1 },
-        idTitle: { color: C.textLabel, fontSize: 9, fontWeight: '900', letterSpacing: 2 },
-        idValue: { color: C.text, fontSize: 15, fontWeight: '700', marginTop: 2 },
-        editProfileBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-        editProfileText: { color: '#FACC15', fontSize: 10, fontWeight: '900', marginLeft: 6, letterSpacing: 1 },
-
-        miniStats: { flexDirection: 'row', backgroundColor: C.actionItemBg, borderRadius: 15, padding: 15 },
+        avatarImg: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: '#FACC15' },
+        avatarLargePlaceholder: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FACC15' },
+        avatarLargeText: { color: '#FACC15', fontSize: 18, fontWeight: '900' },
+        onlineSignal: { position: 'absolute', bottom: 1, right: 1, width: 12, height: 12, borderRadius: 6, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#1E293B' },
+        idInfo: { marginLeft: 12, flex: 1 },
+        idTitle: { color: C.textLabel, fontSize: 8, fontWeight: '900', letterSpacing: 1.5 },
+        idValue: { color: C.text, fontSize: 13, fontWeight: '700', marginTop: 2 },
+        editProfileBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+        editProfileText: { color: '#FACC15', fontSize: 9, fontWeight: '900', marginLeft: 4 },
+        miniStats: { flexDirection: 'row', backgroundColor: C.actionItemBg, borderRadius: 12, padding: 12 },
         statItem: { flex: 1, alignItems: 'center' },
-        statLabel: { color: C.textSecondary, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-        statValue: { color: C.text, fontSize: 14, fontWeight: '800', marginTop: 4 },
+        statLabel: { color: C.textSecondary, fontSize: 8, fontWeight: '900' },
+        statValue: { color: C.text, fontSize: 12, fontWeight: '800', marginTop: 2 },
         divider: { width: 1, height: '100%', backgroundColor: C.divider },
-
-        sectionLabel: { color: C.textLabel, fontSize: 11, fontWeight: '900', letterSpacing: 2, marginBottom: 15 },
-        actionGrid: { flexDirection: 'row', gap: 15 },
-        compactCard: { flex: 1, alignItems: 'center', backgroundColor: C.actionItemBg, paddingVertical: 15, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder },
-        compactIcon: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-        compactLabel: { color: C.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-
-        sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-        registryItem: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
-        registryIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(250, 204, 21, 0.05)', justifyContent: 'center', alignItems: 'center' },
-        registryInfo: { flex: 1, marginLeft: 16 },
-        regSession: { color: C.text, fontSize: 14, fontWeight: '800' },
-        regClass: { color: C.textSecondary, fontSize: 12, fontWeight: '600', marginTop: 2 },
-        regActions: { flexDirection: 'row', marginTop: 12 },
-        regBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.actionIconWrap, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: C.cardBorder },
-        regBtnText: { color: '#FACC15', fontSize: 9, fontWeight: '900', marginLeft: 6, letterSpacing: 1 },
-
-        emptyRegistry: { alignItems: 'center', padding: 40, backgroundColor: C.actionItemBg, borderRadius: 25, borderStyle: 'dashed', borderWidth: 2, borderColor: C.cardBorder },
-        emptyTitle: { color: C.textLabel, fontSize: 12, fontWeight: '900', marginTop: 15, letterSpacing: 1 },
-        emptyDesc: { color: C.textSecondary, fontSize: 11, textAlign: 'center', marginTop: 6, fontWeight: '600' },
-
-        modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
-        modalContent: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, height: '85%', overflow: 'hidden' },
-        modalIndictor: { width: 40, height: 5, backgroundColor: C.divider, borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
-        modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
-        modalTitle: { color: C.text, fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-        closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.actionIconWrap, justifyContent: 'center', alignItems: 'center' },
-
-        inputSelector: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: C.inputBg,
-            borderRadius: 16,
-            paddingHorizontal: 20,
-            height: 56,
-            borderWidth: 1,
-            borderColor: C.inputBorder,
-        },
-        selectorText: { color: C.inputText, fontSize: 14, fontWeight: '700' },
-        selectorList: {
-            backgroundColor: C.modalBg,
-            borderRadius: 20,
-            marginTop: 8,
-            padding: 8,
-            borderWidth: 1,
-            borderColor: C.cardBorder,
-            overflow: 'hidden',
-        },
-        selectorItem: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-            borderRadius: 12,
-        },
-        selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
-        selectorItemText: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
-        selectorItemTextActive: { color: '#FACC15', fontWeight: '800' },
-        modalSubmit: { marginTop: 30, height: 60, borderRadius: 18 },
-        errorBanner: {
-            backgroundColor: '#EF4444',
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: 16,
-            borderRadius: 16,
-            marginBottom: 24,
-            gap: 12,
-        },
-        errorBannerText: {
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: '800',
-            flex: 1,
-        },
-        successContainer: {
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingHorizontal: 20,
-        },
-        successIconCircle: {
-            width: 120,
-            height: 120,
-            borderRadius: 60,
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginBottom: 24,
-        },
-        successTitle: {
-            color: C.text,
-            fontSize: 22,
-            fontWeight: '900',
-            letterSpacing: 1,
-            marginBottom: 12,
-        },
-        successDesc: {
-            color: C.textSecondary,
-            fontSize: 14,
-            textAlign: 'center',
-            lineHeight: 22,
-            marginBottom: 40,
-            fontWeight: '600',
-        },
-        doneBtn: {
-            backgroundColor: '#10B981',
-            paddingHorizontal: 40,
-            paddingVertical: 18,
-            borderRadius: 20,
-            width: '100%',
-            alignItems: 'center',
-        },
-        doneBtnText: {
-            color: '#fff',
-            fontSize: 15,
-            fontWeight: '900',
-            letterSpacing: 1,
-        },
+        idCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+        idCardBrand: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+        idCardBrandText: { color: Colors.accent.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+        idCardEdit: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(250, 204, 21, 0.1)', justifyContent: 'center', alignItems: 'center' },
+        verifiedBadge: { backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+        verifiedText: { color: '#10B981', fontSize: 8, fontWeight: '900' },
+        idNameText: { color: C.text, fontSize: 16, fontWeight: '900' },
+        idRegValue: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800', marginTop: 2 },
+        schoolTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+        schoolTagText: { color: C.textMuted, fontSize: 10, fontWeight: '600' },
+        cardDivider: { height: 1, backgroundColor: C.divider, marginVertical: 15, opacity: 0.5 },
+        contactSection: { marginTop: 10 },
+        contactGrid: { flexDirection: 'row', gap: 10 },
+        contactCard: { flex: 1, backgroundColor: C.card, borderRadius: 16, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: C.cardBorder },
+        contactIconBox: { width: 30, height: 30, borderRadius: 8, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center' },
+        contactLabel: { color: C.textLabel, fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
+        contactValue: { color: C.text, fontSize: 11, fontWeight: '700', marginTop: 1 },
+        sectionLabel: { color: C.textLabel, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 12 },
+        actionGrid: { flexDirection: 'row', gap: 12 },
+        compactCard: { flex: 1, alignItems: 'center', backgroundColor: C.actionItemBg, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder },
+        compactIcon: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
+        compactLabel: { color: C.textSecondary, fontSize: 9, fontWeight: '800' },
+        sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+        registryItem: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 16, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
+        registryIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(250, 204, 21, 0.05)', justifyContent: 'center', alignItems: 'center' },
+        registryInfo: { flex: 1, marginLeft: 12 },
+        regSession: { color: C.text, fontSize: 12, fontWeight: '800' },
+        regClass: { color: C.textSecondary, fontSize: 11, fontWeight: '600' },
+        regBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.actionIconWrap, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 8, alignSelf: 'flex-start' },
+        regBtnText: { color: '#FACC15', fontSize: 8, fontWeight: '900', marginLeft: 4 },
+        emptyRegistry: { alignItems: 'center', padding: 30, backgroundColor: C.actionItemBg, borderRadius: 20, borderStyle: 'dashed', borderWidth: 1, borderColor: C.cardBorder },
+        emptyTitle: { color: C.textLabel, fontSize: 10, fontWeight: '900', marginTop: 10 },
+        modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'flex-end' },
+        modalContent: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '80%' },
+        modalIndictor: { width: 36, height: 4, backgroundColor: C.divider, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+        modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+        modalTitle: { color: C.text, fontSize: 16, fontWeight: '900' },
+        closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.actionIconWrap, justifyContent: 'center', alignItems: 'center' },
+        inputSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 12, paddingHorizontal: 16, height: 48, borderWidth: 1, borderColor: C.inputBorder },
+        selectorText: { color: C.inputText, fontSize: 13, fontWeight: '700' },
+        selectorList: { backgroundColor: C.modalBg, borderRadius: 16, marginTop: 6, padding: 6, borderWidth: 1, borderColor: C.cardBorder },
+        selectorItem: { padding: 12, borderRadius: 8 },
+        selectorItemText: { color: C.textSecondary, fontSize: 12, fontWeight: '600' },
+        formLabel: { fontSize: 9, fontWeight: '800', color: C.textLabel, marginBottom: 6 },
+        errorBannerText: { color: '#EF4444', fontSize: 11, marginBottom: 12, textAlign: 'center' },
+        successContainer: { padding: 40, alignItems: 'center' },
+        successTitle: { color: C.text, fontSize: 18, fontWeight: '900', marginTop: 16 },
     });
 }

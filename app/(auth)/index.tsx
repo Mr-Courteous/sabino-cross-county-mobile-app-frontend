@@ -8,7 +8,7 @@ import {
     TouchableOpacity,
     ImageBackground,
     StyleSheet,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,15 +23,13 @@ import { ThemedText } from '@/components/themed-text';
 import { useAppColors } from '@/hooks/use-app-colors';
 import {
     Colors,
-    Spacing,
 } from '@/constants/design-system';
-
-const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
     const router = useRouter();
+    const { width } = useWindowDimensions();
     const C = useAppColors();
-    const styles = useMemo(() => makeStyles(C), [C.scheme]);
+    const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -93,6 +91,8 @@ export default function LoginScreen() {
         }
     };
 
+    const isTiny = width < 300;
+
     return (
         <ThemedView style={{ flex: 1, backgroundColor: C.background }}>
             <ImageBackground
@@ -112,47 +112,48 @@ export default function LoginScreen() {
                                 style={styles.backBtn}
                                 onPress={() => router.back()}
                             >
-                                <Ionicons name="arrow-back" size={24} color={C.text} />
+                                <Ionicons name="arrow-back" size={20} color={C.text} />
                             </TouchableOpacity>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="ribbon" size={24} color={Colors.accent.gold} />
-                                <ThemedText style={styles.logoText}>SABINO PORTAL</ThemedText>
+                                <Ionicons name="ribbon" size={20} color={Colors.accent.gold} />
+                                <ThemedText style={styles.logoText}>SABINO EDU</ThemedText>
                             </View>
                             <ThemedText style={styles.title}>School Login</ThemedText>
                             <View style={styles.goldBar} />
-                            <ThemedText style={styles.subtitle}>Secure Access to Academic Management</ThemedText>
+                            <ThemedText style={styles.subtitle}>Secure Access to Management</ThemedText>
                         </View>
 
                         <View style={styles.card}>
-                            {/* Error Alert */}
                             {error && (
                                 <CustomAlert
                                     type="error"
                                     title="Access Denied"
                                     message={error}
                                     onClose={() => setError('')}
-                                    style={{ marginBottom: Spacing.xl }}
+                                    style={{ marginBottom: 16 }}
                                 />
                             )}
 
                             <CustomInput
                                 label="School Email"
-                                placeholder="Enter your email"
+                                placeholder="Email address"
                                 keyboardType="email-address"
                                 value={email}
                                 onChangeText={setEmail}
                                 editable={!isLoading}
                                 containerStyle={styles.inputContainer}
+                                labelStyle={{ fontSize: 10 }}
                             />
 
                             <CustomInput
                                 label="Password"
-                                placeholder="Enter your password"
+                                placeholder="Password"
                                 isPassword
                                 value={password}
                                 onChangeText={setPassword}
                                 editable={!isLoading}
                                 containerStyle={styles.inputContainer}
+                                labelStyle={{ fontSize: 10 }}
                             />
 
                             <CustomButton
@@ -162,34 +163,44 @@ export default function LoginScreen() {
                                 loading={isLoading}
                                 variant="premium"
                                 style={styles.loginButton}
+                                textStyle={{ fontSize: 12 }}
                             />
 
-                            <CustomButton
-                                title="FORGOT PASSWORD?"
+                            <TouchableOpacity 
                                 onPress={() => router.push('/(auth)/forgot-password')}
+                                style={{ alignSelf: 'center', marginTop: 16 }}
                                 disabled={isLoading}
-                                variant="ghost"
-                                textStyle={styles.forgotText}
-                            />
+                            >
+                                <ThemedText style={styles.forgotText}>FORGOT PASSWORD?</ThemedText>
+                            </TouchableOpacity>
 
                             <View style={styles.divider} />
 
                             <View style={styles.registerSection}>
-                                <ThemedText style={styles.registerLabel}>Don't have an account?</ThemedText>
+                                <ThemedText style={styles.registerLabel}>New institution?</ThemedText>
                                 <CustomButton
                                     title="REGISTER YOUR SCHOOL"
                                     onPress={() => router.push('/(auth)/verify-email')}
                                     disabled={isLoading}
                                     variant="outline"
                                     style={styles.registerButton}
-                                    textStyle={{ color: Colors.accent.blue, fontWeight: '800' }}
+                                    textStyle={{ color: Colors.accent.blue, fontWeight: '800', fontSize: 11 }}
                                 />
+                                
+                                <TouchableOpacity 
+                                    style={styles.studentChannel}
+                                    onPress={() => router.push('/(student)' as any)}
+                                >
+                                    <ThemedText style={styles.studentChannelText}>
+                                        Are you a student? <ThemedText style={styles.studentChannelHighlight}>Login here</ThemedText>
+                                    </ThemedText>
+                                </TouchableOpacity>
                             </View>
                         </View>
 
                         <View style={styles.footer}>
-                            <ThemedText style={styles.footerText}>© 2026 SABINO SYSTEMS GLOBAL</ThemedText>
-                            <ThemedText style={styles.footerSubtext}>THE GOLD STANDARD FOR ACADEMIC REPORTING</ThemedText>
+                            <ThemedText style={styles.footerText}>© 2026 SABINO EDU SYSTEMS GLOBAL</ThemedText>
+                            <ThemedText style={styles.footerSubtext}>THE GOLD STANDARD FOR REPORTING</ThemedText>
                         </View>
                     </ScrollView>
                 </LinearGradient>
@@ -198,79 +209,99 @@ export default function LoginScreen() {
     );
 }
 
-function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>) {
+function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useAppColors>, width: number) {
+    const isTiny = width < 300;
     return StyleSheet.create({
         hero: { flex: 1, width: '100%' },
-        overlay: { flex: 1, paddingHorizontal: 24 },
-        scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: 60 },
+        overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
+        scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
         
-        header: { alignItems: 'center', marginBottom: 40 },
+        header: { alignItems: 'center', marginBottom: isTiny ? 24 : 34 },
         backBtn: {
             position: 'absolute',
             top: 0,
             left: 0,
-            width: 44,
-            height: 44,
+            width: 36,
+            height: 36,
             justifyContent: 'center',
             alignItems: 'center',
             backgroundColor: C.actionItemBg,
-            borderRadius: 22,
+            borderRadius: 18,
             zIndex: 10
         },
         logoBadge: {
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            borderRadius: 12,
-            marginBottom: 20,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 10,
+            marginBottom: 16,
             borderWidth: 1,
             borderColor: C.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
         },
-        logoText: { color: Colors.accent.gold, fontSize: 13, fontWeight: '900', marginLeft: 10, letterSpacing: 3 },
-        title: { fontSize: 32, fontWeight: '900', color: C.text, letterSpacing: -1 },
-        goldBar: { width: 50, height: 4, backgroundColor: Colors.accent.gold, borderRadius: 2, marginVertical: 15 },
-        subtitle: { fontSize: 14, color: C.textSecondary, fontWeight: '500' },
+        logoText: { color: Colors.accent.gold, fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
+        title: { fontSize: isTiny ? 24 : 28, fontWeight: '900', color: C.text, letterSpacing: -1 },
+        goldBar: { width: 40, height: 3, backgroundColor: Colors.accent.gold, borderRadius: 1.5, marginVertical: 12 },
+        subtitle: { fontSize: 12, color: C.textSecondary, fontWeight: '500', textAlign: 'center' },
 
         card: {
             backgroundColor: C.card,
-            borderRadius: 35,
-            padding: 30,
+            borderRadius: 28,
+            padding: isTiny ? 20 : 26,
             borderWidth: 1,
             borderColor: C.cardBorder,
         },
         inputContainer: {
             backgroundColor: C.inputBg,
             borderColor: C.inputBorder,
-            marginBottom: 15,
+            marginBottom: 14,
         },
         loginButton: {
             marginTop: 10,
-            borderRadius: 15,
-            height: 60,
+            borderRadius: 12,
+            height: 52,
         },
         forgotText: {
             color: C.textSecondary,
-            fontSize: 12,
+            fontSize: 10,
             fontWeight: '700',
             letterSpacing: 1,
         },
         divider: {
             height: 1,
             backgroundColor: C.divider,
-            marginVertical: 25,
+            marginVertical: 20,
         },
         registerSection: { alignItems: 'center' },
-        registerLabel: { color: C.textMuted, fontSize: 13, marginBottom: 15, fontWeight: '600' },
+        registerLabel: { color: C.textMuted, fontSize: 11, marginBottom: 12, fontWeight: '600' },
         registerButton: {
             borderColor: '#2563EB',
             borderWidth: 2,
-            borderRadius: 15,
+            borderRadius: 12,
             width: '100%',
+            height: 48,
+            marginBottom: 16,
         },
-        footer: { marginTop: 40, alignItems: 'center' },
-        footerText: { color: C.textLabel, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-        footerSubtext: { color: C.textSecondary, fontSize: 9, fontWeight: '900', marginTop: 5 }
+        studentChannel: {
+            marginTop: 24,
+            paddingVertical: 12,
+            borderTopWidth: 1,
+            borderTopColor: C.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+            width: '100%',
+            alignItems: 'center'
+        },
+        studentChannelText: {
+            color: C.textSecondary,
+            fontSize: 12,
+            fontWeight: '600'
+        },
+        studentChannelHighlight: {
+            color: Colors.accent.gold,
+            fontWeight: '900'
+        },
+        footer: { marginTop: 34, alignItems: 'center' },
+        footerText: { color: C.textLabel, fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+        footerSubtext: { color: C.textSecondary, fontSize: 8, fontWeight: '900', marginTop: 4 }
     });
 }

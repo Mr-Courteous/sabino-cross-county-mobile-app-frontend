@@ -1,318 +1,92 @@
 import React, { useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ViewStyle,
-  Animated,
-  Dimensions,
-  BackHandler,
-  Platform,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ViewStyle, Animated, Dimensions, BackHandler, Platform, useWindowDimensions, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  AlertStyle,
-  Spacing,
-  Typography,
-  Colors,
-  BorderRadius,
-} from '@/constants/design-system';
+import { Spacing, Typography, Colors, BorderRadius } from '@/constants/design-system';
 
 type AlertType = 'success' | 'error' | 'warning' | 'info';
+interface CustomAlertProps { type?: AlertType; title?: string; message: string; onClose?: () => void; onConfirm?: () => void; confirmLabel?: string; showCloseButton?: boolean; style?: ViewStyle; icon?: boolean; }
 
-interface CustomAlertProps {
-  type?: AlertType;
-  title?: string;
-  message: string;
-  onClose?: () => void;
-  onConfirm?: () => void;
-  confirmLabel?: string;
-  showCloseButton?: boolean;
-  style?: ViewStyle;
-  icon?: boolean;
-}
+const alertIcons: Record<AlertType, keyof typeof Ionicons.glyphMap> = { success: 'checkmark-circle', error: 'alert-circle', warning: 'warning', info: 'information-circle' };
+const alertColors: Record<AlertType, string> = { success: '#22C55E', error: '#EF4444', warning: '#F59E0B', info: '#3B82F6' };
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const alertIcons: Record<AlertType, keyof typeof Ionicons.glyphMap> = {
-  success: 'checkmark-circle',
-  error: 'alert-circle',
-  warning: 'warning',
-  info: 'information-circle',
-};
-
-const alertColors: Record<AlertType, string> = {
-  success: '#22C55E',
-  error: '#EF4444',
-  warning: '#F59E0B',
-  info: '#3B82F6',
-};
-
-export function CustomAlert({
-  type = 'info',
-  title,
-  message,
-  onClose,
-  onConfirm,
-  confirmLabel = 'OK',
-  showCloseButton = true,
-  style,
-  icon = true,
-}: CustomAlertProps) {
+export function CustomAlert({ type = 'info', title, message, onClose, onConfirm, confirmLabel = 'OK', showCloseButton = true, style, icon = true }: CustomAlertProps) {
   const insets = useSafeAreaInsets();
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const { width, height } = useWindowDimensions();
+  const isTiny = width < 300;
+  const slideAnim = useRef(new Animated.Value(height)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Animate in
     Animated.parallel([
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        damping: 20,
-        stiffness: 150,
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
+      Animated.spring(slideAnim, { toValue: 0, damping: 20, stiffness: 150, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
-
-    // Handle back button on Android
     if (Platform.OS === 'android') {
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-        onClose?.();
-        return true;
-      });
-      return () => backHandler.remove();
+      const handler = BackHandler.addEventListener('hardwareBackPress', () => { onClose?.(); return true; });
+      return () => handler.remove();
     }
   }, []);
 
   const handleClose = () => {
-    // Animate out
     Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: SCREEN_HEIGHT,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onClose?.();
-    });
-  };
-
-  const handleConfirm = () => {
-    onConfirm?.();
-    handleClose();
+      Animated.timing(slideAnim, { toValue: height, duration: 200, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => onClose?.());
   };
 
   const alertColor = alertColors[type];
 
   return (
-    <View style={styles.overlay}>
-      {/* Backdrop */}
-      <Animated.View 
-        style={[
-          styles.backdrop, 
-          { opacity: backdropAnim }
-        ]}
-      >
-        <TouchableOpacity 
-          style={StyleSheet.absoluteFill} 
-          onPress={handleClose}
-          activeOpacity={1}
-        />
-      </Animated.View>
-
-      {/* Alert Container - Bottom Sheet Style */}
-      <Animated.View 
-        style={[
-          styles.container,
-          { 
-            transform: [{ translateY: slideAnim }],
-            paddingBottom: Math.max(insets.bottom, Spacing.lg),
-          },
-          style,
-        ]}
-      >
-        {/* Drag Handle */}
-        <View style={styles.dragHandleContainer}>
-          <View style={styles.dragHandle} />
-        </View>
-
-        {/* Content */}
-        <View style={styles.content}>
-          {/* Icon */}
-          {icon && (
-            <View style={[styles.iconContainer, { backgroundColor: `${alertColor}20` }]}>
-              <Ionicons 
-                name={alertIcons[type]} 
-                size={32} 
-                color={alertColor} 
-              />
+    <Modal
+      transparent
+      visible={true}
+      animationType="none"
+      onRequestClose={handleClose}
+    >
+      <View style={styles.overlay}>
+        <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}><TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} /></Animated.View>
+        <Animated.View style={[styles.container, { transform: [{ translateY: slideAnim }], paddingBottom: Math.max(insets.bottom, 16) }, style]}>
+          <View style={styles.dragHandleContainer}><View style={styles.dragHandle} /></View>
+          <View style={styles.content}>
+            {icon && !isTiny && <View style={[styles.iconBox, { backgroundColor: `${alertColor}15` }]}><Ionicons name={alertIcons[type]} size={28} color={alertColor} /></View>}
+            <View style={styles.textBox}>
+              {title && <Text style={[styles.title, { fontSize: isTiny ? 15 : 16 }]}>{title}</Text>}
+              <Text style={[styles.message, { fontSize: isTiny ? 12 : 13 }]}>{message}</Text>
             </View>
-          )}
-
-          {/* Text Content */}
-          <View style={styles.textContainer}>
-            {title && (
-              <Text style={styles.title}>{title}</Text>
-            )}
-            <Text style={styles.message}>{message}</Text>
+            {showCloseButton && <TouchableOpacity onPress={handleClose}><Ionicons name="close" size={18} color="rgba(255,255,255,0.4)" /></TouchableOpacity>}
           </View>
-
-          {/* Close Button */}
-          {showCloseButton && onClose && (
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={handleClose}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Actions */}
-        <View style={styles.actionContainer}>
-          {onConfirm ? (
-            <>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={handleClose}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmButton, { backgroundColor: alertColor }]}
-                onPress={handleConfirm}
-              >
-                <Text style={styles.confirmButtonText}>{confirmLabel}</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <TouchableOpacity
-              style={[styles.singleButton, { backgroundColor: alertColor }]}
-              onPress={handleClose}
-            >
-              <Text style={styles.singleButtonText}>
-                {confirmLabel || 'OK'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
-    </View>
+          <View style={styles.actions}>
+            {onConfirm ? (
+              <>
+                <TouchableOpacity style={styles.btnCancel} onPress={handleClose}><Text style={styles.btnCancelText}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.btnConfirm, { backgroundColor: alertColor }]} onPress={() => { onConfirm(); handleClose(); }}><Text style={styles.btnText}>{confirmLabel}</Text></TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={[styles.btnSingle, { backgroundColor: alertColor }]} onPress={handleClose}><Text style={styles.btnText}>{confirmLabel || 'OK'}</Text></TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    zIndex: 1000,
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  container: {
-    backgroundColor: '#1E293B',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-  },
-  dragHandleContainer: {
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 2,
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.md,
-  },
-  textContainer: {
-    flex: 1,
-    paddingRight: Spacing.md,
-  },
-  title: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: Spacing.xs,
-  },
-  message: {
-    fontSize: Typography.fontSize.md,
-    color: 'rgba(255,255,255,0.7)',
-    lineHeight: 22,
-  },
-  closeButton: {
-    padding: Spacing.xs,
-    marginTop: -Spacing.xs,
-  },
-  actionContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: Spacing.xl,
-    gap: Spacing.md,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: Typography.fontSize.md,
-    fontWeight: '600',
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: Typography.fontSize.md,
-    fontWeight: '700',
-  },
-  singleButton: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  singleButtonText: {
-    color: '#FFFFFF',
-    fontSize: Typography.fontSize.md,
-    fontWeight: '700',
-  },
+  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', zIndex: 1000 },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  container: { backgroundColor: '#1E293B', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12 },
+  dragHandleContainer: { alignItems: 'center', marginBottom: 16 },
+  dragHandle: { width: 36, height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 2 },
+  content: { flexDirection: 'row', alignItems: 'flex-start' },
+  iconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  textBox: { flex: 1, paddingRight: 8 },
+  title: { fontWeight: '700', color: '#fff', marginBottom: 4 },
+  message: { color: 'rgba(255,255,255,0.6)', lineHeight: 18 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 20, marginBottom: 4 },
+  btnCancel: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center' },
+  btnCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600' },
+  btnConfirm: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  btnSingle: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });
