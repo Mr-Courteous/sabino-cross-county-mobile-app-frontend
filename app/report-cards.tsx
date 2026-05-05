@@ -225,7 +225,6 @@ export default function ReportSearchScreen() {
     }
 
     const request = currentEmailRequest;
-    setCurrentEmailRequest(null);
     setLoading(true);
 
     try {
@@ -241,6 +240,7 @@ export default function ReportSearchScreen() {
 
       const result = await response.json();
       if (response.ok && result.success) {
+        setCurrentEmailRequest(null);
         setShowSuccessModal(true);
         setSentSuccessIds(prev => ({ ...prev, [`${request.enrollmentId}-${request.term}`]: true }));
       } else {
@@ -723,11 +723,23 @@ export default function ReportSearchScreen() {
               <TextInput style={styles.modalInput} placeholder="name@email.com" placeholderTextColor={C.textMuted} value={emailInput} onChangeText={setEmailInput} keyboardType="email-address" autoCapitalize="none" />
             </View>
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setCurrentEmailRequest(null)}>
+              <TouchableOpacity 
+                style={[styles.modalCancel, loading && { opacity: 0.5 }]} 
+                onPress={() => setCurrentEmailRequest(null)}
+                disabled={loading}
+              >
                 <ThemedText style={styles.modalCancelText}>Cancel</ThemedText>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSubmit} onPress={handleEmailModalSubmit}>
-                <ThemedText style={styles.modalSubmitText}>Send</ThemedText>
+              <TouchableOpacity 
+                style={[styles.modalSubmit, loading && { opacity: 0.7 }]} 
+                onPress={handleEmailModalSubmit}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={Colors.accent.navy} />
+                ) : (
+                  <ThemedText style={styles.modalSubmitText}>Send</ThemedText>
+                )}
               </TouchableOpacity>
             </View>
           </View>

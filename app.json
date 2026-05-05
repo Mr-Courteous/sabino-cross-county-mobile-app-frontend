@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "sabino school",
+    "name": "sabino Edu",
     "slug": "sabino-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -21,11 +21,11 @@
       "versionCode": 47,
       "permissions": [
         "com.android.vending.BILLING",
-        "com.google.android.gms.permission.AD_ID",
-        "READ_MEDIA_IMAGES"
+        "com.google.android.gms.permission.AD_ID"
       ],
       "blockedPermissions": [
-        "android.permission.READ_MEDIA_VIDEO"
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -43,8 +43,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/sabino.jpeg",
-          "imageWidth": 200,
-          "resizeMode": "contain",
+          "resizeMode": "cover",
           "backgroundColor": "#ffffff"
         }
       ],

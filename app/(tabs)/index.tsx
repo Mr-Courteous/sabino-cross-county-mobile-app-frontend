@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  SafeAreaView, Platform, Alert, useWindowDimensions
+  SafeAreaView, Platform, Modal, useWindowDimensions
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +14,14 @@ export default function SchoolAdminDashboard() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [user, setUser] = useState<any>(null);
+  const [statusAlert, setStatusAlert] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    onConfirm?: () => void;
+  }>({ visible: false, type: 'info', title: '', message: '' });
 
   const handleLogout = async () => {
     if (Platform.OS === 'web') {
@@ -25,21 +33,17 @@ export default function SchoolAdminDashboard() {
       return;
     }
 
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', onPress: () => { }, style: 'cancel' },
-        {
-          text: 'Logout',
-          onPress: async () => {
-            await clearAllStorage();
-            router.replace('/');
-          },
-          style: 'destructive'
-        }
-      ]
-    );
+    setStatusAlert({
+      visible: true,
+      type: 'warning',
+      title: 'Portal Sign-out',
+      message: 'Terminate administrative session?',
+      confirmLabel: 'LOGOUT',
+      onConfirm: async () => {
+        await clearAllStorage();
+        router.replace('/');
+      }
+    });
   };
 
   const loadUser = useCallback(async () => {
@@ -140,6 +144,35 @@ export default function SchoolAdminDashboard() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* Custom Alert Modal */}
+      <Modal visible={statusAlert.visible} transparent animationType="fade" onRequestClose={() => setStatusAlert({ ...statusAlert, visible: false })}>
+        <View style={styles.alertOverlay}>
+          <View style={styles.alertBackdrop}><TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setStatusAlert({ ...statusAlert, visible: false })} activeOpacity={1} /></View>
+          <View style={styles.alertContainerCentered}>
+            <View style={styles.alertContent}>
+              <View style={[styles.alertIconBox, { backgroundColor: `${statusAlert.type === 'warning' ? '#F59E0B' : statusAlert.type === 'error' ? '#EF4444' : '#3B82F6'}15` }]}>
+                <Ionicons name={statusAlert.type === 'warning' ? 'warning' : statusAlert.type === 'error' ? 'alert-circle' : 'information-circle'} size={28} color={statusAlert.type === 'warning' ? '#F59E0B' : statusAlert.type === 'error' ? '#EF4444' : '#3B82F6'} />
+              </View>
+              <View style={styles.alertTextBox}>
+                <Text style={styles.alertTitle}>{statusAlert.title}</Text>
+                <Text style={styles.alertMessage}>{statusAlert.message}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setStatusAlert({ ...statusAlert, visible: false })}><Ionicons name="close" size={18} color="rgba(255,255,255,0.4)" /></TouchableOpacity>
+            </View>
+            <View style={styles.alertActions}>
+              {statusAlert.confirmLabel ? (
+                <>
+                  <TouchableOpacity style={styles.alertBtnCancel} onPress={() => setStatusAlert({ ...statusAlert, visible: false })}><Text style={styles.alertBtnCancelText}>CANCEL</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.alertBtnConfirm, { backgroundColor: statusAlert.type === 'warning' ? '#EF4444' : '#FACC15' }]} onPress={() => { setStatusAlert({ ...statusAlert, visible: false }); statusAlert.onConfirm?.(); }}><Text style={styles.alertBtnText}>{statusAlert.confirmLabel}</Text></TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity style={[styles.alertBtnSingle, { backgroundColor: '#FACC15' }]} onPress={() => setStatusAlert({ ...statusAlert, visible: false })}><Text style={styles.alertBtnText}>OK</Text></TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View >
   );
 }
@@ -218,6 +251,22 @@ const makeStyles = (width: number) => {
     settingsIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
     settingsContent: { flex: 1, marginLeft: 12 },
     settingsTitle: { fontSize: isTiny ? 13 : 14, fontWeight: '900', color: '#0F172A' },
-    settingsSub: { fontSize: isTiny ? 9 : 10, color: '#64748B', marginTop: 2 }
+    settingsSub: { fontSize: isTiny ? 9 : 10, color: '#64748B', marginTop: 2 },
+
+    // Custom Alert Styles
+    alertOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.6)' },
+    alertBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
+    alertContainerCentered: { backgroundColor: '#1E293B', borderRadius: 24, padding: 20, width: '100%', maxWidth: 340 },
+    alertContent: { flexDirection: 'row', alignItems: 'flex-start' },
+    alertIconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    alertTextBox: { flex: 1, paddingRight: 8 },
+    alertTitle: { fontWeight: '700', color: '#fff', marginBottom: 4, fontSize: 16 },
+    alertMessage: { color: 'rgba(255,255,255,0.6)', lineHeight: 18, fontSize: 13 },
+    alertActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+    alertBtnCancel: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center' },
+    alertBtnCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600' },
+    alertBtnConfirm: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+    alertBtnSingle: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+    alertBtnText: { color: '#0F172A', fontSize: 13, fontWeight: '700' }
   });
 };

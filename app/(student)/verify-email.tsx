@@ -9,6 +9,7 @@ import {
     ScrollView,
     ImageBackground,
     useWindowDimensions,
+    Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,15 +33,16 @@ export default function StudentVerifyEmail() {
         if (!email.trim() || !email.includes('@')) { setError('Enter a valid student email'); return; }
         setLoading(true);
         setError('');
+        const normalizedEmail = email.trim().toLowerCase();
         try {
             const response = await fetch(`${API_BASE_URL}/api/students/otp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email.trim() }),
+                body: JSON.stringify({ email: normalizedEmail }),
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'OTP failed');
-            router.push({ pathname: '/(student)/verify-otp', params: { email: email.trim() } });
+            router.push({ pathname: '/(student)/verify-otp', params: { email: normalizedEmail } });
         } catch (err: any) { setError(err.message); }
         finally { setLoading(false); }
     };
@@ -53,8 +55,25 @@ export default function StudentVerifyEmail() {
                 <LinearGradient colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']} style={styles.overlay}>
                     <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                         <View style={styles.header}>
-                            <TouchableOpacity style={styles.backFab} onPress={() => router.back()}><Ionicons name="arrow-back" size={20} color="#FACC15" /></TouchableOpacity>
-                            <View style={styles.logoBadge}><Ionicons name="school" size={20} color="#FACC15" /><Text style={styles.logoText}>SABINO EDU</Text></View>
+                            <TouchableOpacity 
+                                style={styles.backBtn}
+                                onPress={() => router.back()}
+                            >
+                                <Ionicons name="arrow-back" size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.homeBtn}
+                                onPress={() => {
+                                    router.replace('/home');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="home-outline" size={18} color="#fff" />
+                            </TouchableOpacity>
+                            <View style={styles.logoBadge}>
+                                <Image source={require('../../assets/images/sabino.jpeg')} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                                <Text style={styles.logoText}>SABINO EDU</Text>
+                            </View>
                             <Text style={styles.title}>Student Entry</Text>
                             <View style={styles.goldBar} />
                         </View>
@@ -84,7 +103,30 @@ function makeStyles(width: number) {
         overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
         header: { alignItems: 'center', marginBottom: isTiny ? 24 : 32 },
-        backFab: { position: 'absolute', top: -10, left: 0, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+        backBtn: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
+        homeBtn: {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
         logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
         logoText: { color: '#FACC15', fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
         title: { fontSize: isTiny ? 26 : 30, fontWeight: '900', color: '#fff', letterSpacing: -1 },

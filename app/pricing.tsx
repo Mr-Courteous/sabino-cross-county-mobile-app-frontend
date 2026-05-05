@@ -31,6 +31,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
+import { clearAllStorage } from '@/utils/storage';
+import { API_BASE_URL } from '@/utils/api-service';
 
 // ─── RevenueCat API key (from complete-registration.tsx) ────────────
 const RC_GOOGLE_API_KEY = 'goog_DoercEbvtNXRhqfTjOYMkzCJKlX';
@@ -62,14 +64,14 @@ export default function PricingPage() {
         const userData = Platform.OS !== 'web'
           ? await SecureStore.getItemAsync('userData')
           : null;
-        
+
         let userId = undefined;
         if (userData) {
           try {
             const parsed = JSON.parse(userData);
             // Ensure we use the exact ID that matches the schools table 'id'
             userId = (parsed?.schoolId || parsed?.id || parsed?.school_id)?.toString();
-            console.log(`👤 [Pricing] Identifying user as: ${userId}`);
+            // console.log(`👤 [Pricing] Identifying user as: ${userId}`);
           } catch (e) {
             console.error('[Pricing] Failed to parse userData', e);
           }
@@ -99,6 +101,27 @@ export default function PricingPage() {
     return () => { cancelled = true; };
   }, []);
 
+  const syncSubscriptionWithBackend = async () => {
+    try {
+      const token = Platform.OS !== 'web'
+        ? await SecureStore.getItemAsync('userToken')
+        : localStorage.getItem('userToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE_URL}/api/schools/sync-subscription`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      console.log('[Pricing] Sync result:', data);
+    } catch (err) {
+      console.warn('[Pricing] Sync failed, webhook will handle it:', err);
+    }
+  };
+
   // ── Purchase via RevenueCat ──────────────────────────────────────────────────
   const handlePurchase = async () => {
     if (!isMobilePlatform) return;
@@ -113,6 +136,7 @@ export default function PricingPage() {
       const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
 
       if (isActive) {
+        await syncSubscriptionWithBackend();
         setStep('success');
         // Auto-redirect to dashboard after a short delay to show success state
         setTimeout(() => {
@@ -145,6 +169,7 @@ export default function PricingPage() {
       const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
 
       if (isActive) {
+        await syncSubscriptionWithBackend();
         setStep('success');
         setTimeout(() => {
           router.replace('/dashboard' as any);
@@ -156,6 +181,15 @@ export default function PricingPage() {
       setError(err.message || 'Restore failed.');
     } finally {
       setPurchasing(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await clearAllStorage();
+      router.replace('/');
+    } catch (e) {
+      setError('Failed to clear session.');
     }
   };
 
@@ -199,7 +233,7 @@ export default function PricingPage() {
                 <>
                   <Text style={styles.cardTitle}>Account Expired</Text>
                   <Text style={styles.cardSubtitle}>
-                    Renew your annual subscription to maintain access to your school records and premium features.
+                    Renew your subscription to maintain access to your school records and premium features.
                   </Text>
 
                   {isMobilePlatform ? (
@@ -212,7 +246,7 @@ export default function PricingPage() {
                             <View style={styles.priceTag}>
                               <Text style={styles.priceLabel}>Premium School Plan</Text>
                               <Text style={styles.priceValue}>{rcPackage.product.priceString}</Text>
-                              <Text style={styles.pricePeriod}>Billed annually</Text>
+                              <Text style={styles.pricePeriod}>Billed Every Four Months</Text>
                             </View>
                           )}
 
@@ -244,6 +278,16 @@ export default function PricingPage() {
                       </Text>
                     </View>
                   )}
+
+                  <View style={styles.logoutDivider} />
+                  <TouchableOpacity
+                    style={styles.switchAccountBtn}
+                    onPress={handleLogout}
+                    disabled={purchasing}
+                  >
+                    <Ionicons name="log-out-outline" size={16} color="#94A3B8" />
+                    <Text style={styles.switchAccountText}>Switch Account / Logout</Text>
+                  </TouchableOpacity>
                 </>
               )}
 
@@ -291,33 +335,33 @@ function makeStyles(width: number) {
       alignItems: 'center',
     },
     header: { alignItems: 'center', marginBottom: 30 },
-    logoBadge: { 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      backgroundColor: 'rgba(255,255,255,0.08)', 
-      paddingHorizontal: 12, 
-      paddingVertical: 8, 
-      borderRadius: 10, 
-      marginBottom: 16, 
-      borderWidth: 1, 
-      borderColor: 'rgba(255,255,255,0.1)' 
+    logoBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.1)'
     },
     logoText: { color: '#FACC15', fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
     title: { fontSize: isSmall ? 26 : 30, fontWeight: '900', color: '#fff', letterSpacing: -1 },
     goldBar: { width: 40, height: 3, backgroundColor: '#FACC15', borderRadius: 2, marginVertical: 12 },
-    
-    card: { 
+
+    card: {
       width: '100%',
-      backgroundColor: 'rgba(30, 41, 59, 0.7)', 
-      borderRadius: 28, 
-      padding: isSmall ? 20 : 26, 
-      borderWidth: 1, 
+      backgroundColor: 'rgba(30, 41, 59, 0.7)',
+      borderRadius: 28,
+      padding: isSmall ? 20 : 26,
+      borderWidth: 1,
       borderColor: 'rgba(255,255,255,0.1)',
       marginBottom: 30
     },
     cardTitle: { color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 10 },
     cardSubtitle: { color: '#94A3B8', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-    
+
     priceTag: {
       backgroundColor: 'rgba(250,204,21,0.08)',
       borderRadius: 16,
@@ -330,23 +374,33 @@ function makeStyles(width: number) {
     priceLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '700', marginBottom: 4 },
     priceValue: { color: '#fff', fontSize: 32, fontWeight: '900' },
     pricePeriod: { color: '#64748B', fontSize: 12, marginTop: 4 },
-    
+
     ctaButton: { height: 54, borderRadius: 12, width: '100%', marginTop: 10 },
-    
+
     restoreBtn: { marginTop: 20, alignSelf: 'center' },
     restoreText: { color: '#64748B', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
-    
+
     webFallback: { alignItems: 'center', paddingVertical: 20 },
     webFallbackTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 16, marginBottom: 8 },
     webFallbackText: { color: '#94A3B8', fontSize: 14, textAlign: 'center', lineHeight: 20 },
-    
+
     centered: { alignItems: 'center', paddingVertical: 30 },
     loadingTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 20 },
     loadingSubtitle: { color: '#94A3B8', fontSize: 14, marginTop: 8, textAlign: 'center' },
-    
+
     successTitle: { color: '#10B981', fontSize: 22, fontWeight: '900', marginTop: 20 },
     successSubtitle: { color: '#94A3B8', fontSize: 14, marginTop: 8, marginBottom: 20, textAlign: 'center' },
-    
+
     footerText: { color: '#334155', fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 20 },
+
+    logoutDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', width: '100%', marginVertical: 20 },
+    switchAccountBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      opacity: 0.8
+    },
+    switchAccountText: { color: '#94A3B8', fontSize: 13, fontWeight: '700', marginLeft: 8 },
   });
 }

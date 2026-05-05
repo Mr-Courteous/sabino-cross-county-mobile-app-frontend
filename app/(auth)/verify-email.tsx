@@ -1,4 +1,4 @@
-import { View, ActivityIndicator, ScrollView, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, ActivityIndicator, ScrollView, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions, Image } from 'react-native';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,11 +56,12 @@ export default function VerifyEmailScreen() {
             return;
         }
         setLoading(true);
+        const normalizedEmail = email.trim().toLowerCase();
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/otp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email }),
+                body: JSON.stringify({ email: normalizedEmail }),
             });
             const result = await response.json();
             if (response.status === 409) {
@@ -73,18 +74,19 @@ export default function VerifyEmailScreen() {
             setStatusAlert({ visible: true, type: 'error', title: 'Error', message: err.message || 'Network fault' });
         } finally { setLoading(false); }
     };
-
+ 
     const handleVerifyOTP = async () => {
         if (otp.length !== 6) return;
         setVerifying(true);
+        const normalizedEmail = email.trim().toLowerCase();
         try {
             const response = await fetch(`${API_BASE_URL}/api/schools/verify-otp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, otp }),
+                body: JSON.stringify({ email: normalizedEmail, otp }),
             });
             const data = await response.json();
-            if (response.ok && data.success) router.push({ pathname: '/(auth)/complete-registration', params: { email } });
+            if (response.ok && data.success) router.push({ pathname: '/(auth)/complete-registration', params: { email: normalizedEmail } });
             else throw new Error(data.message || 'OTP failure');
         } catch (err: any) {
             setStatusAlert({ visible: true, type: 'error', title: 'Error', message: err.message || 'Verify failed' });
@@ -99,7 +101,25 @@ export default function VerifyEmailScreen() {
                 <LinearGradient colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']} style={styles.overlay}>
                     <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                         <View style={styles.header}>
-                            <View style={styles.logoBadge}><Ionicons name="ribbon" size={20} color="#FACC15" /><Text style={styles.logoText}>SABINO EDU</Text></View>
+                            <TouchableOpacity 
+                                style={styles.backBtn}
+                                onPress={() => router.back()}
+                            >
+                                <Ionicons name="arrow-back" size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.homeBtn}
+                                onPress={() => {
+                                    router.replace('/home');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="home-outline" size={18} color="#fff" />
+                            </TouchableOpacity>
+                            <View style={styles.logoBadge}>
+                                <Image source={require('../../assets/images/sabino.jpeg')} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                                <Text style={styles.logoText}>SABINO EDU</Text>
+                            </View>
                             <Text style={styles.title}>Verification</Text>
                             <View style={styles.goldBar} />
                         </View>
@@ -133,6 +153,30 @@ function makeStyles(width: number) {
         overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
         header: { alignItems: 'center', marginBottom: isTiny ? 24 : 32 },
+        backBtn: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
+        homeBtn: {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
         logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
         logoText: { color: '#FACC15', fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
         title: { fontSize: isTiny ? 26 : 30, fontWeight: '900', color: '#fff', letterSpacing: -1 },

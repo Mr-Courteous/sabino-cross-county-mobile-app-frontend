@@ -6,7 +6,9 @@ import {
     ImageBackground,
     StyleSheet,
     Text,
+    TouchableOpacity,
     useWindowDimensions,
+    Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -37,8 +39,23 @@ export default function RegisterScreen() {
                         showsVerticalScrollIndicator={false}
                     >
                         <View style={styles.header}>
+                            <TouchableOpacity 
+                                style={styles.backBtn}
+                                onPress={() => router.back()}
+                            >
+                                <Ionicons name="arrow-back" size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.homeBtn}
+                                onPress={() => {
+                                    router.replace('/home');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="home-outline" size={18} color="#fff" />
+                            </TouchableOpacity>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="ribbon" size={20} color="#FACC15" />
+                                <Image source={require('../../assets/images/sabino.jpeg')} style={{ width: 40, height: 40, borderRadius: 20 }} />
                                 <Text style={styles.logoText}>SABINO EDU</Text>
                             </View>
                             <Text style={styles.title}>Registration</Text>
@@ -113,6 +130,30 @@ function makeStyles(width: number) {
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
         
         header: { alignItems: 'center', marginBottom: isTiny ? 24 : 40 },
+        backBtn: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
+        homeBtn: {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
         logoBadge: {
             flexDirection: 'row',
             alignItems: 'center',

@@ -39,7 +39,14 @@ function parseStudentCsv(text: string) {
   for (let i = 1; i < lines.length; i++) {
     const attrs = lines[i].split(',').map((a) => a.trim());
     if (attrs.length >= 2 && attrs[0] && attrs[1]) {
-      students.push({ firstName: attrs[0], lastName: attrs[1], email: attrs[2] || undefined, phone: attrs[3] || undefined, dateOfBirth: attrs[4] || undefined, gender: attrs[5] || undefined, studentNumber: attrs[6] || undefined });
+      students.push({ 
+        firstName: attrs[0], 
+        lastName: attrs[1], 
+        email: attrs[2] || undefined, 
+        phone: attrs[3] || undefined, 
+        studentNumber: attrs[4] || undefined, 
+        gender: attrs[5] || undefined 
+      });
     }
   }
   if (students.length === 0) throw new Error('No valid rows.');
@@ -70,6 +77,9 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateSuccess, setTemplateSuccess] = useState(false);
 
+  const [selectedFile, setSelectedFile] = useState<{ name: string; uri: string; size?: number } | null>(null);
+  const [parsedStudents, setParsedStudents] = useState<any[]>([]);
+
   const fetchData = useCallback(async () => {
     setLoadingData(true);
     setDataError(null);
@@ -95,9 +105,68 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
       setStep('select'); setSelectedClass(null); setSelectedSession(null);
       setShowClassDropdown(false); setShowSessionDropdown(false); setUploadError(null);
       setUploadedCount(0); setEmailForTemplate(''); setTemplateError(null);
-      setTemplateSuccess(false); fetchData();
+      setTemplateSuccess(false); setSelectedFile(null); setParsedStudents([]);
+      fetchData();
     }
   }, [visible, fetchData]);
+
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['text/comma-separated-values', 'text/csv', '*/*'] });
+      if (result.canceled) return;
+      const file = result.assets[0];
+
+      let text: string;
+      if (Platform.OS === 'web') {
+        text = await (file as any).file.text();
+      } else {
+        // ✅ New FileSystem API — replaces deprecated readAsStringAsync
+        const fileRef = new FileSystem.File(file.uri);
+        text = await fileRef.text();
+      }
+
+      const students = parseStudentCsv(text);
+      setSelectedFile({ name: file.name, uri: file.uri, size: file.size });
+      setParsedStudents(students);
+      setUploadError(null);
+    } catch (e: any) {
+      setUploadError(e.message || 'Failed to read file.');
+      setSelectedFile(null);
+      setParsedStudents([]);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedClass || !selectedSession || !parsedStudents.length) return;
+    setUploading(true);
+    setUploadError(null);
+    setStep('upload');
+
+    try {
+      const payload = parsedStudents.map((s) => ({ ...s, classId: selectedClass.id }));
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/students/bulk`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: payload, academicSession: selectedSession.session_name }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        setUploadedCount(json.count || parsedStudents.length);
+        setStep('done');
+        onUploadComplete({ success: true, count: json.count || parsedStudents.length });
+      } else {
+        throw new Error(json.error || json.message || 'Upload rejected by server.');
+      }
+    } catch (e: any) {
+      setUploadError(e?.message || 'Upload failed.');
+      setStep('select'); // Stay on select screen to allow fixing
+      onUploadComplete({ success: false, error: e?.message });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSendTemplateToEmail = async () => {
     if (!emailForTemplate.trim()) return;
@@ -116,33 +185,6 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
     finally { setSendingTemplate(false); }
   };
 
-  const handlePickAndUpload = async () => {
-    if (!selectedClass || !selectedSession) return;
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ['text/comma-separated-values', 'text/csv', '*/*'] });
-      if (result.canceled) return;
-      const file = result.assets[0];
-      setUploading(true); setUploadError(null); setStep('upload');
-      let text = Platform.OS === 'web' ? await (file as any).file.text() : await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
-      const students = parseStudentCsv(text);
-      const payload = students.map((s) => ({ ...s, classId: selectedClass.id }));
-      const token = await getToken();
-      const res = await fetch(`${API_BASE_URL}/api/students/bulk`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ students: payload, academicSession: selectedSession.session_name }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setUploadedCount(json.count ?? students.length); setStep('done');
-        onUploadComplete({ success: true, count: json.count ?? students.length });
-      } else throw new Error(json.message || 'Upload rejected.');
-    } catch (e: any) {
-      setUploadError(e?.message || 'Upload failed.'); setStep('error');
-      onUploadComplete({ success: false, error: e?.message });
-    } finally { setUploading(false); }
-  };
-
   const isTiny = width < 300;
 
   return (
@@ -159,13 +201,26 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
             {loadingData ? (
               <View style={styles.center}><ActivityIndicator size="small" color={Colors.accent.gold} /><ThemedText style={styles.loadingText}>Syncing options...</ThemedText></View>
             ) : step === 'done' ? (
-              <View style={styles.center}><Ionicons name="checkmark-done-circle" size={48} color="#10B981" /><ThemedText style={styles.successTitle}>Complete</ThemedText><TouchableOpacity style={styles.doneBtn} onPress={onClose}><ThemedText style={styles.doneBtnText}>Return</ThemedText></TouchableOpacity></View>
+              <View style={styles.center}>
+                <Ionicons name="checkmark-done-circle" size={54} color="#10B981" />
+                <ThemedText style={styles.successTitle}>Enrolled Successfully</ThemedText>
+                <ThemedText style={styles.successSubtitle}>{uploadedCount} students have been added to {selectedClass?.display_name}</ThemedText>
+                <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
+                  <ThemedText style={styles.doneBtnText}>CONTINUE</ThemedText>
+                </TouchableOpacity>
+              </View>
             ) : step === 'upload' ? (
-              <View style={styles.center}><ActivityIndicator size="small" color={Colors.accent.gold} /><ThemedText style={styles.loadingText}>Processing...</ThemedText></View>
+              <View style={styles.center}><ActivityIndicator size="large" color={Colors.accent.gold} /><ThemedText style={[styles.loadingText, { marginTop: 20 }]}>Processing Enrollment Database...</ThemedText></View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {step === 'error' && uploadError && <View style={styles.errorBanner}><ThemedText style={styles.errorText}>{uploadError}</ThemedText></View>}
-                
+                {uploadError && (
+                  <View style={styles.errorBanner}>
+                    <Ionicons name="alert-circle" size={16} color="#fff" style={{ marginRight: 8 }} />
+                    <ThemedText style={styles.errorText}>{uploadError}</ThemedText>
+                    <TouchableOpacity onPress={() => setUploadError(null)}><Ionicons name="close-circle" size={16} color="#fff" /></TouchableOpacity>
+                  </View>
+                )}
+
                 <SectionHeader icon="school-outline" label="CLASS" />
                 <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassDropdown(!showClassDropdown)}>
                   <ThemedText style={styles.selectorText}>{selectedClass?.display_name || 'Select Class'}</ThemedText>
@@ -184,7 +239,7 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
                   </View>
                 )}
 
-                <View style={{ height: 16 }} />
+                <View style={{ height: 12 }} />
 
                 <SectionHeader icon="calendar-outline" label="SESSION" />
                 <TouchableOpacity style={styles.inputSelector} onPress={() => setShowSessionDropdown(!showSessionDropdown)}>
@@ -204,16 +259,47 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
                   </View>
                 )}
 
+                <View style={{ height: 12 }} />
+
+                <SectionHeader icon="document-attach-outline" label="FILE ATTACHMENT" />
+                {selectedFile ? (
+                  <View style={styles.fileSelectedBox}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Ionicons name="document-text" size={24} color={Colors.accent.gold} />
+                      <View style={{ marginLeft: 12, flex: 1 }}>
+                        <ThemedText style={styles.fileName} numberOfLines={1}>{selectedFile.name}</ThemedText>
+                        <ThemedText style={styles.fileDetail}>{parsedStudents.length} students found in CSV</ThemedText>
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => { setSelectedFile(null); setParsedStudents([]); }}>
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.filePickerBtn} onPress={handlePickFile}>
+                    <Ionicons name="cloud-upload-outline" size={20} color={Colors.accent.gold} style={{ marginRight: 8 }} />
+                    <ThemedText style={styles.filePickerText}>PICK CSV FILE</ThemedText>
+                  </TouchableOpacity>
+                )}
+
                 <View style={styles.emailSection}>
-                  <SectionHeader icon="mail-outline" label="GET TEMPLATE" />
+                  <SectionHeader icon="mail-outline" label="GET TEMPLATE VIA EMAIL" />
                   <View style={styles.emailRow}>
                     <TextInput style={styles.emailInput} placeholder="email@oags.com" placeholderTextColor={C.textMuted} value={emailForTemplate} onChangeText={setEmailForTemplate} keyboardType="email-address" />
-                    <TouchableOpacity onPress={handleSendTemplateToEmail} disabled={sendingTemplate}><Ionicons name="send" size={18} color={Colors.accent.gold} /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleSendTemplateToEmail} disabled={sendingTemplate || !emailForTemplate}>
+                      {sendingTemplate ? <ActivityIndicator size="small" color={Colors.accent.gold} /> : <Ionicons name="send" size={18} color={Colors.accent.gold} />}
+                    </TouchableOpacity>
                   </View>
+                  {templateSuccess && <ThemedText style={styles.templateSuccessText}>Template sent successfully!</ThemedText>}
+                  {templateError && <ThemedText style={styles.templateErrorText}>{templateError}</ThemedText>}
                 </View>
 
-                <TouchableOpacity style={[styles.uploadBtn, (!selectedClass || !selectedSession) && styles.uploadDisabled]} onPress={handlePickAndUpload} disabled={!selectedClass || !selectedSession}>
-                  <ThemedText style={styles.uploadBtnText}>UPLOAD CSV</ThemedText>
+                <TouchableOpacity
+                  style={[styles.uploadBtn, (!selectedClass || !selectedSession || !selectedFile) && styles.uploadDisabled]}
+                  onPress={handleUpload}
+                  disabled={!selectedClass || !selectedSession || !selectedFile}
+                >
+                  <ThemedText style={styles.uploadBtnText}>READY TO UPLOAD</ThemedText>
                 </TouchableOpacity>
               </ScrollView>
             )}
@@ -256,10 +342,18 @@ function makeStyles(C: any, width: number) {
     uploadBtn: { backgroundColor: Colors.accent.gold, borderRadius: 12, height: 48, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
     uploadDisabled: { opacity: 0.5 },
     uploadBtnText: { color: Colors.accent.navy, fontWeight: '900', fontSize: 13 },
-    errorBanner: { backgroundColor: '#EF4444', padding: 10, borderRadius: 10, marginBottom: 12 },
-    errorText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+    errorBanner: { backgroundColor: '#EF4444', padding: 12, borderRadius: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
+    errorText: { color: '#fff', fontSize: 11, fontWeight: '700', flex: 1 },
     successTitle: { fontSize: 18, fontWeight: '900', color: C.text, marginTop: 12 },
+    successSubtitle: { fontSize: 13, color: C.textMuted, textAlign: 'center', marginTop: 8, marginBottom: 12 },
     doneBtn: { backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 20 },
-    doneBtnText: { color: '#fff', fontWeight: '800' }
+    doneBtnText: { color: '#fff', fontWeight: '800' },
+    filePickerBtn: { height: 48, borderRadius: 12, borderStyle: 'dashed', borderWidth: 2, borderColor: Colors.accent.gold + '40', justifyContent: 'center', alignItems: 'center', flexDirection: 'row', backgroundColor: Colors.accent.gold + '05' },
+    filePickerText: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+    fileSelectedBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.accent.gold + '30' },
+    fileName: { color: C.text, fontSize: 13, fontWeight: '700' },
+    fileDetail: { color: C.textMuted, fontSize: 11, marginTop: 2 },
+    templateSuccessText: { color: '#10B981', fontSize: 10, fontWeight: '700', marginTop: 6, marginLeft: 4 },
+    templateErrorText: { color: '#EF4444', fontSize: 10, fontWeight: '700', marginTop: 6, marginLeft: 4 },
   });
 }

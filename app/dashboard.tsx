@@ -225,10 +225,7 @@ export default function DashboardPage() {
             <ActionListItem title="Reports" icon="copy-outline" onPress={() => router.push('/report-cards')} C={C} styles={styles} />
             <ActionListItem title="Institution" icon="business-outline" onPress={() => router.push('/school-profile')} C={C} styles={styles} />
             <ActionListItem title="Branding" icon="color-palette-outline" onPress={() => router.push('/preferences')} C={C} styles={styles} />
-            <ActionListItem title="Chat Support" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2348169119816')} C={C} styles={styles} />
-            <View style={[styles.actionListItem, { backgroundColor: 'rgba(37, 211, 102, 0.1)', borderColor: 'rgba(37, 211, 102, 0.3)', justifyContent: 'center', paddingVertical: 12 }]}>
-              <ThemedText style={{ color: '#25D366', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>Chat us on WhatsApp if you have any issue</ThemedText>
-            </View>
+            <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2348169119816')} C={C} styles={styles} />
           </View>
         </View>
 
@@ -238,14 +235,36 @@ export default function DashboardPage() {
 
       <Modal visible={statusAlert.visible} transparent animationType="fade" onRequestClose={() => setStatusAlert({ ...statusAlert, visible: false })}>
         <View style={styles.alertOverlay}>
-          <CustomAlert {...statusAlert} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} style={{ width: '100%' }} />
+          <View style={styles.alertBackdrop}><TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setStatusAlert({ ...statusAlert, visible: false })} activeOpacity={1} /></View>
+          <View style={styles.alertContainerCentered}>
+            <View style={styles.alertContent}>
+              <View style={[styles.alertIconBox, { backgroundColor: `${statusAlert.type === 'warning' ? '#F59E0B' : statusAlert.type === 'error' ? '#EF4444' : '#3B82F6'}15` }]}>
+                <Ionicons name={statusAlert.type === 'warning' ? 'warning' : statusAlert.type === 'error' ? 'alert-circle' : 'information-circle'} size={28} color={statusAlert.type === 'warning' ? '#F59E0B' : statusAlert.type === 'error' ? '#EF4444' : '#3B82F6'} />
+              </View>
+              <View style={styles.alertTextBox}>
+                <ThemedText style={styles.alertTitle}>{statusAlert.title}</ThemedText>
+                <ThemedText style={styles.alertMessage}>{statusAlert.message}</ThemedText>
+              </View>
+              <TouchableOpacity onPress={() => setStatusAlert({ ...statusAlert, visible: false })}><Ionicons name="close" size={18} color="rgba(255,255,255,0.4)" /></TouchableOpacity>
+            </View>
+            <View style={styles.alertActions}>
+              {statusAlert.confirmLabel ? (
+                <>
+                  <TouchableOpacity style={styles.alertBtnCancel} onPress={() => setStatusAlert({ ...statusAlert, visible: false })}><ThemedText style={styles.alertBtnCancelText}>CANCEL</ThemedText></TouchableOpacity>
+                  <TouchableOpacity style={[styles.alertBtnConfirm, { backgroundColor: statusAlert.type === 'warning' ? '#EF4444' : '#FACC15' }]} onPress={() => { setStatusAlert({ ...statusAlert, visible: false }); statusAlert.onConfirm?.(); }}><ThemedText style={styles.alertBtnText}>{statusAlert.confirmLabel}</ThemedText></TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity style={[styles.alertBtnSingle, { backgroundColor: '#FACC15' }]} onPress={() => setStatusAlert({ ...statusAlert, visible: false })}><ThemedText style={styles.alertBtnText}>OK</ThemedText></TouchableOpacity>
+              )}
+            </View>
+          </View>
         </View>
       </Modal>
     </ThemedView>
   );
 }
 
-function ActionListItem({ title, icon, onPress, themeColor, highlight, C, styles }: any) {
+function ActionListItem({ title, subtitle, icon, onPress, themeColor, highlight, C, styles }: any) {
   return (
     <TouchableOpacity
       style={[styles.actionListItem, { backgroundColor: highlight ? themeColor + '10' : C.actionItemBg, borderColor: highlight ? themeColor + '40' : C.actionItemBorder }]}
@@ -253,10 +272,15 @@ function ActionListItem({ title, icon, onPress, themeColor, highlight, C, styles
       activeOpacity={0.7}
     >
       <View style={styles.actionListLeft}>
-        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}>
+        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}> 
           <Ionicons name={icon} size={18} color={highlight ? themeColor : Colors.accent.gold} />
         </View>
-        <ThemedText style={[styles.actionListTitle, { fontWeight: highlight ? '800' : '700' }]} numberOfLines={1}>{title}</ThemedText>
+        <View style={{ flex: 1 }}>
+          <ThemedText style={[styles.actionListTitle, { fontWeight: highlight ? '800' : '700' }]} numberOfLines={1}>{title}</ThemedText>
+          {subtitle ? (
+            <ThemedText style={{ color: C.textMuted, fontSize: 10, marginTop: 2 }} numberOfLines={2}>{subtitle}</ThemedText>
+          ) : null}
+        </View>
       </View>
       <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
     </TouchableOpacity>
@@ -306,7 +330,20 @@ const makeStyles = (C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     scrollView: { flex: 1, marginTop: 0, zIndex: 1 },
     scrollContent: { paddingHorizontal: isTiny ? 16 : 24, paddingBottom: 60, flexGrow: 1 },
 
-    alertOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: C.modalOverlay },
+    alertOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.6)' },
+    alertBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent' },
+    alertContainerCentered: { backgroundColor: '#1E293B', borderRadius: 24, padding: 20, width: '100%', maxWidth: 340 },
+    alertContent: { flexDirection: 'row', alignItems: 'flex-start' },
+    alertIconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    alertTextBox: { flex: 1, paddingRight: 8 },
+    alertTitle: { fontWeight: '700', color: '#fff', marginBottom: 4, fontSize: 16 },
+    alertMessage: { color: 'rgba(255,255,255,0.6)', lineHeight: 18, fontSize: 13 },
+    alertActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+    alertBtnCancel: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center' },
+    alertBtnCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600' },
+    alertBtnConfirm: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+    alertBtnSingle: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+    alertBtnText: { color: '#0F172A', fontSize: 13, fontWeight: '700' },
 
     card: { backgroundColor: C.card, borderRadius: 28, padding: isTiny ? 16 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 20 },
     cardLabel: { color: C.textMuted, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 20 },

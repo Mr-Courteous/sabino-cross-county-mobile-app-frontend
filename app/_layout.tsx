@@ -32,7 +32,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   if (response.status === 402) {
     const currentSegments = navState.segments;
     const currentRouter = navState.router;
-    
+
     console.log(`🔒 [Interceptor] 402 detected on: ${input}`);
 
     if (currentSegments[0] === 'pricing') return response;
@@ -50,7 +50,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       clone.json().then((data: any) => {
         const err: string = data?.error || data?.message || '';
         console.warn(`🔒 [Interceptor] 402 Detail: "${err}"`);
-        
+
         const isSubError =
           err.toLowerCase().includes('subscription') ||
           err.toLowerCase().includes('subscribe') ||
@@ -60,7 +60,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
         if (isSubError) {
           const isStudent = currentSegments[0] === '(student)';
           const targetPath = isStudent ? '/(student)/access-denied' : '/pricing';
-          
+
           console.warn(`⚠️ [Interceptor] Subscription error — redirecting to ${targetPath}`);
           currentRouter.replace(targetPath as any);
         } else {
@@ -69,7 +69,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       }).catch(() => {
         const isStudent = currentSegments[0] === '(student)';
         const targetPath = isStudent ? '/(student)/access-denied' : '/pricing';
-        
+
         console.warn(`⚠️ [Interceptor] 402 detected (fallback) — redirecting to ${targetPath}`);
         currentRouter.replace(targetPath as any);
       });
@@ -86,7 +86,7 @@ function RootLayoutContent() {
   const segments = useSegments();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const [fontsLoaded, fontError] = useFonts({
     ...Ionicons.font,
     ...MaterialIcons.font,
@@ -134,7 +134,7 @@ function RootLayoutContent() {
       const isPricingPage = currentRoot === 'pricing';
       const isAccessDenied = segments.includes('access-denied');
 
-      const isPublicStudentRoute = inStudentGroup && (!segments[1] || ['verify-email', 'verify-otp', 'register'].includes(segments[1]));
+      const isPublicStudentRoute = inStudentGroup && (!segments[1] || ['verify-email', 'verify-otp', 'register', 'forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1]));
 
       if (!token) {
         if (!inAuthGroup && !isPublicStudentRoute && !isPricingPage && !isAccessDenied) {
@@ -155,7 +155,7 @@ function RootLayoutContent() {
       if (detectedUserType === 'school') {
         // If they are on a reset password route, let them stay
         const isResetRoute = currentRoot === '(auth)' && ['forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1] as string);
-        
+
         // If they are on dashboard, pricing, or reset routes, let them stay.
         // Otherwise (if they are in auth group like login/register), move to dashboard.
         if (inAuthGroup && !isResetRoute) {

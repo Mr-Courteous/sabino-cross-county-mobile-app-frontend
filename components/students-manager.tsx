@@ -55,7 +55,7 @@ export default function StudentsManager() {
   const { width } = useWindowDimensions();
   const C = useAppColors();
   const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
-  
+
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -250,6 +250,13 @@ export default function StudentsManager() {
         </LinearGradient>
       </ImageBackground>
 
+      <View style={styles.noticeBox}>
+        <ThemedText style={styles.noticeTitle}>Default student password</ThemedText>
+        <ThemedText style={styles.noticeText}>
+          Every student added will have the default password "1234567890". Encourage students to change this password immediately after first login.
+        </ThemedText>
+      </View>
+
       <View style={styles.searchSection}>
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={16} color="#94A3B8" style={{ marginRight: 10 }} />
@@ -267,10 +274,16 @@ export default function StudentsManager() {
         renderItem={renderStudent}
         refreshing={refreshing}
         onRefresh={onRefresh}
-        ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => {}} />}
+        ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => { }} />}
       />
 
-      <BulkUploadModal visible={bulkUploadVisible} onClose={() => setBulkUploadVisible(false)} onUploadComplete={(res) => { setBulkUploadVisible(false); if (res.success) fetchInitialData(); }} />
+      <BulkUploadModal
+        visible={bulkUploadVisible}
+        onClose={() => setBulkUploadVisible(false)}
+        onUploadComplete={(res) => {
+          if (res.success) fetchInitialData();
+        }}
+      />
 
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -280,68 +293,68 @@ export default function StudentsManager() {
                 <View><ThemedText style={styles.modalTitle}>{editingId ? 'Edit Record' : 'Enrollment'}</ThemedText></View>
                 <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}><Ionicons name="close" size={20} color={Colors.accent.gold} /></TouchableOpacity>
               </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.formSection}>
-                <ThemedText style={styles.sectionLabel}>IDENTITY</ThemedText>
-                <TextInput style={styles.formInput} value={form.firstName} onChangeText={(t) => setForm({ ...form, firstName: t })} placeholder="First Name" placeholderTextColor={C.textMuted} />
-                <TextInput style={styles.formInput} value={form.lastName} onChangeText={(t) => setForm({ ...form, lastName: t })} placeholder="Last Name" placeholderTextColor={C.textMuted} />
-                <View style={styles.genderSelect}>
-                  {['Male', 'Female'].map(g => (
-                    <TouchableOpacity key={g} style={[styles.genderOption, form.gender === g && styles.activeGender]} onPress={() => setForm({ ...form, gender: g })}>
-                      <ThemedText style={[styles.genderText, form.gender === g && { color: Colors.accent.gold }]}>{g}</ThemedText>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              
-              {!editingId && (
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.formSection}>
-                  <ThemedText style={styles.sectionLabel}>ENROLLMENT</ThemedText>
-                  
-                  <ThemedText style={styles.formLabel}>CLASS</ThemedText>
-                  <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassDropdown(!showClassDropdown)}>
-                    <ThemedText style={styles.selectorText}>{classes.find(c => c.id === form.classId)?.display_name || 'Select Class'}</ThemedText>
-                    <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />
-                  </TouchableOpacity>
-                  {showClassDropdown && (
-                    <View style={styles.listBox}>
-                      <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
-                        {classes.map(c => (
-                          <TouchableOpacity key={c.id} style={[styles.listItem, form.classId === c.id && styles.listItemActive]} onPress={() => { setForm({ ...form, classId: c.id }); setShowClassDropdown(false); }}>
-                            <ThemedText style={[styles.listItemText, form.classId === c.id && { color: Colors.accent.gold, fontWeight: '800' }]}>{c.display_name}</ThemedText>
-                            {form.classId === c.id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
-
-                  <ThemedText style={styles.formLabel}>SESSION</ThemedText>
-                  <TouchableOpacity style={styles.inputSelector} onPress={() => setShowSessionDropdown(!showSessionDropdown)}>
-                    <ThemedText style={styles.selectorText}>{activeSessionName || 'Select Session'}</ThemedText>
-                    <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />
-                  </TouchableOpacity>
-                  {showSessionDropdown && (
-                    <View style={styles.listBox}>
-                      <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
-                        {sessions.map(s => (
-                          <TouchableOpacity key={s.id} style={[styles.listItem, activeSessionName === s.session_name && styles.listItemActive]} onPress={() => { setActiveSessionName(s.session_name); setShowSessionDropdown(false); }}>
-                            <ThemedText style={[styles.listItemText, activeSessionName === s.session_name && { color: Colors.accent.gold, fontWeight: '800' }]}>{s.session_name}</ThemedText>
-                            {activeSessionName === s.session_name && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
+                  <ThemedText style={styles.sectionLabel}>IDENTITY</ThemedText>
+                  <TextInput style={styles.formInput} value={form.firstName} onChangeText={(t) => setForm({ ...form, firstName: t })} placeholder="First Name" placeholderTextColor={C.textMuted} />
+                  <TextInput style={styles.formInput} value={form.lastName} onChangeText={(t) => setForm({ ...form, lastName: t })} placeholder="Last Name" placeholderTextColor={C.textMuted} />
+                  <View style={styles.genderSelect}>
+                    {['Male', 'Female'].map(g => (
+                      <TouchableOpacity key={g} style={[styles.genderOption, form.gender === g && styles.activeGender]} onPress={() => setForm({ ...form, gender: g })}>
+                        <ThemedText style={[styles.genderText, form.gender === g && { color: Colors.accent.gold }]}>{g}</ThemedText>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
-              )}
-              <View style={styles.formSection}>
-                <ThemedText style={styles.sectionLabel}>CONTACT</ThemedText>
-                <TextInput style={styles.formInput} value={form.email} onChangeText={(t) => setForm({ ...form, email: t })} placeholder="Email" placeholderTextColor={C.textMuted} keyboardType="email-address" />
-                <TextInput style={styles.formInput} value={form.phone} onChangeText={(t) => setForm({ ...form, phone: t })} placeholder="Phone" placeholderTextColor={C.textMuted} keyboardType="phone-pad" />
-              </View>
-              <CustomButton title={saving ? "SAVING..." : "SAVE RECORD"} onPress={saveStudent} loading={saving} variant="premium" style={{ marginTop: 20 }} />
-            </ScrollView>
+
+                {!editingId && (
+                  <View style={styles.formSection}>
+                    <ThemedText style={styles.sectionLabel}>ENROLLMENT</ThemedText>
+
+                    <ThemedText style={styles.formLabel}>CLASS</ThemedText>
+                    <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassDropdown(!showClassDropdown)}>
+                      <ThemedText style={styles.selectorText}>{classes.find(c => c.id === form.classId)?.display_name || 'Select Class'}</ThemedText>
+                      <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />
+                    </TouchableOpacity>
+                    {showClassDropdown && (
+                      <View style={styles.listBox}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                          {classes.map(c => (
+                            <TouchableOpacity key={c.id} style={[styles.listItem, form.classId === c.id && styles.listItemActive]} onPress={() => { setForm({ ...form, classId: c.id }); setShowClassDropdown(false); }}>
+                              <ThemedText style={[styles.listItemText, form.classId === c.id && { color: Colors.accent.gold, fontWeight: '800' }]}>{c.display_name}</ThemedText>
+                              {form.classId === c.id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    <ThemedText style={styles.formLabel}>SESSION</ThemedText>
+                    <TouchableOpacity style={styles.inputSelector} onPress={() => setShowSessionDropdown(!showSessionDropdown)}>
+                      <ThemedText style={styles.selectorText}>{activeSessionName || 'Select Session'}</ThemedText>
+                      <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />
+                    </TouchableOpacity>
+                    {showSessionDropdown && (
+                      <View style={styles.listBox}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                          {sessions.map(s => (
+                            <TouchableOpacity key={s.id} style={[styles.listItem, activeSessionName === s.session_name && styles.listItemActive]} onPress={() => { setActiveSessionName(s.session_name); setShowSessionDropdown(false); }}>
+                              <ThemedText style={[styles.listItemText, activeSessionName === s.session_name && { color: Colors.accent.gold, fontWeight: '800' }]}>{s.session_name}</ThemedText>
+                              {activeSessionName === s.session_name && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                )}
+                <View style={styles.formSection}>
+                  <ThemedText style={styles.sectionLabel}>CONTACT</ThemedText>
+                  <TextInput style={styles.formInput} value={form.email} onChangeText={(t) => setForm({ ...form, email: t })} placeholder="Email" placeholderTextColor={C.textMuted} keyboardType="email-address" />
+                  <TextInput style={styles.formInput} value={form.phone} onChangeText={(t) => setForm({ ...form, phone: t })} placeholder="Phone" placeholderTextColor={C.textMuted} keyboardType="phone-pad" />
+                </View>
+                <CustomButton title={saving ? "SAVING..." : "SAVE RECORD"} onPress={saveStudent} loading={saving} variant="premium" style={{ marginTop: 20 }} />
+              </ScrollView>
             </>
           </LinearGradient>
         </View>
@@ -404,5 +417,8 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     listItemActive: { backgroundColor: Colors.accent.gold + '10' },
     listItemText: { fontSize: 13, color: C.textSecondary, fontWeight: '600' },
     formLabel: { fontSize: 9, fontWeight: '800', color: C.textLabel, marginBottom: 6 },
+    noticeBox: { backgroundColor: C.card, borderRadius: 16, padding: 14, marginHorizontal: isTiny ? 16 : 24, marginTop: -20, marginBottom: 16, borderWidth: 1, borderColor: Colors.accent.gold + '20' },
+    noticeTitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '900', marginBottom: 6 },
+    noticeText: { color: C.text, fontSize: 12, lineHeight: 18 },
   });
 }

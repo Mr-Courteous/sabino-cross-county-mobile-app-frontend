@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, TouchableOpacity, View, ImageBackground, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View, ImageBackground, useWindowDimensions, Image } from 'react-native';
 import { useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,7 +41,7 @@ export default function HomePage() {
             style={styles.overlay}
           >
             <View style={styles.logoBadge}>
-              <Ionicons name="ribbon" size={width < 300 ? 18 : 20} color={Colors.accent.gold} />
+              <Image source={require('../assets/images/sabino.jpeg')} style={{ width: width < 300 ? 32 : 40, height: width < 300 ? 32 : 40, borderRadius: 20 }} />
               <ThemedText style={styles.logoText}>SABINO EDU</ThemedText>
             </View>
 
@@ -96,10 +96,8 @@ export default function HomePage() {
         <View style={styles.footer}>
           <ThemedText style={styles.footerBrand}>SABINO EDU</ThemedText>
           <ThemedText style={styles.footerCopyright}>THE GOLD STANDARD FOR ACADEMIC REPORTING</ThemedText>
-          <ThemedText style={styles.footerInfo}>REG: 9B1FDAE4 | Ilesa, Ghana</ThemedText>
-          <ThemedText style={styles.footerContact}>courteous@yahoo.com | 09039948857</ThemedText>
           <View style={styles.footerDivider} />
-          <ThemedText style={styles.footerYear}>© 2026 SABINO EDU. ALL RIGHTS RESERVED.</ThemedText>
+          <ThemedText style={styles.footerYear}>© {new Date().getFullYear()} SABINO EDU. ALL RIGHTS RESERVED.</ThemedText>
         </View>
 
       </ScrollView>

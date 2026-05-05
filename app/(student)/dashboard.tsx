@@ -13,6 +13,7 @@ import {
     Linking,
     ImageBackground,
     useWindowDimensions,
+    Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,6 +62,7 @@ export default function StudentDashboard() {
     const [student, setStudent] = useState<StudentData | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
 
     // Enrollment State
     const [enrollModalVisible, setEnrollModalVisible] = useState(false);
@@ -97,32 +99,19 @@ export default function StudentDashboard() {
         }
     }, [enrollModalVisible]);
 
-    useEffect(() => {
-        loadStudentData();
-        fetchMyEnrollments();
-    }, []);
-
-    const fetchMyEnrollments = async () => {
-        try {
-            const token = Platform.OS === 'web'
-                ? localStorage.getItem('studentToken')
-                : await SecureStore.getItemAsync('studentToken');
-
-            if (!token) return;
-
-            const res = await fetch(`${API_BASE_URL}/api/students/me/enrollments`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            const data = await res.json();
-            if (data && data.success) {
-                setEnrollments(data.data || []);
-            }
-        } catch (error) {}
+    const handleAuthError = (message: string) => {
+        setAuthErrorMessage(message);
     };
 
-    const loadStudentData = async () => {
+    useEffect(() => {
+        initializeDashboard();
+    }, []);
+
+    const initializeDashboard = async () => {
+        setLoading(true);
+        const startTime = Date.now();
         try {
+            // 1. Check Student Data
             let studentData: string | null = null;
             if (Platform.OS === 'web') {
                 studentData = localStorage.getItem('studentData');
@@ -130,26 +119,53 @@ export default function StudentDashboard() {
                 studentData = await SecureStore.getItemAsync('studentData');
             }
 
-            if (studentData) {
-                setStudent(JSON.parse(studentData));
-            } else {
-                router.replace('/(student)');
+            if (!studentData) {
+                handleAuthError('Session not found. Please log in again.');
+                return;
+            }
+            const parsed = JSON.parse(studentData);
+            setStudent(parsed);
+
+            // 2. Check Token & Enrollments
+            const token = Platform.OS === 'web'
+                ? localStorage.getItem('studentToken')
+                : await SecureStore.getItemAsync('studentToken');
+
+            if (!token) {
+                handleAuthError('Authentication token missing.');
+                return;
+            }
+
+            const res = await fetch(`${API_BASE_URL}/api/students/me/enrollments`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                const errorData = await res.json().catch(() => ({}));
+                handleAuthError(errorData.error || 'Your session has expired. Please log in again.');
+                return;
+            }
+
+            const data = await res.json();
+            if (data && data.success) {
+                setEnrollments(data.data || []);
             }
         } catch (error) {
-            setStatusAlert({
-                visible: true,
-                type: 'error',
-                title: 'System Error',
-                message: 'Failed to sync profile.'
-            });
+            console.error('Dashboard Init Error:', error);
         } finally {
+            // Ensure syncing screen lingers for at least 2 seconds for a premium feel
+            const elapsedTime = Date.now() - startTime;
+            const delay = Math.max(0, 2000 - elapsedTime);
+            if (delay > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
             setLoading(false);
         }
     };
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await Promise.all([loadStudentData(), fetchMyEnrollments()]);
+        await initializeDashboard();
         setRefreshing(false);
     };
 
@@ -185,6 +201,12 @@ export default function StudentDashboard() {
                 fetch(`${API_BASE_URL}/api/academic-sessions`, { headers: { Authorization: `Bearer ${token}` } }),
                 fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } })
             ]);
+
+            if (sessionRes.status === 401 || sessionRes.status === 403 || classRes.status === 401 || classRes.status === 403) {
+                setEnrollModalVisible(false);
+                handleAuthError('Your session has expired. Please log in again.');
+                return;
+            }
 
             const sessionData = await sessionRes.json();
             const classData = await classRes.json();
@@ -227,6 +249,12 @@ export default function StudentDashboard() {
             });
 
             const data = await response.json();
+            if (response.status === 401 || response.status === 403) {
+                setEnrollModalVisible(false);
+                handleAuthError(data.error || 'Your session has expired. Please log in again.');
+                return;
+            }
+
             if (data.success) {
                 setEnrollSuccess(true);
                 onRefresh();
@@ -239,6 +267,22 @@ export default function StudentDashboard() {
             setEnrollLoading(false);
         }
     };
+
+    if (authErrorMessage) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+                <CustomAlert
+                    type="error"
+                    title="Access Denied"
+                    message={authErrorMessage}
+                    onClose={async () => {
+                        await clearAllStorage();
+                        router.replace('/(student)');
+                    }}
+                />
+            </View>
+        );
+    }
 
     if (loading) {
         return (
@@ -256,20 +300,25 @@ export default function StudentDashboard() {
 
     return (
         <View style={styles.container}>
+            {statusAlert.visible && (
+                <CustomAlert
+                    {...statusAlert}
+                    onClose={async () => {
+                        if (statusAlert.onClose) {
+                            await statusAlert.onClose();
+                        }
+                        setStatusAlert({ ...statusAlert, visible: false });
+                    }}
+                    style={{ marginHorizontal: isTiny ? 16 : 24, marginVertical: 10 }}
+                />
+            )}
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent.gold} />}
             >
-                {statusAlert.visible && (
-                    <CustomAlert
-                        {...statusAlert}
-                        onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
-                        style={{ marginHorizontal: isTiny ? 16 : 24, marginVertical: 10 }}
-                    />
-                )}
-                
+
                 <ImageBackground
                     source={{ uri: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070' }}
                     style={styles.heroHeader}
@@ -377,7 +426,7 @@ export default function StudentDashboard() {
                                 </View>
                             </View>
                         </View>
-                        
+
                         <View style={[styles.contactCard, { marginTop: 10, width: '100%' }]}>
                             <View style={styles.contactIconBox}><Ionicons name="location" size={14} color="#F59E0B" /></View>
                             <View style={{ flex: 1 }}>

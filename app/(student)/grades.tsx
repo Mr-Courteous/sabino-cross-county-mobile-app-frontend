@@ -88,7 +88,6 @@ export default function StudentGrades() {
 
     // Status states
     const [downloading, setDownloading] = useState(false);
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
 
     // Error Display
     const [statusAlert, setStatusAlert] = useState<{
@@ -219,15 +218,26 @@ export default function StudentGrades() {
             });
 
             const result = await response.json();
-            if (response.ok && result.success) setShowSuccessModal(true);
-            else throw new Error(result.error || 'Failed to transmit.');
+            if (response.ok && result.success) {
+                setStatusAlert({
+                    visible: true,
+                    type: 'success',
+                    title: 'Dispatch Success',
+                    message: `Official report has been transmitted to ${email.trim()}.`
+                });
+            } else {
+                throw new Error(result.error || 'Failed to transmit.');
+            }
         } catch (err: any) {
             setStatusAlert({ visible: true, type: 'error', title: 'Dispatch Error', message: err.message || 'Delivery failure.' });
         }
     }, [selectedEnrollment, selectedSessionId, selectedTerm]);
 
     const handleEmailModalSubmit = async () => {
-        if (!emailInput.trim() || !emailInput.includes('@')) return;
+        if (!emailInput.trim() || !emailInput.includes('@')) {
+            setStatusAlert({ visible: true, type: 'warning', title: 'Invalid Email', message: 'Enter a valid electronic address.' });
+            return;
+        }
         setEmailModalVisible(false);
         setDownloading(true);
         await sendEmailReport(emailInput.trim());
@@ -374,7 +384,14 @@ export default function StudentGrades() {
                                 </View>
                             );
                         })}
-                        <CustomButton title={downloading ? "..." : "EMAIL REPORT"} onPress={() => setEmailModalVisible(true)} variant="outline" icon="mail-outline" disabled={downloading} style={{ height: 52, marginTop: 10 }} />
+                        <CustomButton 
+                            title={downloading ? "SENDING..." : "Send to email"} 
+                            onPress={() => setEmailModalVisible(true)} 
+                            variant="premium" 
+                            disabled={downloading} 
+                            loading={downloading}
+                            style={{ height: 52, marginTop: 10 }} 
+                        />
                     </>
                 ) : (
                     !fetchingGrades && (

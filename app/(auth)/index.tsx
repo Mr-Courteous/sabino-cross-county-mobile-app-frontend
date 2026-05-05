@@ -9,6 +9,7 @@ import {
     ImageBackground,
     StyleSheet,
     useWindowDimensions,
+    Image,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,7 +49,7 @@ export default function LoginScreen() {
             const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
             });
 
             const data = await response.json();
@@ -114,8 +115,17 @@ export default function LoginScreen() {
                             >
                                 <Ionicons name="arrow-back" size={20} color={C.text} />
                             </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.homeBtn}
+                                onPress={() => {
+                                    router.replace('/home');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="home-outline" size={18} color={C.text} />
+                            </TouchableOpacity>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="ribbon" size={20} color={Colors.accent.gold} />
+                                <Image source={require('../../assets/images/sabino.jpeg')} style={{ width: 40, height: 40, borderRadius: 20 }} />
                                 <ThemedText style={styles.logoText}>SABINO EDU</ThemedText>
                             </View>
                             <ThemedText style={styles.title}>School Login</ThemedText>
@@ -199,7 +209,7 @@ export default function LoginScreen() {
                         </View>
 
                         <View style={styles.footer}>
-                            <ThemedText style={styles.footerText}>© 2026 SABINO EDU SYSTEMS GLOBAL</ThemedText>
+                            <ThemedText style={styles.footerText}>© {new Date().getFullYear()} SABINO EDU SYSTEMS GLOBAL</ThemedText>
                             <ThemedText style={styles.footerSubtext}>THE GOLD STANDARD FOR REPORTING</ThemedText>
                         </View>
                     </ScrollView>
@@ -216,11 +226,23 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
         
-        header: { alignItems: 'center', marginBottom: isTiny ? 24 : 34 },
+        header: { alignItems: 'center', marginBottom: isTiny ? 24 : 34, width: '100%' },
         backBtn: {
             position: 'absolute',
             top: 0,
             left: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: C.actionItemBg,
+            borderRadius: 18,
+            zIndex: 10
+        },
+        homeBtn: {
+            position: 'absolute',
+            top: 0,
+            right: 0,
             width: 36,
             height: 36,
             justifyContent: 'center',

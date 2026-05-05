@@ -804,6 +804,12 @@ export default function ScoreEntryScreen() {
               </View>
             ) : matrixData.length > 0 ? (
               <View style={styles.matrixContainer}>
+                <View style={styles.scoringGuide}>
+                  <Ionicons name="information-circle-outline" size={14} color={Colors.accent.gold} />
+                  <ThemedText style={styles.scoringGuideText}>
+                    Scoring Guide: Each CA (Max 10) • Exam (Max 60)
+                  </ThemedText>
+                </View>
                 {matrixData.map((row, idx) => (
                   <View key={row.enrollment_id} style={styles.studentCard}>
                     <View style={styles.studentHeader}>
@@ -860,7 +866,7 @@ export default function ScoreEntryScreen() {
                                 const error = scoreErrors[`${row.enrollment_id}-${sub.id}-${ca}`];
                                 return (
                                   <View key={ca} style={styles.scoreInputGroup}>
-                                    <ThemedText style={styles.scoreLabel}>{ca.toUpperCase()}</ThemedText>
+                                    <ThemedText style={styles.scoreLabel}>{ca.toUpperCase()} (10)</ThemedText>
                                     <TextInput
                                       style={[styles.scoreInput, error ? styles.inputError : null]}
                                       keyboardType="numeric"
@@ -875,7 +881,7 @@ export default function ScoreEntryScreen() {
                               })}
                               
                               <View style={[styles.scoreInputGroup, { flex: 1.5 }]}>
-                                <ThemedText style={[styles.scoreLabel, { color: Colors.accent.gold }]}>EXAM</ThemedText>
+                                <ThemedText style={[styles.scoreLabel, { color: Colors.accent.gold }]}>EXAM (60)</ThemedText>
                                 <TextInput
                                   style={[styles.scoreInput, styles.examInput, scoreErrors[`${row.enrollment_id}-${sub.id}-exam`] ? styles.inputError : null]}
                                   keyboardType="numeric"
@@ -994,6 +1000,9 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     scoreInput: { height: isTiny ? 32 : 38, backgroundColor: C.inputBg, borderRadius: 8, textAlign: 'center', color: C.inputText, fontSize: isTiny ? 11 : 12, fontWeight: '800', borderWidth: 1, borderColor: C.inputBorder },
     examInput: { borderColor: Colors.accent.gold + '40', backgroundColor: Colors.accent.gold + '05' },
     inputError: { borderColor: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.05)' },
+    
+    scoringGuide: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.accent.gold + '10', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: Colors.accent.gold + '20' },
+    scoringGuideText: { color: Colors.accent.gold, fontSize: isTiny ? 9 : 10, fontWeight: '800' },
 
     emptyState: { padding: 40, alignItems: 'center' },
     emptyTitle: { color: C.text, fontSize: 16, fontWeight: '900', marginTop: 16, marginBottom: 6 },

@@ -1,4 +1,4 @@
-import { View, ActivityIndicator, ScrollView, Platform, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, ActivityIndicator, ScrollView, Platform, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions, Image } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { useState, useEffect, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,7 +43,7 @@ export default function SchoolResetPasswordScreen() {
             const response = await fetch(`${API_BASE_URL}/api/schools/reset-password`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email: email.toLowerCase(), password }),
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Reset failed');
@@ -72,7 +72,25 @@ export default function SchoolResetPasswordScreen() {
                 <LinearGradient colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']} style={styles.overlay}>
                     <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                         <View style={styles.header}>
-                            <View style={styles.logoBadge}><Ionicons name="ribbon" size={20} color="#FACC15" /><Text style={styles.logoText}>SABINO EDU</Text></View>
+                            <TouchableOpacity 
+                                style={styles.backBtn}
+                                onPress={() => router.back()}
+                            >
+                                <Ionicons name="arrow-back" size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.homeBtn}
+                                onPress={() => {
+                                    router.replace('/home');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="home-outline" size={18} color="#fff" />
+                            </TouchableOpacity>
+                            <View style={styles.logoBadge}>
+                                <Image source={require('../../assets/images/sabino.jpeg')} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                                <Text style={styles.logoText}>SABINO EDU</Text>
+                            </View>
                             <Text style={styles.title}>New Password</Text>
                             <View style={styles.goldBar} />
                         </View>
@@ -81,10 +99,17 @@ export default function SchoolResetPasswordScreen() {
                             {!isTiny && <View style={styles.iconCircle}><Ionicons name="lock-closed" size={28} color="#FACC15" /></View>}
                             {statusAlert.visible && <CustomAlert {...statusAlert} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} style={{ marginBottom: 16 }} />}
                             <CustomInput label="New Password" placeholder="Min. 8 chars" isPassword value={password} onChangeText={setPassword} />
-                            <CustomInput label="Confirm Password" placeholder="Match above" isPassword value={confirmPassword} onChangeText={setConfirmPassword} />
+                            <CustomInput label="Confirm Password" placeholder="Confirm Password" isPassword value={confirmPassword} onChangeText={setConfirmPassword} />
+                            
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 12 }}>
+                                <Ionicons name="information-circle-outline" size={14} color="#94A3B8" />
+                                <Text style={{ color: '#94A3B8', fontSize: 10, marginLeft: 6, fontWeight: '600' }}>
+                                    USE 8+ CHARACTERS (UPPER, LOWER, NUMBER & SYMBOL)
+                                </Text>
+                            </View>
                             <CustomButton title={loading ? "RESETTING..." : "CONFIRM"} onPress={handleResetPassword} disabled={loading} loading={loading} variant="premium" style={styles.ctaButton} />
                         </View>
-                        <View style={styles.footer}><Text style={styles.footerText}>ENCRYPTED SECURITY LAYER</Text></View>
+                        {/* <View style={styles.footer}><Text style={styles.footerText}>ENCRYPTED SECURITY LAYER</Text></View> */}
                     </ScrollView>
                 </LinearGradient>
             </ImageBackground>
@@ -99,6 +124,30 @@ function makeStyles(width: number) {
         overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
         header: { alignItems: 'center', marginBottom: isTiny ? 24 : 32 },
+        backBtn: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
+        homeBtn: {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: 18,
+            zIndex: 10
+        },
         logoBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
         logoText: { color: '#FACC15', fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
         title: { fontSize: isTiny ? 26 : 30, fontWeight: '900', color: '#fff', letterSpacing: -1 },

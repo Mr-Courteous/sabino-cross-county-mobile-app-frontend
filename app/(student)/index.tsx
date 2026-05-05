@@ -9,6 +9,7 @@ import {
     ScrollView,
     ImageBackground,
     useWindowDimensions,
+    Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +20,7 @@ import { getUserTypeFromToken } from '@/utils/jwt-decoder';
 import { CustomButton } from '@/components/custom-button';
 import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
+import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/design-system';
 import { useAppColors } from '@/hooks/use-app-colors';
@@ -46,18 +48,22 @@ export default function StudentLogin() {
             const response = await fetch(`${API_BASE_URL}/api/students/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
             });
 
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Login failed');
+            const data = await response.json().catch(() => ({}));
+            
+            if (!response.ok) {
+                const errorMessage = data.error || data.message || 'The server encountered an error. Please try again later.';
+                throw new Error(errorMessage);
+            }
 
             if (data.success) {
                 const { student, token } = data.data;
                 const userType = getUserTypeFromToken(token);
 
                 if (userType !== 'student') {
-                    setError('Invalid credentials for student portal.');
+                    setError('Unauthorized: This account is not registered for student portal access.');
                     setLoading(false);
                     return;
                 }
@@ -73,7 +79,8 @@ export default function StudentLogin() {
                 router.replace('/(student)/dashboard' as any);
             }
         } catch (error: any) {
-            setError(error.message || 'An error occurred during login');
+            console.error('Login Error:', error);
+            setError(error.message || 'Connection failed. Please check your internet and try again.');
         } finally {
             setLoading(false);
         }
@@ -96,15 +103,24 @@ export default function StudentLogin() {
                         showsVerticalScrollIndicator={false}
                     >
                         <View style={styles.header}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.backBtn}
                                 onPress={() => router.back()}
                             >
                                 <Ionicons name="arrow-back" size={20} color={C.isDark ? "#FFF" : C.text} />
                             </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.homeBtn}
+                                onPress={() => {
+                                    router.replace('/home');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="home-outline" size={18} color={C.isDark ? "#FFF" : C.text} />
+                            </TouchableOpacity>
                             <View style={styles.logoBadge}>
-                                <Ionicons name="school-outline" size={20} color="#FACC15" />
-                                <Text style={styles.logoText}>SABINO EDU ACCESS</Text>
+                                <Image source={require('../../assets/images/sabino.jpeg')} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                                <Text style={styles.logoText}>SABINO EDU</Text>
                             </View>
                             <Text style={styles.title}>Student Portal</Text>
                             <View style={styles.goldBar} />
@@ -145,14 +161,6 @@ export default function StudentLogin() {
                                 labelStyle={{ fontSize: 10 }}
                             />
 
-                            <TouchableOpacity
-                                onPress={() => router.push('/(student)/forgot-password' as any)}
-                                style={styles.forgotPass}
-                                disabled={loading}
-                            >
-                                <Text style={styles.forgotText}>FORGOT PASSWORD?</Text>
-                            </TouchableOpacity>
-
                             <CustomButton
                                 title={loading ? "AUTHENTICATING..." : "SIGN IN TO PORTAL"}
                                 onPress={handleLogin}
@@ -161,6 +169,15 @@ export default function StudentLogin() {
                                 style={styles.ctaButton}
                                 textStyle={{ fontSize: 12 }}
                             />
+
+                            <TouchableOpacity
+                                onPress={() => router.push('/(student)/forgot-password')}
+                                style={styles.forgotPass}
+                                activeOpacity={0.7}
+                                disabled={loading}
+                            >
+                                <ThemedText style={styles.forgotText}>FORGOT PASSWORD?</ThemedText>
+                            </TouchableOpacity>
 
                             <View style={styles.divider}>
                                 <View style={styles.dividerLine} />
@@ -177,7 +194,7 @@ export default function StudentLogin() {
                         </View>
 
                         <View style={styles.footer}>
-                            <Text style={styles.footerText}>© 2026 SABINO EDU SYSTEMS GLOBAL</Text>
+                            <Text style={styles.footerText}>© {new Date().getFullYear()} SABINO EDU SYSTEMS GLOBAL</Text>
                         </View>
                     </ScrollView>
                 </LinearGradient>
@@ -193,7 +210,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
 
-        header: { alignItems: 'center', marginBottom: isTiny ? 24 : 30 },
+        header: { alignItems: 'center', marginBottom: isTiny ? 24 : 30, width: '100%' },
         backBtn: {
             position: 'absolute',
             top: 0,
@@ -203,6 +220,18 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
             justifyContent: 'center',
             alignItems: 'center',
             backgroundColor: C.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            borderRadius: 18,
+            zIndex: 10
+        },
+        homeBtn: {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 36,
+            height: 36,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: C.actionItemBg,
             borderRadius: 18,
             zIndex: 10
         },
@@ -234,7 +263,12 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
             borderColor: C.inputBorder,
             marginBottom: 12,
         },
-        forgotPass: { alignSelf: 'flex-end', marginBottom: 20 },
+        forgotPass: {
+            width: '100%',
+            alignItems: 'center',
+            marginTop: 20,
+            paddingVertical: 12,
+        },
         forgotText: { color: '#FACC15', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
 
         ctaButton: { height: 52, borderRadius: 12 },
