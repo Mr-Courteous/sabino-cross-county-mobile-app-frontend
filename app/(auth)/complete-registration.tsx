@@ -41,7 +41,7 @@ export default function CompleteRegistrationScreen() {
       const response = await fetch(`${API_BASE_URL}/api/auth/countries`);
       const data = await response.json();
       if (data.success) setCountries(data.data);
-    } catch (err) {}
+    } catch (err) { }
   };
 
   const getAuthToken = async () => {
@@ -124,8 +124,8 @@ export default function CompleteRegistrationScreen() {
 
 
   const handleCompleteRegistration = async () => {
-    if (!formData.schoolName || !formData.password || !formData.firstName) {
-      setError('Required fields missing');
+    if (!formData.schoolName || !formData.password || !formData.firstName || !formData.countryId) {
+      setError('Please fill all required fields, including selecting your country');
       return;
     }
 
@@ -168,13 +168,13 @@ export default function CompleteRegistrationScreen() {
           const sid = res.data.id || res.data.user?.schoolId;
           setSchoolId(sid);
           await setUserData({ id: sid, schoolId: sid, ...res.data.user, ...res.data });
-          
+
           // Identity sync with RevenueCat for mobile
           if (isMobilePlatform) {
             try {
               await Purchases.logIn(sid.toString());
               console.log(`👤 [Registration] Identified RevenueCat user as: ${sid}`);
-              
+
               // Re-fetch offerings under the correct identity
               const offerings = await Purchases.getOfferings();
               const pkg = offerings.current?.availablePackages?.[0];
@@ -195,7 +195,7 @@ export default function CompleteRegistrationScreen() {
     try {
       const token = await getAuthToken(); // already stored from registration
       if (!token) return;
-      
+
       const response = await fetch(`${API_BASE_URL}/api/schools/sync-subscription`, {
         method: 'POST',
         headers: {
@@ -216,11 +216,11 @@ export default function CompleteRegistrationScreen() {
     setBillingMessage('');
     setPurchasing(true);
     setPaymentStep('purchasing');
-    
+
     try {
       const { customerInfo } = await Purchases.purchasePackage(rcPackage);
       const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
-      
+
       if (isActive) {
         // ← Sync backend DB now, don't wait for webhook
         await syncSubscriptionWithBackend();
@@ -247,14 +247,14 @@ export default function CompleteRegistrationScreen() {
 
   const handleRestorePurchase = async () => {
     if (!isMobilePlatform) return; // just do nothing on web, no bypass
-    
+
     setBillingMessage('');
     setPurchasing(true);
 
     try {
       const customerInfo = await Purchases.restorePurchases();
       const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
-      
+
       if (isActive) {
         await syncSubscriptionWithBackend(); // ← same sync
         setPaymentStep('success');
@@ -279,13 +279,13 @@ export default function CompleteRegistrationScreen() {
         <LinearGradient colors={['rgba(10, 15, 30, 0.8)', 'rgba(15, 23, 42, 0.98)']} style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.backBtn}
                 onPress={() => router.back()}
               >
                 <Ionicons name="arrow-back" size={20} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.homeBtn}
                 onPress={() => {
                   router.replace('/home');
@@ -319,10 +319,10 @@ export default function CompleteRegistrationScreen() {
                       ))}
                     </ScrollView>
                   )}
-                  <CustomInput label="School Name" placeholder="Legal Name" value={formData.schoolName} onChangeText={(t) => setFormData({ ...formData, schoolName: t })} />
+                  <CustomInput label="School Name" placeholder="School Name" value={formData.schoolName} onChangeText={(t) => setFormData({ ...formData, schoolName: t })} />
                   <View style={styles.row}>
-                    <View style={{ flex: 1, marginRight: 6 }}><CustomInput label="First Name" placeholder="Admin" value={formData.firstName} onChangeText={(t) => setFormData({ ...formData, firstName: t })} /></View>
-                    <View style={{ flex: 1, marginLeft: 6 }}><CustomInput label="Last Name" placeholder="Name" value={formData.lastName} onChangeText={(t) => setFormData({ ...formData, lastName: t })} /></View>
+                    <View style={{ flex: 1, marginRight: 6 }}><CustomInput label="First Name" placeholder="First Name" value={formData.firstName} onChangeText={(t) => setFormData({ ...formData, firstName: t })} /></View>
+                    <View style={{ flex: 1, marginLeft: 6 }}><CustomInput label="Last Name" placeholder="Last Name" value={formData.lastName} onChangeText={(t) => setFormData({ ...formData, lastName: t })} /></View>
                   </View>
                   <CustomInput label="Password" placeholder="••••••••" isPassword value={formData.password} onChangeText={(t) => setFormData({ ...formData, password: t })} />
                   <CustomInput label="Confirm Password" placeholder="••••••••" isPassword value={formData.confirmPassword} onChangeText={(t) => setFormData({ ...formData, confirmPassword: t })} />
@@ -356,7 +356,7 @@ export default function CompleteRegistrationScreen() {
                                 <Text style={styles.priceValue}>{rcPackage.product.priceString}</Text>
                                 <Text style={styles.pricePeriod}>Billed Every Four Months</Text>
                               </View>
-                              
+
                               <CustomButton
                                 title={purchasing ? 'PROCESSING...' : 'COMPLETE SUBSCRIPTION'}
                                 onPress={handleSubscriptionPurchase}
