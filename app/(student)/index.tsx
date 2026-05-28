@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 import { getUserTypeFromToken } from '@/utils/jwt-decoder';
+import { syncPushTokenToBackend } from '@/utils/push-notifications';
 import { CustomButton } from '@/components/custom-button';
 import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
@@ -75,6 +76,9 @@ export default function StudentLogin() {
                 await setItem('userData', JSON.stringify(student));
                 await setItem('studentToken', token);
                 await setItem('studentData', JSON.stringify(student));
+
+                // Register push token for student
+                syncPushTokenToBackend(token);
 
                 router.replace('/(student)/dashboard' as any);
             }

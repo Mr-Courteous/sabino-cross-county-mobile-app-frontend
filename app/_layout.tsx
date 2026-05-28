@@ -1,7 +1,8 @@
 import { Stack } from 'expo-router';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { requestAndStorePushToken } from '@/utils/push-notifications';
 import { useRouter, useSegments } from 'expo-router';
-import { Platform, ActivityIndicator, View, AppState } from 'react-native';
+import { Platform, ActivityIndicator, View, AppState, Text } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ThemeProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
@@ -207,8 +208,24 @@ function RootLayoutContent() {
 }
 
 export default function RootLayout() {
+  const [pushStatus, setPushStatus] = useState('');
+
+  useEffect(() => {
+    requestAndStorePushToken().then(setPushStatus);
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* Temporary debug banner — remove after testing */}
+      {pushStatus ? (
+        <Text style={{
+          position: 'absolute', top: 40, left: 10, right: 10,
+          backgroundColor: pushStatus === 'success' ? 'green' : 'red',
+          color: 'white', padding: 8, zIndex: 9999, fontSize: 11
+        }}>
+          PUSH: {pushStatus}
+        </Text>
+      ) : null}
       <AuthProvider>
         <ThemeProvider>
           <RootLayoutContent />

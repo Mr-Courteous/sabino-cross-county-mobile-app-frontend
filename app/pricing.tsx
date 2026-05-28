@@ -4,7 +4,8 @@
  * Shown automatically when the backend returns a 402 (subscription expired/inactive).
  * The user is already registered — this is a renewal-only screen.
  *
- * Mobile (Android/iOS): purchases via Google Play / App Store through RevenueCat.
+ * Mobile (Android/iOS): purchases via Google Play / App Store through RevenueCat,
+ *                        OR via Flutterwave web checkout (cards, bank transfer, USSD).
  * Web: shows a contact/support message (in-app billing isn't available on web).
  */
 
@@ -19,6 +20,7 @@ import {
   useWindowDimensions,
   ImageBackground,
   Text,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,7 +36,7 @@ import { CustomAlert } from '@/components/custom-alert';
 import { clearAllStorage } from '@/utils/storage';
 import { API_BASE_URL } from '@/utils/api-service';
 
-// ─── RevenueCat API key (from complete-registration.tsx) ────────────
+// ─── RevenueCat API key ────────────────────────────────────────────────────────
 const RC_GOOGLE_API_KEY = 'goog_DoercEbvtNXRhqfTjOYMkzCJKlX';
 
 const isMobilePlatform = Platform.OS === 'android' || Platform.OS === 'ios';
@@ -49,6 +51,13 @@ export default function PricingPage() {
   const [loadingPackage, setLoadingPackage] = useState(isMobilePlatform);
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState('');
+
+  // ── Web checkout fallback state ──────────────────────────────────────────────
+  const [webPayLoading, setWebPayLoading] = useState(false);
+  const [webPayTxRef, setWebPayTxRef] = useState('');
+  const [webPayLinkOpened, setWebPayLinkOpened] = useState(false);
+  const [webPayVerifying, setWebPayVerifying] = useState(false);
+  const [webPayError, setWebPayError] = useState('');
 
   // ── Configure RevenueCat & load offerings ───────────────────────────────────
   useEffect(() => {
@@ -69,9 +78,7 @@ export default function PricingPage() {
         if (userData) {
           try {
             const parsed = JSON.parse(userData);
-            // Ensure we use the exact ID that matches the schools table 'id'
             userId = (parsed?.schoolId || parsed?.id || parsed?.school_id)?.toString();
-            // console.log(`👤 [Pricing] Identifying user as: ${userId}`);
           } catch (e) {
             console.error('[Pricing] Failed to parse userData', e);
           }
@@ -84,13 +91,12 @@ export default function PricingPage() {
 
         if (!cancelled && current && current.availablePackages.length > 0) {
           setRcPackage(current.availablePackages[0]);
-        } else if (!cancelled) {
-          setError('No active subscription plans found.');
         }
+        // If no package found we simply don't set rcPackage — web checkout remains the primary option
       } catch (err: any) {
         if (!cancelled) {
           console.error('[Pricing] RevenueCat error:', err.message);
-          setError('Could not connect to store. Please check your internet.');
+          // Non-fatal: web checkout will serve as the fallback
         }
       } finally {
         if (!cancelled) setLoadingPackage(false);
@@ -124,8 +130,7 @@ export default function PricingPage() {
 
   // ── Purchase via RevenueCat ──────────────────────────────────────────────────
   const handlePurchase = async () => {
-    if (!isMobilePlatform) return;
-    if (!rcPackage) return;
+    if (!isMobilePlatform || !rcPackage) return;
 
     setError('');
     setPurchasing(true);
@@ -138,10 +143,7 @@ export default function PricingPage() {
       if (isActive) {
         await syncSubscriptionWithBackend();
         setStep('success');
-        // Auto-redirect to dashboard after a short delay to show success state
-        setTimeout(() => {
-          router.replace('/dashboard' as any);
-        }, 1500);
+        setTimeout(() => router.replace('/dashboard' as any), 1500);
       } else {
         throw new Error('Payment completed but access not yet activated. Try restoring.');
       }
@@ -171,9 +173,7 @@ export default function PricingPage() {
       if (isActive) {
         await syncSubscriptionWithBackend();
         setStep('success');
-        setTimeout(() => {
-          router.replace('/dashboard' as any);
-        }, 1500);
+        setTimeout(() => router.replace('/dashboard' as any), 1500);
       } else {
         setError('No active subscriptions found.');
       }
@@ -181,6 +181,72 @@ export default function PricingPage() {
       setError(err.message || 'Restore failed.');
     } finally {
       setPurchasing(false);
+    }
+  };
+
+  // ── Web checkout: Step 1 — get Flutterwave link, open in browser ─────────────
+  const handleWebCheckout = async () => {
+    setWebPayError('');
+    setWebPayLinkOpened(false);
+    setWebPayTxRef('');
+    setWebPayLoading(true);
+    try {
+      const token = Platform.OS !== 'web'
+        ? await SecureStore.getItemAsync('userToken')
+        : localStorage.getItem('userToken');
+
+      const res = await fetch(`${API_BASE_URL}/api/payments/initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plan_id: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not generate payment link.');
+      if (!data.link) throw new Error('Server did not return a payment link.');
+
+      if (data.tx_ref) setWebPayTxRef(data.tx_ref);
+      await Linking.openURL(data.link);
+      setWebPayLinkOpened(true);
+    } catch (err: any) {
+      setWebPayError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setWebPayLoading(false);
+    }
+  };
+
+  // ── Web checkout: Step 2 — user returns from browser, verify payment ──────────
+  const handleWebCheckoutVerify = async () => {
+    if (!webPayTxRef) {
+      setWebPayError('Transaction reference missing. Please contact support.');
+      return;
+    }
+    setWebPayError('');
+    setWebPayVerifying(true);
+    try {
+      const token = Platform.OS !== 'web'
+        ? await SecureStore.getItemAsync('userToken')
+        : localStorage.getItem('userToken');
+
+      const res = await fetch(`${API_BASE_URL}/api/payments/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tx_ref: webPayTxRef }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Verification failed. Please wait a moment and try again.');
+
+      setStep('success');
+      setTimeout(() => router.replace('/dashboard' as any), 1500);
+    } catch (err: any) {
+      setWebPayError(err.message || 'Could not verify payment. Please try again.');
+    } finally {
+      setWebPayVerifying(false);
     }
   };
 
@@ -208,7 +274,7 @@ export default function PricingPage() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Header section matching complete-registration style */}
+            {/* Header */}
             <View style={styles.header}>
               <View style={styles.logoBadge}>
                 <Ionicons name="ribbon" size={20} color="#FACC15" />
@@ -229,6 +295,7 @@ export default function PricingPage() {
                 />
               ) : null}
 
+              {/* ════════════════════════════════ INFO STEP ═══════════════════════════════ */}
               {step === 'info' && (
                 <>
                   <Text style={styles.cardTitle}>Account Expired</Text>
@@ -237,23 +304,23 @@ export default function PricingPage() {
                   </Text>
 
                   {isMobilePlatform ? (
-                    <>
+                    <View style={{ alignItems: 'center', width: '100%' }}>
+
+                      {/* ── Google Play / RevenueCat ──────────────────────────────────────── */}
                       {loadingPackage ? (
                         <ActivityIndicator color="#FACC15" style={{ marginVertical: 20 }} />
-                      ) : (
+                      ) : rcPackage ? (
                         <>
-                          {rcPackage && (
-                            <View style={styles.priceTag}>
-                              <Text style={styles.priceLabel}>Premium School Plan</Text>
-                              <Text style={styles.priceValue}>{rcPackage.product.priceString}</Text>
-                              <Text style={styles.pricePeriod}>Billed Every Four Months</Text>
-                            </View>
-                          )}
+                          <View style={styles.priceTag}>
+                            <Text style={styles.priceLabel}>Premium School Plan</Text>
+                            <Text style={styles.priceValue}>{rcPackage.product.priceString}</Text>
+                            <Text style={styles.pricePeriod}>Billed Every Four Months</Text>
+                          </View>
 
                           <CustomButton
-                            title={purchasing ? "PROCESSING..." : "RENEW SUBSCRIPTION"}
+                            title={purchasing ? 'PROCESSING...' : 'RENEW VIA GOOGLE PLAY'}
                             onPress={handlePurchase}
-                            disabled={!rcPackage || purchasing}
+                            disabled={purchasing}
                             loading={purchasing}
                             variant="premium"
                             style={styles.ctaButton}
@@ -267,15 +334,158 @@ export default function PricingPage() {
                             <Text style={styles.restoreText}>Restore Purchases</Text>
                           </TouchableOpacity>
                         </>
-                      )}
-                    </>
-                  ) : (
-                    <View style={styles.webFallback}>
-                      <Ionicons name="phone-portrait" size={48} color="#FACC15" />
-                      <Text style={styles.webFallbackTitle}>Mobile App Required</Text>
-                      <Text style={styles.webFallbackText}>
-                        Subscriptions are managed via the Sabino Edu mobile app on Android or iOS. Please open the app to renew your plan.
+                      ) : null}
+
+                      {/* ── Flutterwave Web Checkout — ALWAYS shown on mobile ─────────────
+                          When Google Play loaded: shown as "HAVING TROUBLE?" alternative.
+                          When Google Play failed/unavailable: shown as the primary option.
+                          Google-safe: opens Flutterwave in the device browser, outside app.
+                          Supports: African cards, bank transfer, USSD, mobile money.
+                      ──────────────────────────────────────────────────────────────────── */}
+                      <View style={styles.webPayDivider}>
+                        <View style={styles.webPayDividerLine} />
+                        <Text style={styles.webPayDividerText}>
+                          {rcPackage ? 'HAVING TROUBLE?' : 'COMPLETE PAYMENT'}
+                        </Text>
+                        <View style={styles.webPayDividerLine} />
+                      </View>
+
+                      <Text style={styles.webPayHint}>
+                        {rcPackage
+                          ? "If your card isn't working on Google Play, complete your renewal via our secure web checkout — supports bank transfer, USSD, and mobile money."
+                          : 'Complete your renewal via our secure web checkout — supports card, bank transfer, USSD, and mobile money.'
+                        }
                       </Text>
+
+                      {/* Step 1: generate link and open in browser */}
+                      {!webPayLinkOpened && (
+                        <TouchableOpacity
+                          style={[styles.webPayButton, webPayLoading && { opacity: 0.6 }]}
+                          onPress={handleWebCheckout}
+                          disabled={webPayLoading || purchasing}
+                          activeOpacity={0.8}
+                        >
+                          {webPayLoading ? (
+                            <ActivityIndicator color="#0F172A" size="small" />
+                          ) : (
+                            <>
+                              <Ionicons name="globe-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
+                              <Text style={styles.webPayButtonText}>RENEW VIA WEB CHECKOUT</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Step 2: user returns from browser and confirms payment */}
+                      {webPayLinkOpened && (
+                        <View style={{ width: '100%', alignItems: 'center' }}>
+                          <Text style={styles.webPayReturnHint}>
+                            Complete payment in the browser, then come back here and tap below.
+                          </Text>
+                          <TouchableOpacity
+                            style={[styles.webPayVerifyButton, webPayVerifying && { opacity: 0.6 }]}
+                            onPress={handleWebCheckoutVerify}
+                            disabled={webPayVerifying}
+                            activeOpacity={0.8}
+                          >
+                            {webPayVerifying ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <>
+                                <Ionicons name="checkmark-circle-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                                <Text style={styles.webPayVerifyText}>I'VE COMPLETED PAYMENT</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ marginTop: 10 }}
+                            onPress={handleWebCheckout}
+                            disabled={webPayLoading}
+                          >
+                            <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '700', textDecorationLine: 'underline' }}>
+                              Re-open payment page
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {webPayError ? (
+                        <Text style={{ color: '#F87171', fontSize: 12, marginTop: 10, textAlign: 'center', fontWeight: '600' }}>
+                          {webPayError}
+                        </Text>
+                      ) : null}
+
+                    </View>
+                  ) : (
+                    // Web/desktop browser — Flutterwave web checkout works here too
+                    <View style={{ alignItems: 'center', width: '100%' }}>
+                      <View style={styles.priceTag}>
+                        <Text style={styles.priceLabel}>Premium School Plan</Text>
+                        <Text style={styles.priceValue}>Renew Now</Text>
+                        <Text style={styles.pricePeriod}>Billed Every Four Months</Text>
+                      </View>
+
+                      <Text style={styles.webPayHint}>
+                        Complete your renewal via our secure web checkout — supports card, bank transfer, USSD, and mobile money.
+                      </Text>
+
+                      {/* Step 1: open Flutterwave in browser / new tab */}
+                      {!webPayLinkOpened && (
+                        <TouchableOpacity
+                          style={[styles.webPayButton, webPayLoading && { opacity: 0.6 }]}
+                          onPress={handleWebCheckout}
+                          disabled={webPayLoading}
+                          activeOpacity={0.8}
+                        >
+                          {webPayLoading ? (
+                            <ActivityIndicator color="#0F172A" size="small" />
+                          ) : (
+                            <>
+                              <Ionicons name="globe-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
+                              <Text style={styles.webPayButtonText}>RENEW VIA WEB CHECKOUT</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Step 2: user returns from payment tab and confirms */}
+                      {webPayLinkOpened && (
+                        <View style={{ width: '100%', alignItems: 'center' }}>
+                          <Text style={styles.webPayReturnHint}>
+                            Complete payment in the browser tab, then come back here and tap below.
+                          </Text>
+                          <TouchableOpacity
+                            style={[styles.webPayVerifyButton, webPayVerifying && { opacity: 0.6 }]}
+                            onPress={handleWebCheckoutVerify}
+                            disabled={webPayVerifying}
+                            activeOpacity={0.8}
+                          >
+                            {webPayVerifying ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <>
+                                <Ionicons name="checkmark-circle-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                                <Text style={styles.webPayVerifyText}>I'VE COMPLETED PAYMENT</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ marginTop: 10 }}
+                            onPress={handleWebCheckout}
+                            disabled={webPayLoading}
+                          >
+                            <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '700', textDecorationLine: 'underline' }}>
+                              Re-open payment page
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {webPayError ? (
+                        <Text style={{ color: '#F87171', fontSize: 12, marginTop: 10, textAlign: 'center', fontWeight: '600' }}>
+                          {webPayError}
+                        </Text>
+                      ) : null}
                     </View>
                   )}
 
@@ -291,6 +501,7 @@ export default function PricingPage() {
                 </>
               )}
 
+              {/* ════════════════════════════ PURCHASING STEP ════════════════════════════ */}
               {step === 'purchasing' && (
                 <View style={styles.centered}>
                   <ActivityIndicator size="large" color="#FACC15" />
@@ -299,6 +510,7 @@ export default function PricingPage() {
                 </View>
               )}
 
+              {/* ═════════════════════════════ SUCCESS STEP ══════════════════════════════ */}
               {step === 'success' && (
                 <View style={styles.centered}>
                   <Ionicons name="checkmark-circle" size={80} color="#10B981" />
@@ -344,7 +556,7 @@ function makeStyles(width: number) {
       borderRadius: 10,
       marginBottom: 16,
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.1)'
+      borderColor: 'rgba(255,255,255,0.1)',
     },
     logoText: { color: '#FACC15', fontSize: 11, fontWeight: '900', marginLeft: 8, letterSpacing: 2 },
     title: { fontSize: isSmall ? 26 : 30, fontWeight: '900', color: '#fff', letterSpacing: -1 },
@@ -357,7 +569,7 @@ function makeStyles(width: number) {
       padding: isSmall ? 20 : 26,
       borderWidth: 1,
       borderColor: 'rgba(255,255,255,0.1)',
-      marginBottom: 30
+      marginBottom: 30,
     },
     cardTitle: { color: '#fff', fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 10 },
     cardSubtitle: { color: '#94A3B8', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
@@ -369,7 +581,8 @@ function makeStyles(width: number) {
       borderColor: 'rgba(250,204,21,0.2)',
       padding: 20,
       alignItems: 'center',
-      marginBottom: 20
+      marginBottom: 16,
+      width: '100%',
     },
     priceLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '700', marginBottom: 4 },
     priceValue: { color: '#fff', fontSize: 32, fontWeight: '900' },
@@ -377,7 +590,7 @@ function makeStyles(width: number) {
 
     ctaButton: { height: 54, borderRadius: 12, width: '100%', marginTop: 10 },
 
-    restoreBtn: { marginTop: 20, alignSelf: 'center' },
+    restoreBtn: { marginTop: 20, marginBottom: 4, alignSelf: 'center' },
     restoreText: { color: '#64748B', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
 
     webFallback: { alignItems: 'center', paddingVertical: 20 },
@@ -399,8 +612,63 @@ function makeStyles(width: number) {
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 10,
-      opacity: 0.8
+      opacity: 0.8,
     },
     switchAccountText: { color: '#94A3B8', fontSize: 13, fontWeight: '700', marginLeft: 8 },
+
+    // ── Web checkout / Flutterwave styles ────────────────────────────────────────
+    webPayDivider: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 28,
+      marginBottom: 12,
+      width: '100%',
+    },
+    webPayDividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
+    webPayDividerText: {
+      color: '#475569',
+      fontSize: 9,
+      fontWeight: '800',
+      letterSpacing: 1.5,
+      marginHorizontal: 10,
+    },
+    webPayHint: {
+      color: '#64748B',
+      fontSize: 11,
+      fontWeight: '500',
+      textAlign: 'center',
+      marginBottom: 14,
+      lineHeight: 16,
+    },
+    webPayButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FACC15',
+      borderRadius: 10,
+      paddingVertical: 13,
+      paddingHorizontal: 20,
+      width: '100%',
+    },
+    webPayButtonText: { color: '#0F172A', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+    webPayReturnHint: {
+      color: '#94A3B8',
+      fontSize: 11,
+      textAlign: 'center',
+      marginBottom: 12,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    webPayVerifyButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#10B981',
+      borderRadius: 10,
+      paddingVertical: 13,
+      paddingHorizontal: 20,
+      width: '100%',
+    },
+    webPayVerifyText: { color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
   });
 }

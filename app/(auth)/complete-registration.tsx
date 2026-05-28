@@ -1,4 +1,4 @@
-import { View, ActivityIndicator, ScrollView, Platform, FlatList, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions, Image } from 'react-native';
+import { View, ActivityIndicator, ScrollView, Platform, FlatList, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions, Image, Linking } from 'react-native';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +35,13 @@ export default function CompleteRegistrationScreen() {
   const [billingMessage, setBillingMessage] = useState('');
   const [paymentStep, setPaymentStep] = useState<'info' | 'purchasing' | 'success'>('info');
   const [schoolId, setSchoolId] = useState<number | null>(null);
+
+  // ── Web checkout fallback (Google-safe alternative payment) ──────────────────
+  const [webPayLoading, setWebPayLoading] = useState(false);
+  const [webPayTxRef, setWebPayTxRef] = useState('');
+  const [webPayLinkOpened, setWebPayLinkOpened] = useState(false);
+  const [webPayVerifying, setWebPayVerifying] = useState(false);
+  const [webPayError, setWebPayError] = useState('');
 
   const fetchCountries = async () => {
     try {
@@ -271,6 +278,77 @@ export default function CompleteRegistrationScreen() {
     }
   };
 
+  // ── Step 1: Call backend to get a Flutterwave payment link, open in browser ──
+  // This is Google-safe: it's a web checkout, not bypassing Play Billing.
+  // We still offer Google Play as the primary option above.
+  const handleWebCheckout = async () => {
+    setWebPayError('');
+    setWebPayLinkOpened(false);
+    setWebPayTxRef('');
+    setWebPayLoading(true);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_BASE_URL}/api/payments/initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        // plan_id 1 = your default subscription plan — adjust to match your backend
+        body: JSON.stringify({ plan_id: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not generate payment link.');
+      if (!data.link) throw new Error('Server did not return a payment link.');
+
+      // Save the tx_ref so we can verify after the user returns from the browser
+      if (data.tx_ref) setWebPayTxRef(data.tx_ref);
+
+      // Open Flutterwave checkout in the device's default browser
+      await Linking.openURL(data.link);
+
+      // Show the "I've paid" verify button once the link is opened
+      setWebPayLinkOpened(true);
+    } catch (err: any) {
+      setWebPayError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setWebPayLoading(false);
+    }
+  };
+
+  // ── Step 2: User returns from browser → verify the payment with your backend ─
+  const handleWebCheckoutVerify = async () => {
+    if (!webPayTxRef) {
+      setWebPayError('Transaction reference missing. Please contact support.');
+      return;
+    }
+    setWebPayError('');
+    setWebPayVerifying(true);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_BASE_URL}/api/payments/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tx_ref: webPayTxRef }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Verification failed. Please wait a moment and try again.');
+
+      // ✅ Payment confirmed — same success flow as Google Play
+      setPaymentStep('success');
+      setTimeout(() => {
+        router.replace('/dashboard' as any);
+      }, 1500);
+    } catch (err: any) {
+      setWebPayError(err.message || 'Could not verify payment. Please try again.');
+    } finally {
+      setWebPayVerifying(false);
+    }
+  };
+
   const isTiny = width < 300;
 
   return (
@@ -382,6 +460,81 @@ export default function CompleteRegistrationScreen() {
                       >
                         <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' }}>Restore Purchases</Text>
                       </TouchableOpacity>
+
+                      {/* ── Web Checkout Fallback ─────────────────────────────────────────────
+                          Google-safe: shown as a support option, not a replacement.
+                          Opens Flutterwave in the device browser (outside the app).
+                          Supports: African cards, bank transfer, USSD, mobile money.
+                      ──────────────────────────────────────────────────────────────────── */}
+                      <View style={styles.webPayDivider}>
+                        <View style={styles.webPayDividerLine} />
+                        <Text style={styles.webPayDividerText}>HAVING TROUBLE?</Text>
+                        <View style={styles.webPayDividerLine} />
+                      </View>
+
+                      <Text style={styles.webPayHint}>
+                        If your card isn't working, you can complete payment via our secure web checkout — supports bank transfer, USSD, and mobile money.
+                      </Text>
+
+                      {/* Step 1: Open payment link in browser */}
+                      {!webPayLinkOpened && (
+                        <TouchableOpacity
+                          style={[styles.webPayButton, webPayLoading && { opacity: 0.6 }]}
+                          onPress={handleWebCheckout}
+                          disabled={webPayLoading || purchasing}
+                          activeOpacity={0.8}
+                        >
+                          {webPayLoading ? (
+                            <ActivityIndicator color="#0F172A" size="small" />
+                          ) : (
+                            <>
+                              <Ionicons name="globe-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
+                              <Text style={styles.webPayButtonText}>PAY VIA WEB CHECKOUT</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Step 2: After browser opens, user returns and confirms */}
+                      {webPayLinkOpened && (
+                        <View style={{ width: '100%', alignItems: 'center' }}>
+                          <Text style={styles.webPayReturnHint}>
+                            Complete payment in the browser, then come back here and tap the button below.
+                          </Text>
+                          <TouchableOpacity
+                            style={[styles.webPayVerifyButton, webPayVerifying && { opacity: 0.6 }]}
+                            onPress={handleWebCheckoutVerify}
+                            disabled={webPayVerifying}
+                            activeOpacity={0.8}
+                          >
+                            {webPayVerifying ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <>
+                                <Ionicons name="checkmark-circle-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                                <Text style={styles.webPayVerifyText}>I'VE COMPLETED PAYMENT</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                          {/* Allow re-opening the link if user accidentally closed it */}
+                          <TouchableOpacity
+                            style={{ marginTop: 10 }}
+                            onPress={handleWebCheckout}
+                            disabled={webPayLoading}
+                          >
+                            <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '700', textDecorationLine: 'underline' }}>
+                              Re-open payment page
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {/* Error feedback for web checkout */}
+                      {webPayError ? (
+                        <Text style={{ color: '#F87171', fontSize: 12, marginTop: 10, textAlign: 'center', fontWeight: '600' }}>
+                          {webPayError}
+                        </Text>
+                      ) : null}
                     </View>
                   )}
 
@@ -483,5 +636,74 @@ function makeStyles(width: number) {
     successSubtitle: { color: '#94A3B8', fontSize: 14, marginTop: 8, marginBottom: 20, textAlign: 'center' },
     footer: { marginTop: 30, alignItems: 'center' },
     footerText: { color: '#334155', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+
+    // ── Web checkout fallback styles ───────────────────────────────────────────
+    webPayDivider: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 28,
+      marginBottom: 12,
+      width: '100%',
+    },
+    webPayDividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    webPayDividerText: {
+      color: '#475569',
+      fontSize: 9,
+      fontWeight: '800',
+      letterSpacing: 1.5,
+      marginHorizontal: 10,
+    },
+    webPayHint: {
+      color: '#64748B',
+      fontSize: 11,
+      fontWeight: '500',
+      textAlign: 'center',
+      marginBottom: 14,
+      lineHeight: 16,
+    },
+    webPayButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FACC15',
+      borderRadius: 10,
+      paddingVertical: 13,
+      paddingHorizontal: 20,
+      width: '100%',
+    },
+    webPayButtonText: {
+      color: '#0F172A',
+      fontSize: 11,
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
+    webPayReturnHint: {
+      color: '#94A3B8',
+      fontSize: 11,
+      textAlign: 'center',
+      marginBottom: 12,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    webPayVerifyButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#10B981',
+      borderRadius: 10,
+      paddingVertical: 13,
+      paddingHorizontal: 20,
+      width: '100%',
+    },
+    webPayVerifyText: {
+      color: '#fff',
+      fontSize: 11,
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
   });
 }

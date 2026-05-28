@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "886796636143",
+    "project_id": "sabino-edu",
+    "storage_bucket": "sabino-edu.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:886796636143:android:16727a89ba7301de88301a",
+        "android_client_info": {
+          "package_name": "com.courteous.sabinomobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArjYz3HQzGEozDp23ppA4yDDhAL4iwW6Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

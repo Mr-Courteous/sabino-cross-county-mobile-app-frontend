@@ -22,9 +22,8 @@ import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAppColors } from '@/hooks/use-app-colors';
-import {
-    Colors,
-} from '@/constants/design-system';
+import { Colors } from '@/constants/design-system';
+import { syncPushTokenToBackend } from '@/utils/push-notifications'; // <-- NEW
 
 export default function LoginScreen() {
     const router = useRouter();
@@ -81,7 +80,13 @@ export default function LoginScreen() {
                     await SecureStore.setItemAsync('countryId', countryId.toString());
                 }
 
+                // Navigate first so the user isn't waiting on push registration
                 router.replace('/dashboard');
+
+                // Register push token in the background — non-blocking
+                // If this fails for any reason it won't affect the login flow
+                syncPushTokenToBackend(token); // <-- NEW
+
             } else {
                 setError(data.error || data.message || 'Invalid email or password');
                 setIsLoading(false);
@@ -109,13 +114,13 @@ export default function LoginScreen() {
                         showsVerticalScrollIndicator={false}
                     >
                         <View style={styles.header}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.backBtn}
                                 onPress={() => router.back()}
                             >
                                 <Ionicons name="arrow-back" size={20} color={C.text} />
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.homeBtn}
                                 onPress={() => {
                                     router.replace('/home');
@@ -176,7 +181,7 @@ export default function LoginScreen() {
                                 textStyle={{ fontSize: 12 }}
                             />
 
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={() => router.push('/(auth)/forgot-password')}
                                 style={{ alignSelf: 'center', marginTop: 16 }}
                                 disabled={isLoading}
@@ -196,8 +201,8 @@ export default function LoginScreen() {
                                     style={styles.registerButton}
                                     textStyle={{ color: Colors.accent.blue, fontWeight: '800', fontSize: 11 }}
                                 />
-                                
-                                <TouchableOpacity 
+
+                                <TouchableOpacity
                                     style={styles.studentChannel}
                                     onPress={() => router.push('/(student)' as any)}
                                 >
@@ -225,7 +230,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
         hero: { flex: 1, width: '100%' },
         overlay: { flex: 1, paddingHorizontal: isTiny ? 16 : 24 },
         scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingVertical: isTiny ? 40 : 60 },
-        
+
         header: { alignItems: 'center', marginBottom: isTiny ? 24 : 34, width: '100%' },
         backBtn: {
             position: 'absolute',

@@ -59,6 +59,12 @@ export default function StudentsManager() {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<'students' | 'enrollments'>('students');
+  const [enrollments, setEnrollments] = useState<any[]>([]);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState<boolean>(false);
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterClassId, setFilterClassId] = useState<number | null>(null);
+  const [filterSessionId, setFilterSessionId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [statusAlert, setStatusAlert] = useState<{
     visible: boolean;
@@ -136,6 +142,81 @@ export default function StudentsManager() {
 
   useEffect(() => { fetchInitialData(); }, [fetchInitialData]);
 
+  const fetchEnrollments = useCallback(async () => {
+    try {
+      setEnrollmentsLoading(true);
+      const token = await getToken();
+      if (!token) return;
+
+      let queryParams = [];
+      if (filterStatus) queryParams.push(`status=${filterStatus}`);
+      if (filterClassId) queryParams.push(`classId=${filterClassId}`);
+      if (filterSessionId) queryParams.push(`sessionId=${filterSessionId}`);
+
+      const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+      const res = await fetch(`${API_BASE_URL}/api/students/enrollments${queryString}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEnrollments(data.data || []);
+      }
+    } catch (e: any) {
+      console.error('Fetch Enrollments Error:', e);
+    } finally {
+      setEnrollmentsLoading(false);
+    }
+  }, [filterStatus, filterClassId, filterSessionId]);
+
+  useEffect(() => {
+    if (activeTab === 'enrollments') {
+      fetchEnrollments();
+    }
+  }, [activeTab, fetchEnrollments]);
+
+  const confirmDeleteEnrollment = (item: any) => {
+    setStatusAlert({
+      visible: true,
+      type: 'warning',
+      title: 'Remove Enrollment',
+      message: `Are you sure you want to remove the enrollment for ${item.first_name} ${item.last_name} in ${item.class_name} (${item.academic_session})?`,
+      onConfirm: async () => {
+        await deleteEnrollment(item.enrollment_id, `${item.first_name} ${item.last_name}`);
+      }
+    });
+  };
+
+  const deleteEnrollment = async (enrollmentId: number, studentName: string) => {
+    setSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/students/enrollments/${enrollmentId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        fetchEnrollments();
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Removed!',
+          message: `Enrollment for ${studentName} has been successfully deleted.`
+        });
+      } else throw new Error(json.error || 'Request rejected.');
+    } catch (e: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Failed',
+        message: e?.message || 'Connection lost.'
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const onRefresh = () => { setRefreshing(true); fetchInitialData(); };
 
   const handleSendTemplateToEmail = async () => {
@@ -190,6 +271,50 @@ export default function StudentsManager() {
     } catch (e: any) {
       setEnrollError(e?.message || 'Connection lost.');
       setStatusAlert({ visible: true, type: 'error', title: 'Failed', message: e?.message || 'Connection lost.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    setStatusAlert({
+      visible: true,
+      type: 'error',
+      title: 'PERMANENT DELETION',
+      message: `Are you sure you want to PERMANENTLY delete ${form.firstName} ${form.lastName}? This will erase their profile, enrollments, reports, and scores permanently. This action cannot be undone.`,
+      onConfirm: async () => {
+        await deleteStudent();
+      }
+    });
+  };
+
+  const deleteStudent = async () => {
+    if (!editingId) return;
+    setSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/students/${editingId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setModalVisible(false);
+        fetchInitialData();
+        setStatusAlert({
+          visible: true,
+          type: 'success',
+          title: 'Deleted!',
+          message: `${form.firstName} ${form.lastName} has been permanently deleted.`
+        });
+      } else throw new Error(json.error || 'Request rejected.');
+    } catch (e: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Failed',
+        message: e?.message || 'Connection lost.'
+      });
     } finally {
       setSaving(false);
     }
@@ -257,6 +382,24 @@ export default function StudentsManager() {
         </ThemedText>
       </View>
 
+      <View style={styles.segmentedControl}>
+        <TouchableOpacity 
+          style={[styles.segmentButton, activeTab === 'students' && styles.activeSegment]}
+          onPress={() => setActiveTab('students')}
+        >
+          <Ionicons name="people" size={16} color={activeTab === 'students' ? Colors.accent.gold : C.textMuted} style={{ marginRight: 6 }} />
+          <Text style={[styles.segmentText, activeTab === 'students' && { color: Colors.accent.gold, fontWeight: '800' }]}>Students</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.segmentButton, activeTab === 'enrollments' && styles.activeSegment]}
+          onPress={() => setActiveTab('enrollments')}
+        >
+          <Ionicons name="school" size={16} color={activeTab === 'enrollments' ? Colors.accent.gold : C.textMuted} style={{ marginRight: 6 }} />
+          <Text style={[styles.segmentText, activeTab === 'enrollments' && { color: Colors.accent.gold, fontWeight: '800' }]}>Enrollments</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.searchSection}>
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={16} color="#94A3B8" style={{ marginRight: 10 }} />
@@ -264,18 +407,166 @@ export default function StudentsManager() {
         </View>
       </View>
 
-      <FlatList
-        data={students.filter(s => {
-          const search = searchText.toLowerCase();
-          return `${s.first_name} ${s.last_name}`.toLowerCase().includes(search) || (s.registration_number || '').toLowerCase().includes(search);
-        })}
-        keyExtractor={(i) => String(i.id)}
-        contentContainerStyle={styles.listContent}
-        renderItem={renderStudent}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => { }} />}
-      />
+      {activeTab === 'enrollments' && (
+        <View style={styles.filtersSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersContainer}>
+            {/* Status Filter */}
+            <TouchableOpacity 
+              style={[styles.filterPill, filterStatus !== '' && styles.activeFilterPill]}
+              onPress={() => {
+                Alert.alert(
+                  'Filter by Status',
+                  'Select enrollment status:',
+                  [
+                    { text: 'All', onPress: () => setFilterStatus('') },
+                    { text: 'Active', onPress: () => setFilterStatus('active') },
+                    { text: 'Promoted', onPress: () => setFilterStatus('promoted') },
+                    { text: 'Repeated', onPress: () => setFilterStatus('repeated') },
+                    { text: 'Transferred', onPress: () => setFilterStatus('transferred') },
+                    { text: 'Graduated', onPress: () => setFilterStatus('graduated') },
+                  ]
+                );
+              }}
+            >
+              <Text style={[styles.filterPillText, filterStatus !== '' && { color: Colors.accent.gold }]}>
+                Status: {filterStatus ? filterStatus.toUpperCase() : 'All'}
+              </Text>
+              <Ionicons name="chevron-down" size={10} color={filterStatus !== '' ? Colors.accent.gold : C.textMuted} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+
+            {/* Class Filter */}
+            <TouchableOpacity 
+              style={[styles.filterPill, filterClassId !== null && styles.activeFilterPill]}
+              onPress={() => {
+                const classOptions = classes.map(c => ({
+                  text: c.display_name,
+                  onPress: () => setFilterClassId(c.id)
+                }));
+                Alert.alert(
+                  'Filter by Class',
+                  'Select class:',
+                  [
+                    { text: 'All', onPress: () => setFilterClassId(null) },
+                    ...classOptions
+                  ]
+                );
+              }}
+            >
+              <Text style={[styles.filterPillText, filterClassId !== null && { color: Colors.accent.gold }]}>
+                Class: {filterClassId !== null ? (classes.find(c => c.id === filterClassId)?.display_name || 'Selected') : 'All'}
+              </Text>
+              <Ionicons name="chevron-down" size={10} color={filterClassId !== null ? Colors.accent.gold : C.textMuted} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+
+            {/* Session Filter */}
+            <TouchableOpacity 
+              style={[styles.filterPill, filterSessionId !== null && styles.activeFilterPill]}
+              onPress={() => {
+                const sessionOptions = sessions.map(s => ({
+                  text: s.session_name,
+                  onPress: () => setFilterSessionId(s.id)
+                }));
+                Alert.alert(
+                  'Filter by Session',
+                  'Select academic session:',
+                  [
+                    { text: 'All', onPress: () => setFilterSessionId(null) },
+                    ...sessionOptions
+                  ]
+                );
+              }}
+            >
+              <Text style={[styles.filterPillText, filterSessionId !== null && { color: Colors.accent.gold }]}>
+                Session: {filterSessionId !== null ? (sessions.find(s => s.id === filterSessionId)?.session_name || 'Selected') : 'All'}
+              </Text>
+              <Ionicons name="chevron-down" size={10} color={filterSessionId !== null ? Colors.accent.gold : C.textMuted} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {activeTab === 'students' ? (
+        <FlatList
+          data={students.filter(s => {
+            const search = searchText.toLowerCase();
+            return `${s.first_name} ${s.last_name}`.toLowerCase().includes(search) || (s.registration_number || '').toLowerCase().includes(search);
+          })}
+          keyExtractor={(i) => String(i.id)}
+          contentContainerStyle={styles.listContent}
+          renderItem={renderStudent}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="people-outline" size={48} color={C.textMuted} style={{ marginBottom: 6 }} />
+              <ThemedText style={styles.emptyText}>No students found</ThemedText>
+            </View>
+          }
+          ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => { }} />}
+        />
+      ) : (
+        <FlatList
+          data={enrollments.filter(e => {
+            const search = searchText.toLowerCase();
+            return `${e.first_name} ${e.last_name}`.toLowerCase().includes(search) || 
+                   (e.registration_number || '').toLowerCase().includes(search) ||
+                   (e.class_name || '').toLowerCase().includes(search) ||
+                   (e.academic_session || '').toLowerCase().includes(search);
+          })}
+          keyExtractor={(i) => String(i.enrollment_id)}
+          contentContainerStyle={styles.listContent}
+          refreshing={enrollmentsLoading}
+          onRefresh={fetchEnrollments}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              {enrollmentsLoading ? (
+                <ActivityIndicator size="small" color={Colors.accent.gold} />
+              ) : (
+                <>
+                  <Ionicons name="school-outline" size={48} color={C.textMuted} style={{ marginBottom: 6 }} />
+                  <ThemedText style={styles.emptyText}>No enrollments found</ThemedText>
+                </>
+              )}
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={styles.enrollmentCard}>
+              <View style={styles.enrollmentHeader}>
+                <View style={styles.avatarContainer}>
+                  <ThemedText style={styles.avatarText}>{(item.first_name?.[0] || '') + (item.last_name?.[0] || '')}</ThemedText>
+                </View>
+                <View style={styles.studentInfo}>
+                  <ThemedText style={styles.studentName} numberOfLines={1}>{item.first_name} {item.last_name}</ThemedText>
+                  <ThemedText style={styles.studentSub}>{item.registration_number || 'No REG'}</ThemedText>
+                </View>
+                <TouchableOpacity 
+                  style={styles.deleteEnrollBtn} 
+                  onPress={() => confirmDeleteEnrollment(item)}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.enrollmentDetails}>
+                <View style={styles.detailRow}>
+                  <Ionicons name="book-outline" size={12} color={C.textMuted} style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.detailText}>{item.class_name}</ThemedText>
+                </View>
+                <View style={styles.detailRow}>
+                  <Ionicons name="calendar-outline" size={12} color={C.textMuted} style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.detailText}>{item.academic_session}</ThemedText>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: item.enrollment_status === 'active' ? '#22C55E15' : '#F59E0B15' }]}>
+                  <Text style={[styles.statusText, { color: item.enrollment_status === 'active' ? '#22C55E' : '#F59E0B' }]}>
+                    {item.enrollment_status.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+          ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => { }} />}
+        />
+      )}
 
       <BulkUploadModal
         visible={bulkUploadVisible}
@@ -354,7 +645,19 @@ export default function StudentsManager() {
                   <TextInput style={styles.formInput} value={form.phone} onChangeText={(t) => setForm({ ...form, phone: t })} placeholder="Phone" placeholderTextColor={C.textMuted} keyboardType="phone-pad" />
                 </View>
                 <CustomButton title={saving ? "SAVING..." : "SAVE RECORD"} onPress={saveStudent} loading={saving} variant="premium" style={{ marginTop: 20 }} />
-              </ScrollView>
+                 {editingId && (
+                   <View style={styles.dangerZone}>
+                     <ThemedText style={styles.dangerTitle}>DANGER ZONE</ThemedText>
+                     <TouchableOpacity 
+                       style={[styles.dangerButton, { borderColor: '#EF4444' }]} 
+                       onPress={() => confirmDelete()}
+                     >
+                       <Ionicons name="trash-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
+                       <Text style={[styles.dangerButtonText, { color: '#EF4444' }]}>Delete Student Permanently</Text>
+                     </TouchableOpacity>
+                   </View>
+                 )}
+               </ScrollView>
             </>
           </LinearGradient>
         </View>
@@ -365,6 +668,7 @@ export default function StudentsManager() {
           type={statusAlert.type}
           title={statusAlert.title}
           message={statusAlert.message}
+          onConfirm={statusAlert.onConfirm}
           onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
         />
       )}
@@ -420,5 +724,29 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     noticeBox: { backgroundColor: C.card, borderRadius: 16, padding: 14, marginHorizontal: isTiny ? 16 : 24, marginTop: -20, marginBottom: 16, borderWidth: 1, borderColor: Colors.accent.gold + '20' },
     noticeTitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '900', marginBottom: 6 },
     noticeText: { color: C.text, fontSize: 12, lineHeight: 18 },
+    dangerZone: { marginTop: 24, padding: 16, borderRadius: 16, backgroundColor: C.isDark ? '#EF444408' : '#EF444403', borderStyle: 'dashed', borderWidth: 1, borderColor: '#EF444430', marginBottom: 20 },
+    dangerTitle: { color: '#EF4444', fontSize: 10, fontWeight: '900', letterSpacing: 1, marginBottom: 12 },
+    dangerButtons: { flexDirection: 'row', gap: 10 },
+    dangerButton: { flex: 1, height: 42, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: C.isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.8)' },
+    dangerButtonText: { fontSize: 12, fontWeight: '700' },
+    segmentedControl: { flexDirection: 'row', backgroundColor: C.inputBg, marginHorizontal: isTiny ? 16 : 24, borderRadius: 16, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: C.inputBorder },
+    segmentButton: { flex: 1, height: 38, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+    activeSegment: { backgroundColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
+    segmentText: { fontSize: 13, fontWeight: '600', color: C.textMuted },
+    filtersSection: { marginBottom: 12, paddingHorizontal: isTiny ? 16 : 24 },
+    filtersContainer: { gap: 8 },
+    filterPill: { height: 32, borderRadius: 10, paddingHorizontal: 12, backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    activeFilterPill: { borderColor: Colors.accent.gold, backgroundColor: Colors.accent.gold + '10' },
+    filterPillText: { fontSize: 11, fontWeight: '700', color: C.textSecondary },
+    enrollmentCard: { backgroundColor: C.card, borderRadius: 20, padding: 16, marginHorizontal: isTiny ? 16 : 24, marginBottom: 12, borderWidth: 1, borderColor: C.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' },
+    enrollmentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+    deleteEnrollBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.isDark ? '#EF444415' : '#EF444408', justifyContent: 'center', alignItems: 'center' },
+    enrollmentDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12 },
+    detailRow: { flexDirection: 'row', alignItems: 'center' },
+    detailText: { fontSize: 12, color: C.textSecondary, fontWeight: '600' },
+    statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    statusText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+    emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
+    emptyText: { color: C.textMuted, fontSize: 14, fontWeight: '600' },
   });
 }
