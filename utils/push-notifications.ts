@@ -1,38 +1,35 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
 
-// On app open — primary, sends immediately
+const TOKEN_STORAGE_KEY = 'expoPushToken';
+
+/**
+ * Call this when the app first loads (root layout).
+ * Requests permission immediately and saves token to backend.
+ * Returns a status string for debug banner (remove banner in production).
+ */
 export async function requestAndStorePushToken(): Promise<string> {
   try {
-    console.log('[Push] Step 1 - function called');
-
     if (!Device.isDevice || Platform.OS === 'web') {
-      console.log('[Push] Step 1 FAILED - not a real device or web');
-      return 'FAILED: Not a real device or web';
+      return 'skipped: not a real device or web';
     }
 
-    console.log('[Push] Step 2 - checking permission');
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    console.log('[Push] Step 2 - current status:', existingStatus);
-
     let finalStatus = existingStatus;
 
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
-      console.log('[Push] Step 2 - after request status:', finalStatus);
     }
 
     if (finalStatus !== 'granted') {
-      console.log('[Push] Step 2 FAILED - permission not granted');
-      return 'FAILED: Permission not granted';
+      return 'permission denied — user must enable in phone settings';
     }
 
-    console.log('[Push] Step 3 - setting android channel');
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Sabino Edu',
@@ -42,18 +39,14 @@ export async function requestAndStorePushToken(): Promise<string> {
       });
     }
 
-    console.log('[Push] Step 4 - getting push token');
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    console.log('[Push] Step 4 - projectId:', projectId);
-
     const { data: expoPushToken } = await Notifications.getExpoPushTokenAsync({ projectId });
-    console.log('[Push] Step 4 - token received:', expoPushToken);
-
     const appVersion = Constants.expoConfig?.version ?? null;
-    console.log('[Push] Step 5 - saving to SecureStore');
-    await SecureStore.setItemAsync('expoPushToken', expoPushToken);
 
-    console.log('[Push] Step 6 - sending to backend:', `${API_BASE_URL}/api/notifications/register-token`);
+    // Save locally so syncPushTokenToBackend can use it after login
+    await SecureStore.setItemAsync(TOKEN_STORAGE_KEY, expoPushToken);
+
+    // Send immediately to public endpoint — no auth needed
     const response = await fetch(`${API_BASE_URL}/api/notifications/register-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -61,22 +54,23 @@ export async function requestAndStorePushToken(): Promise<string> {
     });
 
     const data = await response.json();
-    console.log('[Push] Step 6 - backend response:', response.status, data);
+    if (!data.success) throw new Error(data.error || 'Backend rejected token');
 
     return 'success';
-
   } catch (error: any) {
-    console.error('[Push] CRASHED at:', error);
-    return `FAILED: ${error?.message || error}`;
+    return `FAILED: ${error?.message || String(error)}`;
   }
 }
 
-// On login — secondary, just links school identity to existing token
+/**
+ * Call this right after login succeeds.
+ * Links the stored token to the school account in device_tokens table.
+ */
 export async function syncPushTokenToBackend(authToken: string): Promise<void> {
   try {
     if (Platform.OS === 'web') return;
 
-    const expoPushToken = await SecureStore.getItemAsync('expoPushToken');
+    const expoPushToken = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
     if (!expoPushToken) return;
 
     const appVersion = Constants.expoConfig?.version ?? null;
@@ -89,8 +83,70 @@ export async function syncPushTokenToBackend(authToken: string): Promise<void> {
       },
       body: JSON.stringify({ token: expoPushToken, appVersion }),
     });
-
   } catch (error) {
-    console.warn('[Push] Token sync failed:', error);
+    console.warn('[Push] Token sync failed silently:', error);
   }
+}
+
+/**
+ * Call this when you want to re-check permission (e.g. when app comes to foreground).
+ * If previously denied, opens phone Settings so user can enable manually.
+ * Returns current permission status.
+ */
+export async function recheckAndPromptIfNeeded(): Promise<'granted' | 'denied' | 'needs_settings'> {
+  try {
+    if (!Device.isDevice || Platform.OS === 'web') return 'denied';
+
+    const { status } = await Notifications.getPermissionsAsync();
+
+    if (status === 'granted') {
+      // Already granted — make sure token is registered
+      await requestAndStorePushToken();
+      return 'granted';
+    }
+
+    // On Android you can try requesting again
+    // On iOS once denied it's permanent — must go to settings
+    if (Platform.OS === 'android') {
+      const { status: newStatus } = await Notifications.requestPermissionsAsync();
+      if (newStatus === 'granted') {
+        await requestAndStorePushToken();
+        return 'granted';
+      }
+    }
+
+    // Denied and can't re-request — open settings
+    await Linking.openSettings();
+    return 'needs_settings';
+  } catch (error) {
+    console.warn('[Push] Recheck failed:', error);
+    return 'denied';
+  }
+}
+
+/**
+ * Sets up a listener that re-checks push permission every time
+ * the app comes back to foreground (e.g. after user visited Settings).
+ * Call this once in your root layout.
+ * Returns the cleanup function to call on unmount.
+ */
+export function setupForegroundPermissionCheck(
+  onStatusChange?: (status: 'granted' | 'denied') => void
+): () => void {
+  const handleAppStateChange = async (nextState: AppStateStatus) => {
+    if (nextState === 'active') {
+      // App came back to foreground — re-check permission
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status === 'granted') {
+        // Silently register token in case it wasn't saved before
+        await requestAndStorePushToken();
+        onStatusChange?.('granted');
+      } else {
+        onStatusChange?.('denied');
+      }
+    }
+  };
+
+  const subscription = AppState.addEventListener('change', handleAppStateChange);
+  return () => subscription.remove();
 }

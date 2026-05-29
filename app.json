@@ -69,7 +69,8 @@
       ],
       [
         "./plugins/withAdIdPermission"
-      ]
+      ],
+      "expo-mail-composer"
     ],
     "extra": {
       "eas": {

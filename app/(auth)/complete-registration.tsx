@@ -461,20 +461,16 @@ export default function CompleteRegistrationScreen() {
                         <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' }}>Restore Purchases</Text>
                       </TouchableOpacity>
 
-                      {/* ── Web Checkout Fallback ─────────────────────────────────────────────
-                          Google-safe: shown as a support option, not a replacement.
-                          Opens Flutterwave in the device browser (outside the app).
-                          Supports: African cards, bank transfer, USSD, mobile money.
-                      ──────────────────────────────────────────────────────────────────── */}
+                      {/* ── School & Corporate Billing Portal ────────────────────────────── */}
                       <View style={styles.webPayDivider}>
                         <View style={styles.webPayDividerLine} />
-                        <Text style={styles.webPayDividerText}>HAVING TROUBLE?</Text>
+                        <Text style={styles.webPayDividerText}>SCHOOL & CORPORATE BILLING</Text>
                         <View style={styles.webPayDividerLine} />
                       </View>
 
                       <Text style={styles.webPayHint}>
-                        If your card isn't working, you can complete payment via our secure web checkout — supports bank transfer, USSD, and mobile money.
-                      </Text>
+                        Government schools, NGOs, and institutions requiring invoice-based payment,
+                        bank transfer, or mobile money can use our dedicated school billing portal.                      </Text>
 
                       {/* Step 1: Open payment link in browser */}
                       {!webPayLinkOpened && (
@@ -489,7 +485,7 @@ export default function CompleteRegistrationScreen() {
                           ) : (
                             <>
                               <Ionicons name="globe-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
-                              <Text style={styles.webPayButtonText}>PAY VIA WEB CHECKOUT</Text>
+                              <Text style={styles.webPayButtonText}>ACTIVATE VIA SCHOOL BILLING PORTAL</Text>
                             </>
                           )}
                         </TouchableOpacity>
@@ -499,7 +495,7 @@ export default function CompleteRegistrationScreen() {
                       {webPayLinkOpened && (
                         <View style={{ width: '100%', alignItems: 'center' }}>
                           <Text style={styles.webPayReturnHint}>
-                            Complete payment in the browser, then come back here and tap the button below.
+                            Once your institution has completed payment through the billing portal, tap below to activate your account.
                           </Text>
                           <TouchableOpacity
                             style={[styles.webPayVerifyButton, webPayVerifying && { opacity: 0.6 }]}
@@ -512,7 +508,7 @@ export default function CompleteRegistrationScreen() {
                             ) : (
                               <>
                                 <Ionicons name="checkmark-circle-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
-                                <Text style={styles.webPayVerifyText}>I'VE COMPLETED PAYMENT</Text>
+                                <Text style={styles.webPayVerifyText}>CONFIRM INSTITUTIONAL PAYMENT</Text>
                               </>
                             )}
                           </TouchableOpacity>

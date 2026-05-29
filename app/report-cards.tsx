@@ -24,6 +24,9 @@ import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { useRouter } from 'expo-router';
 import { useAppColors } from '@/hooks/use-app-colors';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as MailComposer from 'expo-mail-composer';
 
 const getToken = async () => {
   if (Platform.OS !== 'web') return await SecureStore.getItemAsync('userToken');
@@ -55,6 +58,9 @@ export default function ReportSearchScreen() {
 
   // Track successful emails for visual feedback
   const [sentSuccessIds, setSentSuccessIds] = useState<Record<string, boolean>>({});
+
+  // Download/share state
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const [statusAlert, setStatusAlert] = useState<{
     visible: boolean;
@@ -91,7 +97,117 @@ export default function ReportSearchScreen() {
 
   const [emailInput, setEmailInput] = useState('');
 
-  // 1. Fetch Class List or Search Students
+  // ─── Download & Share ──────────────────────────────────────────────────────
+
+  /**
+   * Downloads report card PDF from backend and opens share sheet.
+   * Teacher can then save to device, share via WhatsApp, email attachment, etc.
+   */
+  const handleDownloadAndShare = async (enrollmentId: number, studentName: string, term: number, sessionId: number) => {
+    const key = `${enrollmentId}-${term}`;
+    setDownloadingId(key);
+
+    try {
+      const token = await getToken();
+      const url = `${API_BASE_URL}/api/reports/pdf/${enrollmentId}?term=${term}&sessionId=${sessionId}`;
+
+      // Download the PDF to a temp file
+      const fileName = `${studentName.replace(/\s+/g, '_')}_Term${term}_Report.pdf`;
+      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+      const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (downloadResult.status !== 200) {
+        throw new Error('Failed to download report card');
+      }
+
+      // Check if sharing is available on this device
+      const isSharingAvailable = await Sharing.isAvailableAsync();
+      if (!isSharingAvailable) {
+        setStatusAlert({
+          visible: true,
+          type: 'error',
+          title: 'Sharing unavailable',
+          message: 'Sharing is not available on this device.',
+        });
+        return;
+      }
+
+      // Open native share sheet — WhatsApp, Gmail, save to files, etc.
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `${studentName} - Term ${term} Report Card`,
+        UTI: 'com.adobe.pdf',
+      });
+
+    } catch (err: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Download Failed',
+        message: err.message || 'Could not download report card. Please try again.',
+      });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  /**
+   * Opens device mail app with the PDF attached directly.
+   * Different from the existing "Email Official" which sends from your backend server.
+   * This one lets the teacher send from their own email.
+   */
+  const handleSendFromDeviceMail = async (enrollmentId: number, studentName: string, term: number, sessionId: number) => {
+    const key = `${enrollmentId}-${term}`;
+    setDownloadingId(key);
+
+    try {
+      const isMailAvailable = await MailComposer.isAvailableAsync();
+      if (!isMailAvailable) {
+        setStatusAlert({
+          visible: true,
+          type: 'info',
+          title: 'Mail not available',
+          message: 'No email app found on this device. Use "Share" instead.',
+        });
+        return;
+      }
+
+      const token = await getToken();
+      const url = `${API_BASE_URL}/api/reports/pdf/${enrollmentId}?term=${term}&sessionId=${sessionId}`;
+      const fileName = `${studentName.replace(/\s+/g, '_')}_Term${term}_Report.pdf`;
+      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+      const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (downloadResult.status !== 200) {
+        throw new Error('Failed to download report card');
+      }
+
+      await MailComposer.composeAsync({
+        subject: `${studentName} - Term ${term} Report Card`,
+        body: `Please find attached the Term ${term} report card for ${studentName}.\n\nRegards,\nSabino Edu`,
+        attachments: [fileUri],
+      });
+
+    } catch (err: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Mail Error',
+        message: err.message || 'Could not open mail composer.',
+      });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // ─── Existing logic (unchanged) ───────────────────────────────────────────
+
   const handleFetch = useCallback(async (query = '') => {
     setLoading(true);
     setError('');
@@ -144,7 +260,7 @@ export default function ReportSearchScreen() {
           setResults(normalizedData);
         } else {
           setClasses(normalizedData);
-          setResults([]); // Clear search results when in class selection mode
+          setResults([]);
         }
 
         if (normalizedData.length === 0 && query) {
@@ -188,8 +304,7 @@ export default function ReportSearchScreen() {
           setSelectedSession(String(json.data[0].id));
         }
       }
-    } catch (err) {
-    }
+    } catch (err) { }
   };
 
   const fetchClassReportData = async () => {
@@ -282,10 +397,7 @@ export default function ReportSearchScreen() {
         `${API_BASE_URL}/api/reports/regenerate-remark/${enrollmentId}`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ term: parseInt(term), sessionId: parseInt(sessionId) }),
         }
       );
@@ -318,17 +430,20 @@ export default function ReportSearchScreen() {
     setSelectedPreviewStudent(student);
   };
 
+  // ─── Render student card (Search mode) ────────────────────────────────────
+
   const renderStudentItem = ({ item }: { item: any }) => {
     const term = selectedStudentTerms[item.enrollment_id] || '1';
     const isSent = sentSuccessIds[`${item.enrollment_id}-${term}`];
-    const isTiny = width < 300;
+    const isDownloading = downloadingId === `${item.enrollment_id}-${term}`;
+    const isTinyLocal = width < 300;
 
     return (
-      <View style={[styles.resultCard, isTiny && { flexDirection: 'column', alignItems: 'flex-start' }]}>
-        <View style={[styles.avatarContainer, isTiny && { marginBottom: 12 }]}>
+      <View style={[styles.resultCard, isTinyLocal && { flexDirection: 'column', alignItems: 'flex-start' }]}>
+        <View style={[styles.avatarContainer, isTinyLocal && { marginBottom: 12 }]}>
           <ThemedText style={styles.avatarText}>{(item.first_name?.[0] || '') + (item.last_name?.[0] || '')}</ThemedText>
         </View>
-        <View style={[styles.studentInfo, isTiny && { marginLeft: 0, width: '100%' }]}>
+        <View style={[styles.studentInfo, isTinyLocal && { marginLeft: 0, width: '100%' }]}>
           <ThemedText style={styles.resultTitle}>{item.first_name} {item.last_name}</ThemedText>
           <View style={styles.metaRow}>
             <Ionicons name="school-outline" size={11} color={C.textSecondary} />
@@ -341,7 +456,7 @@ export default function ReportSearchScreen() {
             </ThemedText>
           </View>
 
-          <View style={[styles.termSection, isTiny && { flexWrap: 'wrap' }]}>
+          <View style={[styles.termSection, isTinyLocal && { flexWrap: 'wrap' }]}>
             {['1', '2', '3'].map((t) => (
               <TouchableOpacity
                 key={t}
@@ -353,12 +468,13 @@ export default function ReportSearchScreen() {
             ))}
           </View>
 
-          <View style={styles.cardActions}>
+          {/* Row 1: Preview + Email Official */}
+          <View style={[styles.cardActions, { marginBottom: 8 }]}>
             <TouchableOpacity
               style={styles.fullActionBtn}
               onPress={() => handleNativePreview(item, term)}
             >
-              <Ionicons name="eye-outline" size={isTiny ? 12 : 14} color={C.text} />
+              <Ionicons name="eye-outline" size={isTinyLocal ? 12 : 14} color={C.text} />
               <ThemedText style={styles.actionBtnText}>Preview</ThemedText>
             </TouchableOpacity>
 
@@ -371,10 +487,43 @@ export default function ReportSearchScreen() {
                 sessionId: item.session_id
               })}
             >
-              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={isTiny ? 12 : 14} color={isSent ? "#10B981" : C.text} />
+              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={isTinyLocal ? 12 : 14} color={isSent ? "#10B981" : C.text} />
               <ThemedText style={[styles.actionBtnText, isSent && { color: '#10B981' }]}>
                 {isSent ? "Sent" : "Email"}
               </ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {/* Row 2: Download/Share + Send from my mail */}
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={[styles.fullActionBtn, { borderColor: Colors.accent.gold, backgroundColor: 'rgba(250, 204, 21, 0.05)' }]}
+              onPress={() => handleDownloadAndShare(item.enrollment_id, `${item.first_name} ${item.last_name}`, Number(term), item.session_id)}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <ActivityIndicator size="small" color={Colors.accent.gold} />
+              ) : (
+                <>
+                  <Ionicons name="share-social-outline" size={isTinyLocal ? 12 : 14} color={Colors.accent.gold} />
+                  <ThemedText style={[styles.actionBtnText, { color: Colors.accent.gold }]}>Share PDF</ThemedText>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.fullActionBtn, { borderColor: '#60A5FA', backgroundColor: 'rgba(96, 165, 250, 0.05)' }]}
+              onPress={() => handleSendFromDeviceMail(item.enrollment_id, `${item.first_name} ${item.last_name}`, Number(term), item.session_id)}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <ActivityIndicator size="small" color="#60A5FA" />
+              ) : (
+                <>
+                  <Ionicons name="paper-plane-outline" size={isTinyLocal ? 12 : 14} color="#60A5FA" />
+                  <ThemedText style={[styles.actionBtnText, { color: '#60A5FA' }]}>My Mail</ThemedText>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -382,15 +531,19 @@ export default function ReportSearchScreen() {
     );
   };
 
+  // ─── Render class batch student card ──────────────────────────────────────
+
   const renderClassReportStudent = ({ item }: { item: any }) => {
     const isSent = sentSuccessIds[`${item.enrollment_id}-${selectedTerm}`];
-    const isTiny = width < 300;
+    const isDownloading = downloadingId === `${item.enrollment_id}-${selectedTerm}`;
+    const isTinyLocal = width < 300;
+
     return (
-      <View style={[styles.resultCard, isTiny && { flexDirection: 'column', alignItems: 'flex-start' }]}>
-        <View style={[styles.rankBadge, isTiny && { marginBottom: 12 }]}>
+      <View style={[styles.resultCard, isTinyLocal && { flexDirection: 'column', alignItems: 'flex-start' }]}>
+        <View style={[styles.rankBadge, isTinyLocal && { marginBottom: 12 }]}>
           <ThemedText style={styles.rankText}>{classReportData.indexOf(item) + 1}</ThemedText>
         </View>
-        <View style={[styles.studentInfo, isTiny && { marginLeft: 0, width: '100%' }]}>
+        <View style={[styles.studentInfo, isTinyLocal && { marginLeft: 0, width: '100%' }]}>
           <ThemedText style={styles.resultTitle}>{item.name}</ThemedText>
           <View style={styles.metaRow}>
             <Ionicons name="calendar-outline" size={11} color={Colors.accent.gold} />
@@ -398,12 +551,14 @@ export default function ReportSearchScreen() {
               {sessions.find(s => String(s.id) === selectedSession)?.session_name || 'Current'} • {selectedTerm === '1' ? 'First' : selectedTerm === '2' ? 'Second' : 'Third'} Term
             </ThemedText>
           </View>
-          <View style={styles.cardActions}>
+
+          {/* Row 1: Preview + Email Official */}
+          <View style={[styles.cardActions, { marginBottom: 8 }]}>
             <TouchableOpacity
               style={styles.fullActionBtn}
               onPress={() => handleNativePreview(item, selectedTerm)}
             >
-              <Ionicons name="eye-outline" size={isTiny ? 12 : 14} color={C.text} />
+              <Ionicons name="eye-outline" size={isTinyLocal ? 12 : 14} color={C.text} />
               <ThemedText style={styles.actionBtnText}>Preview</ThemedText>
             </TouchableOpacity>
 
@@ -416,16 +571,51 @@ export default function ReportSearchScreen() {
                 sessionId: Number(selectedSession)
               })}
             >
-              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={isTiny ? 12 : 14} color={isSent ? "#10B981" : C.text} />
+              <Ionicons name={isSent ? "checkmark-circle" : "mail-outline"} size={isTinyLocal ? 12 : 14} color={isSent ? "#10B981" : C.text} />
               <ThemedText style={[styles.actionBtnText, isSent && { color: '#10B981' }]}>
                 {isSent ? "Sent" : "Email Official"}
               </ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {/* Row 2: Share PDF + My Mail */}
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={[styles.fullActionBtn, { borderColor: Colors.accent.gold, backgroundColor: 'rgba(250, 204, 21, 0.05)' }]}
+              onPress={() => handleDownloadAndShare(item.enrollment_id, item.name, Number(selectedTerm), Number(selectedSession))}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <ActivityIndicator size="small" color={Colors.accent.gold} />
+              ) : (
+                <>
+                  <Ionicons name="share-social-outline" size={isTinyLocal ? 12 : 14} color={Colors.accent.gold} />
+                  <ThemedText style={[styles.actionBtnText, { color: Colors.accent.gold }]}>Share PDF</ThemedText>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.fullActionBtn, { borderColor: '#60A5FA', backgroundColor: 'rgba(96, 165, 250, 0.05)' }]}
+              onPress={() => handleSendFromDeviceMail(item.enrollment_id, item.name, Number(selectedTerm), Number(selectedSession))}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <ActivityIndicator size="small" color="#60A5FA" />
+              ) : (
+                <>
+                  <Ionicons name="paper-plane-outline" size={isTinyLocal ? 12 : 14} color="#60A5FA" />
+                  <ThemedText style={[styles.actionBtnText, { color: '#60A5FA' }]}>My Mail</ThemedText>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </View>
     );
   };
+
+  // ─── JSX ──────────────────────────────────────────────────────────────────
 
   return (
     <ThemedView style={styles.mainWrapper}>
@@ -566,11 +756,11 @@ export default function ReportSearchScreen() {
               </TouchableOpacity>
               {batchSearchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setBatchSearchQuery('')}>
-                   <ThemedText style={{ color: Colors.accent.gold, fontSize: 10, fontWeight: '700' }}>CLEAR</ThemedText>
+                  <ThemedText style={{ color: Colors.accent.gold, fontSize: 10, fontWeight: '700' }}>CLEAR</ThemedText>
                 </TouchableOpacity>
               )}
             </View>
-            
+
             <View style={[styles.searchWrapper, { height: 42, borderRadius: 12, backgroundColor: C.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}>
               <Ionicons name="search" size={16} color={C.textMuted} />
               <TextInput
@@ -597,12 +787,12 @@ export default function ReportSearchScreen() {
             </View>
           ) : (
             <FlatList
-              data={showingReportData 
-                ? classReportData.filter(s => 
-                    (s.name || `${s.first_name} ${s.last_name}`)
+              data={showingReportData
+                ? classReportData.filter(s =>
+                  (s.name || `${s.first_name} ${s.last_name}`)
                     .toLowerCase()
                     .includes(batchSearchQuery.toLowerCase())
-                  ) 
+                )
                 : results}
               keyExtractor={(item) => `report-${item.enrollment_id}`}
               renderItem={showingReportData ? renderClassReportStudent : renderStudentItem}
@@ -723,15 +913,15 @@ export default function ReportSearchScreen() {
               <TextInput style={styles.modalInput} placeholder="name@email.com" placeholderTextColor={C.textMuted} value={emailInput} onChangeText={setEmailInput} keyboardType="email-address" autoCapitalize="none" />
             </View>
             <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={[styles.modalCancel, loading && { opacity: 0.5 }]} 
+              <TouchableOpacity
+                style={[styles.modalCancel, loading && { opacity: 0.5 }]}
                 onPress={() => setCurrentEmailRequest(null)}
                 disabled={loading}
               >
                 <ThemedText style={styles.modalCancelText}>Cancel</ThemedText>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalSubmit, loading && { opacity: 0.7 }]} 
+              <TouchableOpacity
+                style={[styles.modalSubmit, loading && { opacity: 0.7 }]}
                 onPress={handleEmailModalSubmit}
                 disabled={loading}
               >
@@ -777,7 +967,6 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     heroContent: { marginTop: 'auto', marginBottom: isTiny ? 12 : 18 },
     heroSubtitle: { color: Colors.accent.gold, fontSize: isTiny ? 8 : 9, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
     heroTitle: { color: C.text, fontSize: isTiny ? 22 : 28, fontWeight: '900', letterSpacing: -1 },
-
     contentWrapper: { paddingHorizontal: isTiny ? 16 : 20, marginTop: 0 },
     glassCard: { backgroundColor: C.card, borderRadius: isTiny ? 20 : 28, padding: isTiny ? 14 : 20, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 16 },
     modeToggle: { flexDirection: 'row', backgroundColor: C.inputBg, borderRadius: 14, padding: 3, marginBottom: isTiny ? 14 : 20 },
@@ -785,10 +974,8 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     activeModeBtn: { backgroundColor: Colors.accent.gold },
     modeBtnText: { color: C.textSecondary, fontSize: isTiny ? 10 : 12, fontWeight: '700' },
     activeModeBtnText: { color: Colors.accent.navy, fontWeight: '800' },
-
     searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 14, paddingHorizontal: 14, height: isTiny ? 44 : 48, borderWidth: 1, borderColor: C.inputBorder },
     searchInput: { flex: 1, marginLeft: 10, color: C.inputText, fontSize: isTiny ? 11 : 13, fontWeight: '600' },
-
     filtersArea: { gap: 12, marginBottom: 10 },
     filterRow: { flexDirection: 'column', gap: 12 },
     filterGroup: { marginBottom: 4 },
@@ -800,7 +987,6 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     selectorItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
     selectorItemText: { color: C.textSecondary, fontSize: 11, fontWeight: '600' },
     selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
-
     backLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     listContent: { paddingHorizontal: isTiny ? 16 : 20, paddingTop: 8, paddingBottom: 100 },
     resultCard: { backgroundColor: C.card, borderRadius: 20, padding: isTiny ? 12 : 14, flexDirection: 'row', alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder },
@@ -821,16 +1007,13 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     cardActions: { gap: 8, flexDirection: 'row' },
     fullActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.cardBorder },
     actionBtnText: { fontSize: 10, fontWeight: '700', color: C.text },
-
     centerLoader: { padding: 40, alignItems: 'center' },
     loaderText: { color: Colors.accent.gold, marginTop: 10, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
     errorCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 12, borderRadius: 12 },
     errorText: { color: '#EF4444', fontSize: 12, fontWeight: '600', flex: 1 },
-
     emptyIconCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
     emptyTitle: { color: C.text, fontSize: 14, fontWeight: '800', marginBottom: 6 },
     emptySubtitle: { color: C.textSecondary, fontSize: 11, textAlign: 'center', lineHeight: 16 },
-
     previewOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: isTiny ? 4 : 20 },
     previewContainer: { borderRadius: isTiny ? 16 : 24, flex: 1, maxHeight: isTiny ? '98%' : '85%', overflow: 'hidden', borderWidth: 1, borderColor: C.cardBorder },
     previewHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: C.divider },
@@ -852,9 +1035,9 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     previewRegenerateDisabled: { opacity: 0.5 },
     previewSubmit: { flex: 1, height: 44, backgroundColor: Colors.accent.gold, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
     previewSubmitText: { color: Colors.accent.navy, fontWeight: '900', fontSize: 13 },
-
     modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'center', padding: 20 },
     modalContent: { backgroundColor: C.modalBg, borderRadius: 24, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: C.cardBorder },
+    modalTitle: { fontSize: 18, fontWeight: '900', color: C.text, marginBottom: 6 },
     modalSubtitle: { color: C.textSecondary, fontSize: 12, textAlign: 'center', marginBottom: 18, lineHeight: 18 },
     inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 14, paddingHorizontal: 14, height: 48, marginBottom: 18, borderWidth: 1, borderColor: C.inputBorder, width: '100%' },
     modalInput: { flex: 1, marginLeft: 10, color: C.inputText, fontSize: 14, fontWeight: '600' },

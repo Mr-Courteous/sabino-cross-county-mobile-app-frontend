@@ -336,25 +336,16 @@ export default function PricingPage() {
                         </>
                       ) : null}
 
-                      {/* ── Flutterwave Web Checkout — ALWAYS shown on mobile ─────────────
-                          When Google Play loaded: shown as "HAVING TROUBLE?" alternative.
-                          When Google Play failed/unavailable: shown as the primary option.
-                          Google-safe: opens Flutterwave in the device browser, outside app.
-                          Supports: African cards, bank transfer, USSD, mobile money.
-                      ──────────────────────────────────────────────────────────────────── */}
+                      {/* ── School Billing Portal (B2B alternative) ───────────────────── */}
                       <View style={styles.webPayDivider}>
                         <View style={styles.webPayDividerLine} />
-                        <Text style={styles.webPayDividerText}>
-                          {rcPackage ? 'HAVING TROUBLE?' : 'COMPLETE PAYMENT'}
-                        </Text>
+                        <Text style={styles.webPayDividerText}>INSTITUTIONAL BILLING</Text>
                         <View style={styles.webPayDividerLine} />
                       </View>
 
                       <Text style={styles.webPayHint}>
-                        {rcPackage
-                          ? "If your card isn't working on Google Play, complete your renewal via our secure web checkout — supports bank transfer, USSD, and mobile money."
-                          : 'Complete your renewal via our secure web checkout — supports card, bank transfer, USSD, and mobile money.'
-                        }
+                        Schools and institutions can complete payment via bank transfer, card,
+                        USSD, or mobile money through our secure school billing portal.
                       </Text>
 
                       {/* Step 1: generate link and open in browser */}
@@ -370,7 +361,7 @@ export default function PricingPage() {
                           ) : (
                             <>
                               <Ionicons name="globe-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
-                              <Text style={styles.webPayButtonText}>RENEW VIA WEB CHECKOUT</Text>
+                              <Text style={styles.webPayButtonText}>PAY VIA SCHOOL BILLING PORTAL</Text>
                             </>
                           )}
                         </TouchableOpacity>
@@ -380,7 +371,7 @@ export default function PricingPage() {
                       {webPayLinkOpened && (
                         <View style={{ width: '100%', alignItems: 'center' }}>
                           <Text style={styles.webPayReturnHint}>
-                            Complete payment in the browser, then come back here and tap below.
+                            Once your institution has completed payment through the billing portal, tap below to activate your account.
                           </Text>
                           <TouchableOpacity
                             style={[styles.webPayVerifyButton, webPayVerifying && { opacity: 0.6 }]}
@@ -393,7 +384,7 @@ export default function PricingPage() {
                             ) : (
                               <>
                                 <Ionicons name="checkmark-circle-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
-                                <Text style={styles.webPayVerifyText}>I'VE COMPLETED PAYMENT</Text>
+                                <Text style={styles.webPayVerifyText}>CONFIRM INSTITUTIONAL PAYMENT</Text>
                               </>
                             )}
                           </TouchableOpacity>
@@ -426,8 +417,8 @@ export default function PricingPage() {
                       </View>
 
                       <Text style={styles.webPayHint}>
-                        Complete your renewal via our secure web checkout — supports card, bank transfer, USSD, and mobile money.
-                      </Text>
+                        Schools and institutions can complete payment via bank transfer, card,
+                        USSD, or mobile money through our secure school billing portal                      </Text>
 
                       {/* Step 1: open Flutterwave in browser / new tab */}
                       {!webPayLinkOpened && (
@@ -442,7 +433,7 @@ export default function PricingPage() {
                           ) : (
                             <>
                               <Ionicons name="globe-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
-                              <Text style={styles.webPayButtonText}>RENEW VIA WEB CHECKOUT</Text>
+                              <Text style={styles.webPayButtonText}>PAY VIA SCHOOL BILLING PORTAL</Text>
                             </>
                           )}
                         </TouchableOpacity>
@@ -452,7 +443,7 @@ export default function PricingPage() {
                       {webPayLinkOpened && (
                         <View style={{ width: '100%', alignItems: 'center' }}>
                           <Text style={styles.webPayReturnHint}>
-                            Complete payment in the browser tab, then come back here and tap below.
+                            Once your institution has completed payment through the billing portal, tap below to activate your account.
                           </Text>
                           <TouchableOpacity
                             style={[styles.webPayVerifyButton, webPayVerifying && { opacity: 0.6 }]}
@@ -465,7 +456,7 @@ export default function PricingPage() {
                             ) : (
                               <>
                                 <Ionicons name="checkmark-circle-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
-                                <Text style={styles.webPayVerifyText}>I'VE COMPLETED PAYMENT</Text>
+                                <Text style={styles.webPayVerifyText}>CONFIRM INSTITUTIONAL PAYMENT</Text>
                               </>
                             )}
                           </TouchableOpacity>

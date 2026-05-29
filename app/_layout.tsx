@@ -1,8 +1,8 @@
 import { Stack } from 'expo-router';
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { requestAndStorePushToken } from '@/utils/push-notifications';
+import React, { useEffect, useState } from 'react';
+import { requestAndStorePushToken, setupForegroundPermissionCheck } from '@/utils/push-notifications';
 import { useRouter, useSegments } from 'expo-router';
-import { Platform, ActivityIndicator, View, AppState, Text } from 'react-native';
+import { Platform, ActivityIndicator, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ThemeProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
@@ -11,7 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { clearAllStorage } from '@/utils/storage';
+import * as Notifications from 'expo-notifications';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -207,25 +207,28 @@ function RootLayoutContent() {
   );
 }
 
+// Configure how notifications are displayed
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 export default function RootLayout() {
-  const [pushStatus, setPushStatus] = useState('');
 
   useEffect(() => {
-    requestAndStorePushToken().then(setPushStatus);
+    requestAndStorePushToken();
+  }, []);
+
+  useEffect(() => {
+    const cleanup = setupForegroundPermissionCheck();
+    return cleanup;
   }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      {/* Temporary debug banner — remove after testing */}
-      {pushStatus ? (
-        <Text style={{
-          position: 'absolute', top: 40, left: 10, right: 10,
-          backgroundColor: pushStatus === 'success' ? 'green' : 'red',
-          color: 'white', padding: 8, zIndex: 9999, fontSize: 11
-        }}>
-          PUSH: {pushStatus}
-        </Text>
-      ) : null}
       <AuthProvider>
         <ThemeProvider>
           <RootLayoutContent />
