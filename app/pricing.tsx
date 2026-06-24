@@ -36,6 +36,26 @@ import { CustomAlert } from '@/components/custom-alert';
 import { clearAllStorage } from '@/utils/storage';
 import { API_BASE_URL } from '@/utils/api-service';
 
+const logFbEvent = (event: string) => {
+  if (Platform.OS === 'web') return;
+  try {
+    const { AppEventsLogger } = require('react-native-fbsdk-next');
+    AppEventsLogger.logEvent(event);
+  } catch (e) {
+    // FB SDK not initialized — safe to ignore
+  }
+};
+
+const logFbPurchase = (amount: number, currency: string) => {
+  if (Platform.OS === 'web') return;
+  try {
+    const { AppEventsLogger } = require('react-native-fbsdk-next');
+    AppEventsLogger.logPurchase(amount, currency);
+  } catch (e) {
+    // FB SDK not initialized — safe to ignore
+  }
+};
+
 // ─── RevenueCat API key ────────────────────────────────────────────────────────
 const RC_GOOGLE_API_KEY = 'goog_DoercEbvtNXRhqfTjOYMkzCJKlX';
 
@@ -142,6 +162,10 @@ export default function PricingPage() {
 
       if (isActive) {
         await syncSubscriptionWithBackend();
+
+        // ✅ Meta Purchase event
+        logFbPurchase(rcPackage.product.price, rcPackage.product.currencyCode);
+
         setStep('success');
         setTimeout(() => router.replace('/dashboard' as any), 1500);
       } else {
@@ -240,6 +264,9 @@ export default function PricingPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Verification failed. Please wait a moment and try again.');
+
+      // ✅ Meta Purchase event (Flutterwave path)
+      logFbPurchase(29500, 'NGN');
 
       setStep('success');
       setTimeout(() => router.replace('/dashboard' as any), 1500);

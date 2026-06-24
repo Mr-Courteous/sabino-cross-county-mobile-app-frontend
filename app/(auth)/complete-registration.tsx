@@ -1,4 +1,24 @@
 import { View, ActivityIndicator, ScrollView, Platform, FlatList, ImageBackground, StyleSheet, Text, TouchableOpacity, useWindowDimensions, Image, Linking } from 'react-native';
+
+const logFbEvent = (event: string) => {
+  if (Platform.OS === 'web') return;
+  try {
+    const { AppEventsLogger } = require('react-native-fbsdk-next');
+    AppEventsLogger.logEvent(event);
+  } catch (e) {
+    // FB SDK not initialized — safe to ignore
+  }
+};
+
+const logFbPurchase = (amount: number, currency: string) => {
+  if (Platform.OS === 'web') return;
+  try {
+    const { AppEventsLogger } = require('react-native-fbsdk-next');
+    AppEventsLogger.logPurchase(amount, currency);
+  } catch (e) {
+    // FB SDK not initialized — safe to ignore
+  }
+};
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -193,6 +213,9 @@ export default function CompleteRegistrationScreen() {
         }
         setPaymentStep('info');
         setCurrentStep('payment');
+
+        // ✅ Fire Meta Completed Registration event
+        logFbEvent('fb_mobile_complete_registration');
       } else throw new Error(res.error || 'Setup failed');
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
@@ -231,6 +254,13 @@ export default function CompleteRegistrationScreen() {
       if (isActive) {
         // ← Sync backend DB now, don't wait for webhook
         await syncSubscriptionWithBackend();
+
+        // ✅ Fire Meta Purchase event
+        logFbPurchase(
+          rcPackage.product.price,
+          rcPackage.product.currencyCode
+        );
+
         setPaymentStep('success');
         // Auto-redirect to dashboard after a short delay
         setTimeout(() => {
@@ -336,6 +366,9 @@ export default function CompleteRegistrationScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Verification failed. Please wait a moment and try again.');
+
+      // ✅ Fire Meta Purchase event (Flutterwave path)
+      logFbPurchase(29500, 'NGN'); // use your actual plan amount
 
       // ✅ Payment confirmed — same success flow as Google Play
       setPaymentStep('success');
