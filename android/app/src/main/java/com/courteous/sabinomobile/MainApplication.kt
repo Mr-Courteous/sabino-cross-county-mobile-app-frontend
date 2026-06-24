@@ -44,11 +44,12 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
 
-    // Meta SDK MUST initialize before React Native loads
+    // Initialize Facebook SDK synchronously before anything else
+    FacebookSdk.setApplicationId("1604773563928085")
+    FacebookSdk.setClientToken("3645128436aefe497756f38f593c3f3a")
     FacebookSdk.sdkInitialize(applicationContext)
     AppEventsLogger.activateApp(this)
 
-    // React Native loads after
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
