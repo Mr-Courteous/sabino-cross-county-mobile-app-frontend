@@ -13,6 +13,11 @@
 
 # Add any project specific keep options here:
 
+# Facebook SDK
+-keep class com.facebook.** { *; }
+-keepnames class com.facebook.** { *; }
+-dontwarn com.facebook.**
+-keep class com.facebook.appevents.** { *; }
 # @generated begin expo-build-properties - expo prebuild (DO NOT MODIFY)
 -keep class com.dooboolab.RNIap.** { *; }
 # @generated end expo-build-properties
