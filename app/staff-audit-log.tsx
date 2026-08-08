@@ -46,6 +46,11 @@ const ACTION_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; label:
   'staff.password_changed': { icon: 'key-outline', label: 'changed their password', color: '#3B82F6' },
   'staff.password_reset': { icon: 'refresh-outline', label: 'reset their password', color: '#3B82F6' },
   'staff.self_registered': { icon: 'checkmark-done-outline', label: 'activated their account via invite code', color: '#22C55E' },
+  'student.created': { icon: 'person-add-outline', label: 'registered a student', color: '#22C55E' },
+  'student.updated': { icon: 'create-outline', label: 'edited a student\'s details', color: '#3B82F6' },
+  'student.deleted': { icon: 'trash-outline', label: 'removed a student', color: '#EF4444' },
+  'score.created': { icon: 'add-circle-outline', label: 'added a score', color: '#22C55E' },
+  'score.updated': { icon: 'create-outline', label: 'edited a score', color: '#3B82F6' },
 };
 
 export default function StaffAuditLogPage() {
@@ -128,6 +133,10 @@ export default function StaffAuditLogPage() {
 
   const targetName = (entry: AuditEntry) => {
     if (entry.target_staff_id && staffMap[entry.target_staff_id]) return staffMap[entry.target_staff_id].full_name;
+    // Non-staff targets (students, scores, etc.) won't resolve via staffMap —
+    // fall back to whatever descriptive name the backend put in `details`.
+    if (entry.details?.studentName) return entry.details.studentName;
+    if (entry.details?.name) return entry.details.name;
     if (entry.details?.email) return entry.details.email;
     return null;
   };

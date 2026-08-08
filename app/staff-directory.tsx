@@ -226,10 +226,13 @@ export default function StaffDirectoryPage() {
 
 function StatusBadge({ status }: { status: string }) {
   const normalized = (status || '').toLowerCase();
-  const isActive = normalized === 'active';
-  const isPending = normalized === 'pending' || normalized === 'invited' || normalized === 'password_reset_required';
+  // An account exists and can log in right now — it just hasn't set its
+  // own password yet. That's not the same as an invite with no account.
+  const needsPasswordReset = normalized === 'password_reset_required';
+  const isActive = normalized === 'active' || needsPasswordReset;
+  const isPending = normalized === 'pending' || normalized === 'invited';
 
-  const label = isActive ? 'Active' : isPending ? 'Pending' : status;
+  const label = needsPasswordReset ? 'Active · Reset pending' : isActive ? 'Active' : isPending ? 'Pending' : status;
   const color = isActive ? '#22C55E' : isPending ? '#F59E0B' : '#94A3B8';
 
   return (
