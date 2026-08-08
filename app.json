@@ -70,7 +70,17 @@
       [
         "./plugins/withAdIdPermission"
       ],
-      "expo-mail-composer"
+      "expo-mail-composer",
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "1604773563928085",
+          "clientToken": "3645128436aefe497756f38f593c3f3a",
+          "displayName": "Sabino Edu",
+          "advertiserIDCollectionEnabled": true,
+          "autoLogAppEventsEnabled": true
+        }
+      ]
     ],
     "extra": {
       "eas": {

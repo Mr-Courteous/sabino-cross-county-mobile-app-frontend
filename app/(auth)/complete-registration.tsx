@@ -14,9 +14,12 @@ const logFbPurchase = (amount: number, currency: string) => {
   if (Platform.OS === 'web') return;
   try {
     const { AppEventsLogger } = require('react-native-fbsdk-next');
-    AppEventsLogger.logPurchase(amount, currency);
+    // Use logEvent instead of logPurchase — more reliable across SDK versions
+    AppEventsLogger.logEvent('fb_mobile_purchase', amount, {
+      fb_currency: currency,
+    });
   } catch (e) {
-    // FB SDK not initialized — safe to ignore
+    console.warn('[FB] Purchase event failed:', e); // ← log it, don't swallow it
   }
 };
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -32,6 +35,7 @@ import { CustomInput } from '@/components/custom-input';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/design-system';
+import { syncSubscriptionWithRetries } from '@/utils/subscription-sync';
 
 const REVENUECAT_GOOGLE_API_KEY = 'goog_DoercEbvtNXRhqfTjOYMkzCJKlX';
 
@@ -53,6 +57,7 @@ export default function CompleteRegistrationScreen() {
   const [loadingPackage, setLoadingPackage] = useState(isMobilePlatform);
   const [purchasing, setPurchasing] = useState(false);
   const [billingMessage, setBillingMessage] = useState('');
+  const [confirmingMessage, setConfirmingMessage] = useState('');
   const [paymentStep, setPaymentStep] = useState<'info' | 'purchasing' | 'success'>('info');
   const [schoolId, setSchoolId] = useState<number | null>(null);
 
@@ -221,23 +226,21 @@ export default function CompleteRegistrationScreen() {
     finally { setLoading(false); }
   };
 
-  const syncSubscriptionWithBackend = async () => {
+  const syncSubscriptionWithBackend = async (): Promise<{ isActive: boolean } | null> => {
     try {
       const token = await getAuthToken(); // already stored from registration
-      if (!token) return;
+      if (!token) return null;
 
-      const response = await fetch(`${API_BASE_URL}/api/schools/sync-subscription`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+      // RevenueCat's REST API can take a few seconds to catch up right
+      // after a purchase — retry a few times instead of giving up on the
+      // first check. See utils/subscription-sync.ts for the full story.
+      return await syncSubscriptionWithRetries(token, (attempt, max) => {
+        setConfirmingMessage(attempt === 1 ? 'Confirming your payment...' : `Confirming your payment (${attempt}/${max})...`);
       });
-      const data = await response.json();
-      console.log('[Registration] Sync result:', data);
-    } catch (err) {
-      // Non-fatal — webhook will catch it if sync fails
-      console.warn('[Registration] Sync failed, webhook will handle it:', err);
+    } catch {
+      return null;
+    } finally {
+      setConfirmingMessage('');
     }
   };
 
@@ -248,24 +251,35 @@ export default function CompleteRegistrationScreen() {
     setPaymentStep('purchasing');
 
     try {
+      try {
+        const currentAppUserId = await Purchases.getAppUserID();
+        console.log(`[RC] app_user_id right before purchase: ${currentAppUserId}`);
+      } catch { /* logging only, never block the purchase on this */ }
+
       const { customerInfo } = await Purchases.purchasePackage(rcPackage);
-      const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
+      const clientSaysActive = Object.keys(customerInfo.entitlements.active).length > 0;
 
-      if (isActive) {
-        // ← Sync backend DB now, don't wait for webhook
-        await syncSubscriptionWithBackend();
+      if (clientSaysActive) {
+        // Ask the backend to verify with RevenueCat REST API — this is the real gate
+        const syncResult = await syncSubscriptionWithBackend();
 
-        // ✅ Fire Meta Purchase event
-        logFbPurchase(
-          rcPackage.product.price,
-          rcPackage.product.currencyCode
-        );
-
-        setPaymentStep('success');
-        // Auto-redirect to dashboard after a short delay
-        setTimeout(() => {
-          router.replace('/dashboard' as any);
-        }, 1500);
+        if (syncResult?.isActive) {
+          // ✅ Backend confirmed via RevenueCat REST API — safe to log
+          logFbPurchase(rcPackage.product.price, rcPackage.product.currencyCode);
+          setPaymentStep('success');
+          // Auto-redirect to dashboard after a short delay
+          setTimeout(() => {
+            router.replace('/dashboard' as any);
+          }, 1500);
+        } else {
+          // Client said active but backend still couldn't confirm after
+          // retrying. The charge almost certainly went through — this is
+          // a sync delay, not a failed payment. Point them at "Restore
+          // Purchases" (which re-runs the same confirmation) instead of
+          // implying they need to pay again.
+          setBillingMessage('Payment received! Confirmation is taking a little longer than usual — tap "Restore Purchases" below in a moment to finish activating.');
+          setPaymentStep('info');
+        }
       } else {
         throw new Error('Payment completed but access not yet activated. Try restoring.');
       }
@@ -293,11 +307,15 @@ export default function CompleteRegistrationScreen() {
       const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
 
       if (isActive) {
-        await syncSubscriptionWithBackend(); // ← same sync
-        setPaymentStep('success');
-        setTimeout(() => {
-          router.replace('/dashboard' as any);
-        }, 1500);
+        const syncResult = await syncSubscriptionWithBackend(); // ← same retrying sync
+        if (syncResult?.isActive) {
+          setPaymentStep('success');
+          setTimeout(() => {
+            router.replace('/dashboard' as any);
+          }, 1500);
+        } else {
+          setBillingMessage('Your purchase was found but is still being confirmed on our end. Please try again in a minute.');
+        }
       } else {
         setBillingMessage('No active subscriptions found.');
       }
@@ -571,7 +589,9 @@ export default function CompleteRegistrationScreen() {
                     <View style={styles.centered}>
                       <ActivityIndicator size="large" color="#FACC15" />
                       <Text style={styles.loadingTitle}>Connecting to Store...</Text>
-                      <Text style={styles.loadingSubtitle}>Please complete the payment in the system dialog.</Text>
+                      <Text style={styles.loadingSubtitle}>
+                        {confirmingMessage || 'Please complete the payment in the system dialog.'}
+                      </Text>
                     </View>
                   )}
 

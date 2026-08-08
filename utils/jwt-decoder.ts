@@ -143,3 +143,32 @@ export const getCountryIdFromToken = (token: string): number | null => {
     return null;
   }
 };
+
+/**
+ * Get the school-account role from a token: 'owner' or 'admin'.
+ * Owner tokens (the original school login) have no `role` field at all,
+ * or an explicit 'owner' — both mean owner. Only an explicit 'admin'
+ * (a staff account created via Staff Onboarding) means admin.
+ * Returns null for non-school tokens (e.g. student tokens).
+ */
+export const getUserRoleFromToken = (token: string): 'owner' | 'admin' | null => {
+  try {
+    const decoded = decodeToken(token);
+    if (!decoded || decoded.type !== 'school') return null;
+
+    return decoded.role === 'admin' ? 'admin' : 'owner';
+  } catch (error) {
+
+    return null;
+  }
+};
+
+/**
+ * Convenience check: is this a school-owner token (not an admin/staff
+ * account)? Use this to gate anything owner-only in the UI — deleting
+ * data, or managing other admin accounts.
+ */
+export const isSchoolOwner = (token: string | null | undefined): boolean => {
+  if (!token) return false;
+  return getUserRoleFromToken(token) === 'owner';
+};

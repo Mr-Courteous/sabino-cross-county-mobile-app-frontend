@@ -1,152 +1,196 @@
+/**
+ * utils/push-notifications.ts
+ *
+ * Two-phase push token strategy
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * PHASE 1 — App open, no auth needed
+ *   requestAndStorePushToken()
+ *   → Asks OS for permission, gets Expo token, POSTs to the public endpoint.
+ *   → Saved to `device_tokens` with school_id = NULL immediately.
+ *   → You can already reach this device with send-all / send-anonymous.
+ *
+ * PHASE 2 — After login, link the token to the user's identity
+ *   syncPushTokenToBackend(jwt, 'school')   → updates `device_tokens`.school_id
+ *   syncPushTokenToBackend(jwt, 'student')  → upserts into `student_push_tokens`
+ *
+ * For SCHOOLS this means ONE row in `device_tokens`:
+ *   open app  →  school_id = NULL
+ *   login     →  school_id = X       (same row, updated in place)
+ *
+ * For STUDENTS this means TWO rows across TWO tables ("saves as two"):
+ *   open app  →  device_tokens row,        school_id = NULL  (for broadcasts)
+ *   login     →  student_push_tokens row,  student_id = Y    (for student-targeted sends)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Usage
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ *  _layout.tsx (RootLayout — runs on every app open):
+ *    useEffect(() => { requestAndStorePushToken(); }, []);
+ *    useEffect(() => { const cleanup = setupForegroundPermissionCheck(); return cleanup; }, []);
+ *
+ *  (auth)/index.tsx (school login success):
+ *    syncPushTokenToBackend(jwtToken, 'school');
+ *
+ *  (student)/index.tsx (student login success):
+ *    syncPushTokenToBackend(jwtToken, 'student');
+ *
+ *  (auth)/complete-registration.tsx (new school registration success):
+ *    syncPushTokenToBackend(jwtToken, 'school');
+ */
+
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
-import { API_BASE_URL } from '@/utils/api-service';
 
-const TOKEN_STORAGE_KEY = 'expoPushToken';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
+
+// ─── Internal helpers ────────────────────────────────────────────────────────
 
 /**
- * Call this when the app first loads (root layout).
- * Requests permission immediately and saves token to backend.
- * Returns a status string for debug banner (remove banner in production).
+ * Gets the Expo push token string.
+ * Returns null on simulators, web, or if the user denies permission.
  */
-export async function requestAndStorePushToken(): Promise<string> {
-  try {
-    if (!Device.isDevice || Platform.OS === 'web') {
-      return 'skipped: not a real device or web';
-    }
+async function getExpoPushToken(): Promise<string | null> {
+  if (!Device.isDevice || Platform.OS === 'web') return null;
 
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  let finalStatus = existing;
 
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
+  if (existing !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
 
-    if (finalStatus !== 'granted') {
-      return 'permission denied — user must enable in phone settings';
-    }
+  if (finalStatus !== 'granted') return null;
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Sabino Edu',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#2563EB',
-      });
-    }
+  // projectId required for Expo SDK 49+
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    Constants.easConfig?.projectId;
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    const { data: expoPushToken } = await Notifications.getExpoPushTokenAsync({ projectId });
-    const appVersion = Constants.expoConfig?.version ?? null;
+  const result = await Notifications.getExpoPushTokenAsync(
+    projectId ? { projectId } : undefined
+  );
 
-    // Save locally so syncPushTokenToBackend can use it after login
-    await SecureStore.setItemAsync(TOKEN_STORAGE_KEY, expoPushToken);
+  return result.data ?? null;
+}
 
-    // Send immediately to public endpoint — no auth needed
-    const response = await fetch(`${API_BASE_URL}/api/notifications/register-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: expoPushToken, appVersion }),
+/** Android requires an explicit channel. Safe no-op on iOS. */
+function ensureAndroidChannel(): void {
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
     });
-
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Backend rejected token');
-
-    return 'success';
-  } catch (error: any) {
-    return `FAILED: ${error?.message || String(error)}`;
   }
 }
 
+function getAppVersion(): string | null {
+  return (
+    Constants.expoConfig?.version ??
+    Constants.manifest?.version ??
+    null
+  );
+}
+
+// ─── Phase 1: Public registration (no auth) ─────────────────────────────────
+
 /**
- * Call this right after login succeeds.
- * Links the stored token to the school account in device_tokens table.
+ * Call this in RootLayout on every app open (empty-dep useEffect).
+ *
+ * Requests OS permission → gets Expo token → POSTs to the public
+ * /api/notifications/register-token endpoint (no JWT required).
+ *
+ * The token is stored in `device_tokens` with school_id = NULL so you
+ * can reach the device immediately with broadcast / anonymous sends,
+ * even before the user ever logs in.
+ *
+ * Non-blocking — fire and forget. Never throws.
  */
-export async function syncPushTokenToBackend(authToken: string): Promise<void> {
+export async function requestAndStorePushToken(): Promise<void> {
   try {
-    if (Platform.OS === 'web') return;
+    ensureAndroidChannel();
 
-    const expoPushToken = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
-    if (!expoPushToken) return;
+    const token = await getExpoPushToken();
+    if (!token) return;
 
-    const appVersion = Constants.expoConfig?.version ?? null;
+    await fetch(`${API_BASE_URL}/api/notifications/register-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, appVersion: getAppVersion() }),
+    });
+  } catch {
+    // Intentionally silent — a failed token save is not user-visible.
+  }
+}
 
-    await fetch(`${API_BASE_URL}/api/schools/push-token`, {
+// ─── Phase 2: Link token to identity after login / registration ──────────────
+
+/**
+ * Call this immediately after a successful login or registration,
+ * once you have a JWT in hand.
+ *
+ * userType 'school'
+ *   POSTs to /api/schools/push-token (auth required).
+ *   Updates the existing `device_tokens` row: school_id is filled in.
+ *   Result: one row in `device_tokens`, fully linked.
+ *
+ * userType 'student'
+ *   POSTs to /api/students/push-token (auth required).
+ *   Upserts into `student_push_tokens` keyed by student_id.
+ *   The original anonymous row in `device_tokens` (school_id = NULL) is
+ *   intentionally left in place — it keeps the student reachable via
+ *   send-all and send-anonymous. This is the "saves as two" behaviour.
+ *
+ * Non-blocking — fire and forget. Never throws.
+ */
+export async function syncPushTokenToBackend(
+  jwtToken: string,
+  userType: 'school' | 'student' = 'school'
+): Promise<void> {
+  try {
+    const token = await getExpoPushToken();
+    if (!token) return;
+
+    const endpoint =
+      userType === 'student'
+        ? `${API_BASE_URL}/api/students/push-token`
+        : `${API_BASE_URL}/api/schools/push-token`;
+
+    await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
+        Authorization: `Bearer ${jwtToken}`,
       },
-      body: JSON.stringify({ token: expoPushToken, appVersion }),
+      body: JSON.stringify({ token, appVersion: getAppVersion() }),
     });
-  } catch (error) {
-    console.warn('[Push] Token sync failed silently:', error);
+  } catch {
+    // Intentionally silent — auth flow must not be blocked by this.
   }
 }
 
-/**
- * Call this when you want to re-check permission (e.g. when app comes to foreground).
- * If previously denied, opens phone Settings so user can enable manually.
- * Returns current permission status.
- */
-export async function recheckAndPromptIfNeeded(): Promise<'granted' | 'denied' | 'needs_settings'> {
-  try {
-    if (!Device.isDevice || Platform.OS === 'web') return 'denied';
-
-    const { status } = await Notifications.getPermissionsAsync();
-
-    if (status === 'granted') {
-      // Already granted — make sure token is registered
-      await requestAndStorePushToken();
-      return 'granted';
-    }
-
-    // On Android you can try requesting again
-    // On iOS once denied it's permanent — must go to settings
-    if (Platform.OS === 'android') {
-      const { status: newStatus } = await Notifications.requestPermissionsAsync();
-      if (newStatus === 'granted') {
-        await requestAndStorePushToken();
-        return 'granted';
-      }
-    }
-
-    // Denied and can't re-request — open settings
-    await Linking.openSettings();
-    return 'needs_settings';
-  } catch (error) {
-    console.warn('[Push] Recheck failed:', error);
-    return 'denied';
-  }
-}
+// ─── Foreground notification display setup ───────────────────────────────────
 
 /**
- * Sets up a listener that re-checks push permission every time
- * the app comes back to foreground (e.g. after user visited Settings).
- * Call this once in your root layout.
- * Returns the cleanup function to call on unmount.
+ * Call once in RootLayout to handle foreground notifications.
+ * Returns a cleanup function for useEffect.
+ *
+ *   useEffect(() => {
+ *     const cleanup = setupForegroundPermissionCheck();
+ *     return cleanup;
+ *   }, []);
  */
-export function setupForegroundPermissionCheck(
-  onStatusChange?: (status: 'granted' | 'denied') => void
-): () => void {
-  const handleAppStateChange = async (nextState: AppStateStatus) => {
-    if (nextState === 'active') {
-      // App came back to foreground — re-check permission
-      const { status } = await Notifications.getPermissionsAsync();
-      if (status === 'granted') {
-        // Silently register token in case it wasn't saved before
-        await requestAndStorePushToken();
-        onStatusChange?.('granted');
-      } else {
-        onStatusChange?.('denied');
-      }
-    }
-  };
+export function setupForegroundPermissionCheck(): () => void {
+  const subscription = Notifications.addNotificationReceivedListener(() => {
+    // Extend here to handle foreground notifications, e.g. show an
+    // in-app banner instead of the system tray notification.
+  });
 
-  const subscription = AppState.addEventListener('change', handleAppStateChange);
   return () => subscription.remove();
 }

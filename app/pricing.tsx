@@ -35,6 +35,7 @@ import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
 import { clearAllStorage } from '@/utils/storage';
 import { API_BASE_URL } from '@/utils/api-service';
+import { syncSubscriptionWithRetries } from '@/utils/subscription-sync';
 
 const logFbEvent = (event: string) => {
   if (Platform.OS === 'web') return;
@@ -50,9 +51,12 @@ const logFbPurchase = (amount: number, currency: string) => {
   if (Platform.OS === 'web') return;
   try {
     const { AppEventsLogger } = require('react-native-fbsdk-next');
-    AppEventsLogger.logPurchase(amount, currency);
+    // Use logEvent instead of logPurchase — more reliable across SDK versions
+    AppEventsLogger.logEvent('fb_mobile_purchase', amount, {
+      fb_currency: currency,
+    });
   } catch (e) {
-    // FB SDK not initialized — safe to ignore
+    console.warn('[FB] Purchase event failed:', e); // ← log it, don't swallow it
   }
 };
 
@@ -71,6 +75,7 @@ export default function PricingPage() {
   const [loadingPackage, setLoadingPackage] = useState(isMobilePlatform);
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState('');
+  const [confirmingMessage, setConfirmingMessage] = useState('');
 
   // ── Web checkout fallback state ──────────────────────────────────────────────
   const [webPayLoading, setWebPayLoading] = useState(false);
@@ -127,24 +132,23 @@ export default function PricingPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const syncSubscriptionWithBackend = async () => {
+  const syncSubscriptionWithBackend = async (): Promise<{ isActive: boolean } | null> => {
     try {
       const token = Platform.OS !== 'web'
         ? await SecureStore.getItemAsync('userToken')
         : localStorage.getItem('userToken');
-      if (!token) return;
+      if (!token) return null;
 
-      const response = await fetch(`${API_BASE_URL}/api/schools/sync-subscription`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+      // RevenueCat's REST API can take a few seconds to catch up right
+      // after a purchase — retry a few times instead of giving up on the
+      // first check. See utils/subscription-sync.ts for the full story.
+      return await syncSubscriptionWithRetries(token, (attempt, max) => {
+        setConfirmingMessage(attempt === 1 ? 'Confirming your payment...' : `Confirming your payment (${attempt}/${max})...`);
       });
-      const data = await response.json();
-      console.log('[Pricing] Sync result:', data);
-    } catch (err) {
-      console.warn('[Pricing] Sync failed, webhook will handle it:', err);
+    } catch {
+      return null;
+    } finally {
+      setConfirmingMessage('');
     }
   };
 
@@ -157,17 +161,32 @@ export default function PricingPage() {
     setStep('purchasing');
 
     try {
+      try {
+        const currentAppUserId = await Purchases.getAppUserID();
+        console.log(`[RC] app_user_id right before purchase: ${currentAppUserId}`);
+      } catch { /* logging only, never block the purchase on this */ }
+
       const { customerInfo } = await Purchases.purchasePackage(rcPackage);
-      const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
+      const clientSaysActive = Object.keys(customerInfo.entitlements.active).length > 0;
 
-      if (isActive) {
-        await syncSubscriptionWithBackend();
+      if (clientSaysActive) {
+        // Ask the backend to verify with RevenueCat REST API — this is the real gate
+        const syncResult = await syncSubscriptionWithBackend();
 
-        // ✅ Meta Purchase event
-        logFbPurchase(rcPackage.product.price, rcPackage.product.currencyCode);
-
-        setStep('success');
-        setTimeout(() => router.replace('/dashboard' as any), 1500);
+        if (syncResult?.isActive) {
+          // ✅ Backend confirmed via RevenueCat REST API — safe to log
+          logFbPurchase(rcPackage.product.price, rcPackage.product.currencyCode);
+          setStep('success');
+          setTimeout(() => router.replace('/dashboard' as any), 1500);
+        } else {
+          // Client said active but backend still couldn't confirm after
+          // retrying. Payment almost certainly went through — this is a
+          // sync delay, not a failed payment. "Restore Purchases" re-runs
+          // the same confirmation, so point them at it instead of implying
+          // they need to pay again.
+          setError('Payment received! Confirmation is taking a little longer than usual — tap "Restore Purchases" below in a moment to finish activating.');
+          setStep('info');
+        }
       } else {
         throw new Error('Payment completed but access not yet activated. Try restoring.');
       }
@@ -195,9 +214,13 @@ export default function PricingPage() {
       const isActive = Object.keys(customerInfo.entitlements.active).length > 0;
 
       if (isActive) {
-        await syncSubscriptionWithBackend();
-        setStep('success');
-        setTimeout(() => router.replace('/dashboard' as any), 1500);
+        const syncResult = await syncSubscriptionWithBackend();
+        if (syncResult?.isActive) {
+          setStep('success');
+          setTimeout(() => router.replace('/dashboard' as any), 1500);
+        } else {
+          setError('Your purchase was found but is still being confirmed on our end. Please try again in a minute.');
+        }
       } else {
         setError('No active subscriptions found.');
       }
@@ -524,7 +547,9 @@ export default function PricingPage() {
                 <View style={styles.centered}>
                   <ActivityIndicator size="large" color="#FACC15" />
                   <Text style={styles.loadingTitle}>Connecting to Store...</Text>
-                  <Text style={styles.loadingSubtitle}>Please complete the payment in the system dialog.</Text>
+                  <Text style={styles.loadingSubtitle}>
+                    {confirmingMessage || 'Please complete the payment in the system dialog.'}
+                  </Text>
                 </View>
               )}
 

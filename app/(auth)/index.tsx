@@ -35,6 +35,18 @@ export default function LoginScreen() {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
+    const persistSession = async (token: string, user: any, countryId: number | null) => {
+        if (Platform.OS === 'web') {
+            localStorage.setItem('userToken', token);
+            localStorage.setItem('userData', JSON.stringify(user));
+            if (countryId) localStorage.setItem('countryId', countryId.toString());
+        } else {
+            await SecureStore.setItemAsync('userToken', token);
+            await SecureStore.setItemAsync('userData', JSON.stringify(user));
+            if (countryId) await SecureStore.setItemAsync('countryId', countryId.toString());
+        }
+    };
+
     const handleLogin = async () => {
         if (!email || !password) {
             setError('Please enter email and password');
@@ -45,6 +57,8 @@ export default function LoginScreen() {
         setIsLoading(true);
 
         try {
+            // Try the school-owner login first — unchanged behaviour, owners
+            // authenticate exactly as before and never touch the branch below.
             const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -70,27 +84,51 @@ export default function LoginScreen() {
                     return;
                 }
 
-                if (Platform.OS === 'web') {
-                    localStorage.setItem('userToken', token);
-                    localStorage.setItem('userData', JSON.stringify(user));
-                    localStorage.setItem('countryId', countryId.toString());
-                } else {
-                    await SecureStore.setItemAsync('userToken', token);
-                    await SecureStore.setItemAsync('userData', JSON.stringify(user));
-                    await SecureStore.setItemAsync('countryId', countryId.toString());
+                await persistSession(token, user, countryId);
+                router.replace('/dashboard');
+                syncPushTokenToBackend(token); // <-- NEW
+                return;
+            }
+
+            // Owner login failed with invalid credentials — this email/password
+            // might belong to an admin (staff) account instead. Admin accounts
+            // live in a separate table with their own login route, so try that
+            // before giving up. Any other kind of failure (server error, etc.)
+            // is reported as-is without this fallback.
+            if (response.status === 401) {
+                const staffResponse = await fetch(`${API_BASE_URL}/api/staff-auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+                });
+
+                const staffData = await staffResponse.json();
+
+                if (staffResponse.ok && staffData.success && staffData.data?.token) {
+                    const { token, user, forcePasswordChange } = staffData.data;
+                    await persistSession(token, user, null);
+
+                    if (forcePasswordChange) {
+                        syncPushTokenToBackend(token); // <-- NEW
+                        router.replace({ pathname: '/(auth)/change-temp-password', params: { tempPassword: password } } as any);
+                    } else {
+                        router.replace('/dashboard');
+                        syncPushTokenToBackend(token); // <-- NEW
+                    }
+                    return;
                 }
 
-                // Navigate first so the user isn't waiting on push registration
-                router.replace('/dashboard');
-
-                // Register push token in the background — non-blocking
-                // If this fails for any reason it won't affect the login flow
-                syncPushTokenToBackend(token); // <-- NEW
-
-            } else {
-                setError(data.error || data.message || 'Invalid email or password');
+                if (staffData.code === 'ACCOUNT_DEACTIVATED') {
+                    setError(staffData.error);
+                } else {
+                    setError('Invalid email or password');
+                }
                 setIsLoading(false);
+                return;
             }
+
+            setError(data.error || data.message || 'Invalid email or password');
+            setIsLoading(false);
         } catch (err) {
             setError('Login failed. Please try again.');
             setIsLoading(false);
@@ -201,6 +239,15 @@ export default function LoginScreen() {
                                     style={styles.registerButton}
                                     textStyle={{ color: Colors.accent.blue, fontWeight: '800', fontSize: 11 }}
                                 />
+
+                                <TouchableOpacity
+                                    style={styles.studentChannel}
+                                    onPress={() => router.push('/(auth)/redeem-code' as any)}
+                                >
+                                    <ThemedText style={styles.studentChannelText}>
+                                        Have a staff invite code? <ThemedText style={styles.studentChannelHighlight}>Register here</ThemedText>
+                                    </ThemedText>
+                                </TouchableOpacity>
 
                                 <TouchableOpacity
                                     style={styles.studentChannel}

@@ -23,6 +23,7 @@ import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '@/utils/api-service';
+import { isSchoolOwner } from '@/utils/jwt-decoder';
 import { clearAllStorage } from '@/utils/storage';
 import { Colors } from '@/constants/design-system';
 import { ThemedView } from '@/components/themed-view';
@@ -107,10 +108,21 @@ export default function StudentsManager() {
   const [templateSuccess, setTemplateSuccess] = useState(false);
   const [bulkUploadVisible, setBulkUploadVisible] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
+  // Owner-vs-admin gating (Staff Onboarding): only the school owner can
+  // delete data. Defaults to true so a lone owner account (no admins
+  // added yet, or token decode fails) never loses its own delete access.
+  const [isOwner, setIsOwner] = useState(true);
 
   const getToken = async () => {
     return Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
   };
+
+  useEffect(() => {
+    (async () => {
+      const token = await getToken();
+      if (token) setIsOwner(isSchoolOwner(token));
+    })();
+  }, []);
 
   const fetchInitialData = useCallback(async () => {
     try {
@@ -539,12 +551,14 @@ export default function StudentsManager() {
                   <ThemedText style={styles.studentName} numberOfLines={1}>{item.first_name} {item.last_name}</ThemedText>
                   <ThemedText style={styles.studentSub}>{item.registration_number || 'No REG'}</ThemedText>
                 </View>
-                <TouchableOpacity 
-                  style={styles.deleteEnrollBtn} 
-                  onPress={() => confirmDeleteEnrollment(item)}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                </TouchableOpacity>
+                {isOwner && (
+                  <TouchableOpacity 
+                    style={styles.deleteEnrollBtn} 
+                    onPress={() => confirmDeleteEnrollment(item)}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                )}
               </View>
               
               <View style={styles.enrollmentDetails}>
@@ -645,7 +659,7 @@ export default function StudentsManager() {
                   <TextInput style={styles.formInput} value={form.phone} onChangeText={(t) => setForm({ ...form, phone: t })} placeholder="Phone" placeholderTextColor={C.textMuted} keyboardType="phone-pad" />
                 </View>
                 <CustomButton title={saving ? "SAVING..." : "SAVE RECORD"} onPress={saveStudent} loading={saving} variant="premium" style={{ marginTop: 20 }} />
-                 {editingId && (
+                 {editingId && isOwner && (
                    <View style={styles.dangerZone}>
                      <ThemedText style={styles.dangerTitle}>DANGER ZONE</ThemedText>
                      <TouchableOpacity 

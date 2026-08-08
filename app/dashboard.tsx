@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
+import { isSchoolOwner } from '@/utils/jwt-decoder';
 import { clearAllStorage } from '@/utils/storage';
 import { useTheme } from '@/contexts/theme-context';
 import { Colors } from '@/constants/design-system';
@@ -36,6 +37,10 @@ export default function DashboardPage() {
 
   const [schoolData, setSchoolData] = useState<any>(null);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  // Staff Onboarding: only the school owner sees/uses the "Manage Staff" entry.
+  // Defaults to true so a lone owner account (or a token-decode failure)
+  // never loses its own access.
+  const [isOwner, setIsOwner] = useState(true);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusAlert, setStatusAlert] = useState<{
@@ -62,6 +67,8 @@ export default function DashboardPage() {
         router.replace('/(auth)');
         return;
       }
+
+      setIsOwner(isSchoolOwner(token));
 
       await loadThemeFromPreferences();
 
@@ -225,6 +232,9 @@ export default function DashboardPage() {
             <ActionListItem title="Reports" icon="copy-outline" onPress={() => router.push('/report-cards')} C={C} styles={styles} />
             <ActionListItem title="Institution" icon="business-outline" onPress={() => router.push('/school-profile')} C={C} styles={styles} />
             <ActionListItem title="Branding" icon="color-palette-outline" onPress={() => router.push('/preferences')} C={C} styles={styles} />
+            {isOwner && (
+              <ActionListItem title="Manage Staff" subtitle="Add teachers/admins, invite codes" icon="people-circle-outline" onPress={() => router.push('/staff-directory')} C={C} styles={styles} />
+            )}
             <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2347042423411')} C={C} styles={styles} />
           </View>
         </View>

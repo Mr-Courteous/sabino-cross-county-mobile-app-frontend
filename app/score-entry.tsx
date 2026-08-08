@@ -18,6 +18,7 @@ import * as SecureStore from 'expo-secure-store';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '@/utils/api-service';
+import { isSchoolOwner } from '@/utils/jwt-decoder';
 import { Colors } from '@/constants/design-system';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -66,6 +67,10 @@ export default function ScoreEntryScreen() {
   
   // Authentication & Token
   const [token, setToken] = useState<string>('');
+  // Owner-vs-admin gating (Staff Onboarding): only the school owner can
+  // delete a score. Defaults to true so it never hides delete access
+  // before the token has loaded, or for a lone owner account.
+  const [isOwner, setIsOwner] = useState(true);
   const [countryId, setCountryId] = useState<number | null>(null);
   const [schoolId, setSchoolId] = useState<number | null>(null);
 
@@ -195,6 +200,7 @@ export default function ScoreEntryScreen() {
       }
 
       setToken(tokenValue);
+      setIsOwner(isSchoolOwner(tokenValue));
       setCountryId(countryIdValue);
       setSchoolId(schoolIdValue);
 
@@ -842,7 +848,7 @@ export default function ScoreEntryScreen() {
                               <View style={styles.totalIndicator}>
                                 <ThemedText style={[styles.totalValueText, { color: total > 0 ? Colors.accent.gold : C.textMuted }]}>{total}%</ThemedText>
                               </View>
-                              {score?.score_id && (
+                              {score?.score_id && isOwner && (
                                 <TouchableOpacity 
                                   onPress={() => {
                                     setStatusAlert({
