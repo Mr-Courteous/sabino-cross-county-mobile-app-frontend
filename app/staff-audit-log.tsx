@@ -62,15 +62,22 @@ export default function StaffAuditLogPage() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [staffMap, setStaffMap] = useState<Record<number, StaffLite>>({});
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+
+  const PAGE_SIZE = 30;
 
   const getToken = async () => {
     return Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
   };
 
-  const fetchAll = useCallback(async () => {
+  // reset=true -> first page, replaces the list (initial load / pull-to-refresh)
+  // reset=false -> next page, appended to the list (Load more)
+  const fetchAudit = useCallback(async (reset: boolean) => {
     try {
       const token = await getToken();
       if (!token) { router.replace('/(auth)'); return; }
@@ -80,49 +87,67 @@ export default function StaffAuditLogPage() {
         return;
       }
 
+      const before = reset ? '' : cursor ? `&before=${cursor}` : '';
       const [auditRes, adminsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/staff/audit-log?limit=100`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/staff/admins`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/staff/audit-log?limit=${PAGE_SIZE}${before}`, { headers: { Authorization: `Bearer ${token}` } }),
+        // Admin names only change rarely — no need to refetch on every "Load more".
+        reset
+          ? fetch(`${API_BASE_URL}/api/staff/admins`, { headers: { Authorization: `Bearer ${token}` } })
+          : Promise.resolve(null),
       ]);
 
-      if (auditRes.status === 402 || adminsRes.status === 402) { router.replace('/pricing'); return; }
-      if (auditRes.status === 401 || adminsRes.status === 401) { router.replace('/(auth)'); return; }
+      if (auditRes.status === 402 || adminsRes?.status === 402) { router.replace('/pricing'); return; }
+      if (auditRes.status === 401 || adminsRes?.status === 401) { router.replace('/(auth)'); return; }
 
       const auditData = await auditRes.json();
-      const adminsData = await adminsRes.json();
 
-      if (auditData.success) setEntries(auditData.data || []);
+      if (auditData.success) {
+        setEntries((prev) => (reset ? (auditData.data || []) : [...prev, ...(auditData.data || [])]));
+        setHasMore(!!auditData.pagination?.hasMore);
+        setCursor(auditData.pagination?.nextCursor ?? null);
+      }
 
-      if (adminsData.success) {
-        const map: Record<number, StaffLite> = {};
-        for (const a of adminsData.data?.admins || []) {
-          map[a.id] = { id: a.id, full_name: a.full_name, email: a.email };
+      if (adminsRes) {
+        const adminsData = await adminsRes.json();
+        if (adminsData.success) {
+          const map: Record<number, StaffLite> = {};
+          for (const a of adminsData.data?.admins || []) {
+            map[a.id] = { id: a.id, full_name: a.full_name, email: a.email };
+          }
+          setStaffMap(map);
         }
-        setStaffMap(map);
       }
     } catch (e) {
       // Silent — the list will just show fewer resolved names / entries.
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
       setHasLoadedOnce(true);
     }
-  }, [router]);
+  }, [router, cursor]);
 
   useFocusEffect(
     useCallback(() => {
       if (hasLoadedOnce) {
-        fetchAll();
+        fetchAudit(true);
       } else {
         setLoading(true);
-        fetchAll();
+        fetchAudit(true);
       }
-    }, [fetchAll, hasLoadedOnce])
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasLoadedOnce])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchAll();
+    fetchAudit(true);
+  };
+
+  const loadMore = () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    fetchAudit(false);
   };
 
   const actorName = (entry: AuditEntry) => {
@@ -194,6 +219,16 @@ export default function StaffAuditLogPage() {
             })}
           </View>
         )}
+
+        {hasMore && entries.length > 0 && (
+          <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore} disabled={loadingMore}>
+            {loadingMore ? (
+              <ActivityIndicator size="small" color={Colors.accent.gold} />
+            ) : (
+              <ThemedText style={styles.loadMoreText}>Load more</ThemedText>
+            )}
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </ThemedView>
   );
@@ -231,5 +266,8 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     entryActor: { fontWeight: '800' },
     entryTarget: { fontWeight: '700', color: Colors.accent.gold },
     entryTime: { color: C.textMuted, fontSize: 10, fontWeight: '600', marginTop: 4 },
+
+    loadMoreBtn: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, marginTop: 14, backgroundColor: C.actionItemBg, borderRadius: 14, borderWidth: 1, borderColor: C.actionItemBorder },
+    loadMoreText: { color: Colors.accent.gold, fontSize: 12, fontWeight: '800' },
   });
 }
