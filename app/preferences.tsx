@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { API_BASE_URL } from '@/utils/api-service';
+import { isSchoolOwner } from '@/utils/jwt-decoder';
 import { useTheme } from '@/contexts/theme-context';
 import { Colors } from '@/constants/design-system';
 import { ThemedView } from '@/components/themed-view';
@@ -34,6 +35,11 @@ export default function SchoolPreferencesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Only the owner can edit branding; admins can still view this screen
+  // read-only if they land on it via a deep link. Display Mode (light/
+  // dark/system) is a personal device preference, not synced branding —
+  // that stays available to everyone regardless of role.
+  const [isOwner, setIsOwner] = useState(true);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerColor, setPickerColor] = useState('#2563EB');
   
@@ -79,6 +85,8 @@ export default function SchoolPreferencesScreen() {
     try {
       const { token, schoolId } = await getAuthData();
       if (!token || !schoolId) return;
+
+      setIsOwner(isSchoolOwner(token));
 
       const response = await fetch(`${API_BASE_URL}/api/preferences/${schoolId}`, {
         headers: {
@@ -262,10 +270,17 @@ export default function SchoolPreferencesScreen() {
         <View style={styles.assetInfo}>
           <ThemedText style={styles.assetTitle}>{title}</ThemedText>
           <ThemedText style={styles.assetSubtitle}>{subtitle}</ThemedText>
-          <TouchableOpacity style={styles.uploadBtn} onPress={onUpload}>
-            <Ionicons name="cloud-upload" size={12} color={Colors.accent.gold} />
-            <ThemedText style={styles.uploadBtnText}>Select File</ThemedText>
-          </TouchableOpacity>
+          {isOwner ? (
+            <TouchableOpacity style={styles.uploadBtn} onPress={onUpload}>
+              <Ionicons name="cloud-upload" size={12} color={Colors.accent.gold} />
+              <ThemedText style={styles.uploadBtnText}>Select File</ThemedText>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.uploadBtn}>
+              <Ionicons name="lock-closed-outline" size={12} color={C.textMuted} />
+              <ThemedText style={[styles.uploadBtnText, { color: C.textMuted }]}>Owner only</ThemedText>
+            </View>
+          )}
         </View>
       </View>
     );
@@ -348,14 +363,15 @@ export default function SchoolPreferencesScreen() {
           <ThemedText style={styles.cardLabel}>SPECIFICATION</ThemedText>
           <TouchableOpacity
             style={[styles.colorTrigger, { borderColor: prefs.theme_color }]}
-            onPress={() => setShowColorPicker(true)}
-            activeOpacity={0.85}
+            onPress={() => isOwner && setShowColorPicker(true)}
+            activeOpacity={isOwner ? 0.85 : 1}
           >
             <View style={[styles.colorDot, { backgroundColor: prefs.theme_color }]} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <ThemedText style={styles.colorTriggerLabel}>Accent Color</ThemedText>
               <ThemedText style={styles.colorTriggerValue}>{prefs.theme_color.toUpperCase()}</ThemedText>
             </View>
+            {!isOwner && <Ionicons name="lock-closed-outline" size={16} color={C.textMuted} />}
           </TouchableOpacity>
         </View>
 
@@ -384,12 +400,22 @@ export default function SchoolPreferencesScreen() {
             placeholder="Footer text..."
             placeholderTextColor={C.textMuted}
             multiline
+            editable={isOwner}
           />
         </View>
 
-        <View style={styles.actionRow}>
-          <CustomButton title={saving ? "Applying..." : "Save Branding"} onPress={handleSave} loading={saving} variant="premium" style={{ paddingVertical: 14 }} />
-        </View>
+        {!isOwner && (
+          <View style={styles.noticeBanner}>
+            <Ionicons name="information-circle-outline" size={16} color={C.textMuted} />
+            <ThemedText style={styles.noticeText}>Only the school owner can edit branding.</ThemedText>
+          </View>
+        )}
+
+        {isOwner && (
+          <View style={styles.actionRow}>
+            <CustomButton title={saving ? "Applying..." : "Save Branding"} onPress={handleSave} loading={saving} variant="premium" style={{ paddingVertical: 14 }} />
+          </View>
+        )}
       </ScrollView>
 
       <Modal visible={showColorPicker} transparent animationType="fade" onRequestClose={() => setShowColorPicker(false)}>
@@ -482,5 +508,8 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     divider: { height: 1, backgroundColor: C.divider, marginVertical: 16 },
     textArea: { backgroundColor: C.inputBg, borderRadius: 16, padding: 12, color: C.inputText, fontSize: 12, height: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: C.inputBorder },
     actionRow: { marginTop: 10 },
+
+    noticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.actionItemBg, borderRadius: 14, padding: 12, marginTop: 4, marginBottom: 8, borderWidth: 1, borderColor: C.cardBorder },
+    noticeText: { flex: 1, color: C.textMuted, fontSize: 11, lineHeight: 15 },
   });
 }

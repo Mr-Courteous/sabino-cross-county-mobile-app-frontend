@@ -160,6 +160,14 @@ export default function StaffDirectoryPage() {
           </View>
         )}
 
+        {isOwner && (
+          <TouchableOpacity style={styles.auditLinkRow} onPress={() => router.push('/staff-audit-log')}>
+            <Ionicons name="document-text-outline" size={15} color={Colors.accent.gold} />
+            <ThemedText style={styles.auditLinkText}>View Audit Log</ThemedText>
+            <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
+          </TouchableOpacity>
+        )}
+
         <ThemedText style={styles.sectionLabel}>ACTIVE ADMINS ({admins.length})</ThemedText>
         {admins.length === 0 ? (
           <View style={styles.emptyCard}>
@@ -254,6 +262,9 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
 
     noticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.actionItemBg, borderRadius: 14, padding: 12, marginBottom: 20, borderWidth: 1, borderColor: C.actionItemBorder },
     noticeText: { flex: 1, color: C.textMuted, fontSize: 11, lineHeight: 15 },
+
+    auditLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.actionItemBg, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 20, borderWidth: 1, borderColor: C.actionItemBorder },
+    auditLinkText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '700' },
 
     sectionLabel: { color: C.textMuted, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 12 },
 

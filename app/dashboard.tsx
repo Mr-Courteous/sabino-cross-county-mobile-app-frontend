@@ -230,8 +230,12 @@ export default function DashboardPage() {
             <ActionListItem title="Students" icon="people-outline" onPress={() => router.push('/students_list')} highlight themeColor={Colors.primary.main} C={C} styles={styles} />
             <ActionListItem title="Score Entry" icon="document-text-outline" onPress={() => router.push('/score-entry')} C={C} styles={styles} />
             <ActionListItem title="Reports" icon="copy-outline" onPress={() => router.push('/report-cards')} C={C} styles={styles} />
-            <ActionListItem title="Institution" icon="business-outline" onPress={() => router.push('/school-profile')} C={C} styles={styles} />
-            <ActionListItem title="Branding" icon="color-palette-outline" onPress={() => router.push('/preferences')} C={C} styles={styles} />
+            {isOwner && (
+              <ActionListItem title="Institution" icon="business-outline" onPress={() => router.push('/school-profile')} C={C} styles={styles} />
+            )}
+            {isOwner && (
+              <ActionListItem title="Branding" icon="color-palette-outline" onPress={() => router.push('/preferences')} C={C} styles={styles} />
+            )}
             {isOwner && (
               <ActionListItem title="Manage Staff" subtitle="Add teachers/admins, invite codes" icon="people-circle-outline" onPress={() => router.push('/staff-directory')} C={C} styles={styles} />
             )}

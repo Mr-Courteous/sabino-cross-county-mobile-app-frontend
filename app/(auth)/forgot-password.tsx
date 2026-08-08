@@ -43,8 +43,29 @@ export default function SchoolForgotPasswordScreen() {
                 body: JSON.stringify({ email: normalizedEmail }),
             });
             const result = await response.json();
-            if (response.ok && result.success) router.push({ pathname: '/(auth)/verify-reset-otp', params: { email: normalizedEmail } });
-            else throw new Error(result.message || 'Dispatch failed');
+            if (response.ok && result.success) {
+                router.push({ pathname: '/(auth)/verify-reset-otp', params: { email: normalizedEmail, accountType: 'owner' } });
+                return;
+            }
+
+            // Not a school-owner email — this could belong to an admin
+            // (staff) account instead, which lives in a separate table
+            // with its own reset flow. Try that before giving up.
+            if (response.status === 404) {
+                const staffResponse = await fetch(`${API_BASE_URL}/api/staff-auth/forgot-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: normalizedEmail }),
+                });
+                const staffResult = await staffResponse.json();
+                if (staffResponse.ok && staffResult.success) {
+                    router.push({ pathname: '/(auth)/verify-reset-otp', params: { email: normalizedEmail, accountType: 'admin' } });
+                    return;
+                }
+                throw new Error(staffResult.error || 'No account found with this email address.');
+            }
+
+            throw new Error(result.message || 'Dispatch failed');
         } catch (err: any) {
             setStatusAlert({ visible: true, type: 'error', title: 'Error', message: err.message || 'Network fault' });
         } finally { setLoading(false); }
@@ -84,7 +105,7 @@ export default function SchoolForgotPasswordScreen() {
                         <View style={styles.card}>
                             {!isTiny && <View style={styles.iconCircle}><Ionicons name="key" size={28} color="#FACC15" /></View>}
                             {statusAlert.visible && <CustomAlert {...statusAlert} onClose={() => setStatusAlert({ ...statusAlert, visible: false })} style={{ marginBottom: 16 }} />}
-                            <CustomInput label="Admin Email" placeholder="enter@email.com" keyboardType="email-address" value={email} onChangeText={setEmail} editable={!loading} />
+                            <CustomInput label="Account Email" placeholder="enter@email.com" keyboardType="email-address" value={email} onChangeText={setEmail} editable={!loading} />
                             <CustomButton title={loading ? "SENDING..." : "RESET PASSWORD"} onPress={handleSendOTP} disabled={loading} loading={loading} variant="premium" style={styles.ctaButton} />
                             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}><Text style={styles.backText}>RETURN TO LOGIN</Text></TouchableOpacity>
                         </View>

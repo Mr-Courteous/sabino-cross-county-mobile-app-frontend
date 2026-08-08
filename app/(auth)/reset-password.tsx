@@ -18,6 +18,7 @@ export default function SchoolResetPasswordScreen() {
     const styles = useMemo(() => makeStyles(width), [width]);
     const params = useLocalSearchParams();
     const email = params.email as string;
+    const accountType = (params.accountType as string) === 'admin' ? 'admin' : 'owner';
 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -40,19 +41,20 @@ export default function SchoolResetPasswordScreen() {
 
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/schools/reset-password`, {
+            const endpoint = accountType === 'admin' ? '/api/staff-auth/reset-password' : '/api/schools/reset-password';
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: email.toLowerCase(), password }),
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Reset failed');
+            if (!response.ok) throw new Error(data.message || data.error || 'Reset failed');
 
             setStatusAlert({
                 visible: true,
                 type: 'success',
                 title: 'Success',
-                message: 'Administrator password reset successfully.',
+                message: accountType === 'admin' ? 'Password reset successfully.' : 'Administrator password reset successfully.',
                 onConfirm: async () => {
                     if (Platform.OS === 'web') { localStorage.removeItem('userToken'); localStorage.removeItem('studentToken'); }
                     else { await SecureStore.deleteItemAsync('userToken'); await SecureStore.deleteItemAsync('studentToken'); }

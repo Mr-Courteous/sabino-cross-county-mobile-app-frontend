@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
+import { isSchoolOwner } from '@/utils/jwt-decoder';
 import { Colors } from '@/constants/design-system';
 import { CustomButton } from '@/components/custom-button';
 import { CustomAlert } from '@/components/custom-alert';
@@ -28,6 +29,9 @@ export default function SchoolProfileEditPage() {
   const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Only the owner can edit institution details; admins can still view
+  // this screen read-only if they land on it via a deep link.
+  const [isOwner, setIsOwner] = useState(true);
   const [alert, setAlert] = useState<{ visible: boolean; type: 'success' | 'error'; message: string }>({
     visible: false,
     type: 'success',
@@ -52,6 +56,7 @@ export default function SchoolProfileEditPage() {
   const fetchProfile = async () => {
     try {
       const token = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+      setIsOwner(isSchoolOwner(token));
       const res = await fetch(`${API_BASE_URL}/api/schools/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -165,6 +170,7 @@ export default function SchoolProfileEditPage() {
             value={formData.name}
             onChangeText={(text) => setFormData({ ...formData, name: text })}
             placeholderTextColor={C.textMuted}
+            editable={isOwner}
           />
         </View>
 
@@ -176,6 +182,7 @@ export default function SchoolProfileEditPage() {
             onChangeText={(text) => setFormData({ ...formData, registration_code: text })}
             placeholder="Official School Reg. No"
             placeholderTextColor={C.textMuted}
+            editable={isOwner}
           />
         </View>
 
@@ -187,6 +194,7 @@ export default function SchoolProfileEditPage() {
             onChangeText={(text) => setFormData({ ...formData, email: text })}
             keyboardType="email-address"
             placeholderTextColor={C.textMuted}
+            editable={isOwner}
           />
         </View>
 
@@ -198,6 +206,7 @@ export default function SchoolProfileEditPage() {
             onChangeText={(text) => setFormData({ ...formData, phone: text })}
             keyboardType="phone-pad"
             placeholderTextColor={C.textMuted}
+            editable={isOwner}
           />
         </View>
 
@@ -208,6 +217,7 @@ export default function SchoolProfileEditPage() {
             value={formData.address}
             onChangeText={(text) => setFormData({ ...formData, address: text })}
             placeholderTextColor={C.textMuted}
+            editable={isOwner}
           />
         </View>
 
@@ -220,6 +230,7 @@ export default function SchoolProfileEditPage() {
               onChangeText={(text) => setFormData({ ...formData, city: text })}
               placeholder="E.g. Ikeja"
               placeholderTextColor={C.textMuted}
+              editable={isOwner}
             />
           </View>
           <View style={[styles.formGroup, { flex: width < 380 ? 0 : 1, width: width < 380 ? '100%' : undefined }]}>
@@ -230,6 +241,7 @@ export default function SchoolProfileEditPage() {
               onChangeText={(text) => setFormData({ ...formData, state: text })}
               placeholder="E.g. Lagos State"
               placeholderTextColor={C.textMuted}
+              editable={isOwner}
             />
           </View>
         </View>
@@ -245,13 +257,22 @@ export default function SchoolProfileEditPage() {
           />
         </View>
 
-        <CustomButton
-          title="Save Changes"
-          onPress={handleUpdate}
-          loading={saving}
-          variant="premium"
-          style={styles.submitBtn}
-        />
+        {!isOwner && (
+          <View style={styles.noticeBanner}>
+            <Ionicons name="information-circle-outline" size={16} color={C.textMuted} />
+            <ThemedText style={styles.noticeText}>Only the school owner can edit institution details.</ThemedText>
+          </View>
+        )}
+
+        {isOwner && (
+          <CustomButton
+            title="Save Changes"
+            onPress={handleUpdate}
+            loading={saving}
+            variant="premium"
+            style={styles.submitBtn}
+          />
+        )}
       </ScrollView>
     </ThemedView>
   );
@@ -276,5 +297,8 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     input: { backgroundColor: C.inputBg, borderRadius: 14, padding: isTiny ? 12 : 14, color: C.inputText, fontSize: isTiny ? 12 : 13, fontWeight: '600', borderWidth: 1, borderColor: C.inputBorder },
 
     submitBtn: { marginTop: 12, borderRadius: 14, paddingVertical: isTiny ? 14 : 16 },
+
+    noticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.actionItemBg, borderRadius: 14, padding: 12, marginTop: 4, marginBottom: 8, borderWidth: 1, borderColor: C.actionItemBorder },
+    noticeText: { flex: 1, color: C.textMuted, fontSize: 11, lineHeight: 15 },
   });
 }

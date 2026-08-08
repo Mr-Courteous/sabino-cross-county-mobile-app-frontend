@@ -16,6 +16,7 @@ export default function SchoolVerifyResetOTPScreen() {
     const styles = useMemo(() => makeStyles(width), [width]);
     const params = useLocalSearchParams();
     const email = params.email as string;
+    const accountType = (params.accountType as string) === 'admin' ? 'admin' : 'owner';
 
     const [otp, setOtp] = useState('');
     const [timeLeft, setTimeLeft] = useState(600);
@@ -49,7 +50,7 @@ export default function SchoolVerifyResetOTPScreen() {
                 body: JSON.stringify({ email, otp }),
             });
             const data = await response.json();
-            if (response.ok && data.success) router.push({ pathname: '/(auth)/reset-password', params: { email } });
+            if (response.ok && data.success) router.push({ pathname: '/(auth)/reset-password', params: { email, accountType } });
             else throw new Error(data.message || 'Verification failed');
         } catch (err: any) {
             setStatusAlert({ visible: true, type: 'error', title: 'Error', message: err.message || 'Verify failed' });
