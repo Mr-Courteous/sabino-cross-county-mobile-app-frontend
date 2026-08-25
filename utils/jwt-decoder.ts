@@ -172,3 +172,31 @@ export const isSchoolOwner = (token: string | null | undefined): boolean => {
   if (!token) return false;
   return getUserRoleFromToken(token) === 'owner';
 };
+
+/**
+ * Class scope for a class_teacher account (see backend
+ * middleware/auth.js -> getTeacherClassScope). Returns null for
+ * everyone else (owner, full admin, a class_teacher with no class
+ * assigned yet, or a non-school token) — meaning unrestricted.
+ *
+ * Only `classId` is signed into the JWT (kept slim, matching the
+ * `staffRole`/`classId` claims set at login by
+ * routes/staff-onboarding/auth.js). For a human-readable class name to
+ * show in the UI, read `className` off the stored `userData` object
+ * instead (set at login/redeem — see app/(auth)/index.tsx and
+ * app/(auth)/redeem-code.tsx), since that's not worth bloating the
+ * token with.
+ *
+ * Use this to pre-select/lock a class field in create/edit forms so
+ * the UI matches what the server will actually allow, and to show a
+ * "you're viewing your class" banner on list screens.
+ */
+export const getTeacherClassScope = (token: string | null | undefined): { classId: number } | null => {
+  if (!token) return null;
+  const decoded = decodeToken(token);
+  if (!decoded || decoded.type !== 'school') return null;
+  if (decoded.staffRole === 'class_teacher' && decoded.classId) {
+    return { classId: decoded.classId };
+  }
+  return null;
+};

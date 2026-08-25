@@ -6,6 +6,10 @@ import {
   Platform,
   TouchableOpacity,
   Share,
+  Modal,
+  FlatList,
+  TouchableWithoutFeedback,
+  ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -21,10 +25,14 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAppColors } from '@/hooks/use-app-colors';
 
+type StaffRole = 'admin' | 'class_teacher';
+
 type ResultState =
-  | { kind: 'credentials'; fullName: string; email: string; tempPassword: string }
-  | { kind: 'invite'; fullName: string; email: string; code: string; expiresAt: string }
+  | { kind: 'credentials'; fullName: string; email: string; tempPassword: string; role: StaffRole; className: string | null }
+  | { kind: 'invite'; fullName: string; email: string; code: string; expiresAt: string; role: StaffRole; className: string | null }
   | null;
+
+interface ClassTemplate { id: number; display_name: string; }
 
 export default function AddStaffPage() {
   const router = useRouter();
@@ -36,6 +44,11 @@ export default function AddStaffPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [role, setRole] = useState<StaffRole>('admin');
+  const [className, setClassName] = useState<string | null>(null);
+  const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const [classTemplates, setClassTemplates] = useState<ClassTemplate[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
   const [savingPath, setSavingPath] = useState<'A' | 'B' | null>(null);
   const [result, setResult] = useState<ResultState>(null);
   const [alert, setAlert] = useState<{ visible: boolean; type: 'success' | 'error'; message: string }>({
@@ -46,6 +59,26 @@ export default function AddStaffPage() {
 
   const getToken = async () => {
     return Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+  };
+
+  // Classes are country-scoped — GET /api/classes reads the admin's own
+  // countryId off their token, so a Ghana school sees "GHS 1" etc. and a
+  // Nigeria school sees "JSS 1" etc. automatically; no country picker
+  // needed here. Only fetched once the admin actually opens the picker.
+  const openClassPicker = async () => {
+    setClassPickerOpen(true);
+    if (classTemplates.length > 0) return;
+    setLoadingClasses(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.success) setClassTemplates(data.data || []);
+    } catch (e) {
+      // Non-fatal — the admin can still submit without a class and assign one later.
+    } finally {
+      setLoadingClasses(false);
+    }
   };
 
   const validate = () => {
@@ -60,6 +93,18 @@ export default function AddStaffPage() {
     return true;
   };
 
+  const buildBaseBody = () => ({
+    fullName: fullName.trim(),
+    email: email.trim().toLowerCase(),
+    phone: phone.trim() || undefined,
+    role,
+    // className only means anything for a class_teacher — the server
+    // resolves it against this school's own classes (creating the row
+    // if this is the first time that class has been used), so we never
+    // send a raw id from the country-template list.
+    className: role === 'class_teacher' && className ? className : undefined,
+  });
+
   // Path A — register the account immediately with a temp password.
   const handleRegisterNow = async () => {
     if (!validate()) return;
@@ -69,7 +114,7 @@ export default function AddStaffPage() {
       const res = await fetch(`${API_BASE_URL}/api/staff/admins`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ fullName: fullName.trim(), email: email.trim().toLowerCase(), phone: phone.trim() || undefined }),
+        body: JSON.stringify(buildBaseBody()),
       });
 
       if (res.status === 402) { router.replace('/pricing'); return; }
@@ -85,6 +130,8 @@ export default function AddStaffPage() {
           fullName: fullName.trim(),
           email: email.trim().toLowerCase(),
           tempPassword: data.data.temporaryPassword,
+          role,
+          className: data.data.admin?.class_name || null,
         });
       } else {
         setAlert({ visible: true, type: 'error', message: data.error || 'Failed to create the account.' });
@@ -105,7 +152,7 @@ export default function AddStaffPage() {
       const res = await fetch(`${API_BASE_URL}/api/staff/admins/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ fullName: fullName.trim(), email: email.trim().toLowerCase(), phone: phone.trim() || undefined }),
+        body: JSON.stringify(buildBaseBody()),
       });
 
       if (res.status === 402) { router.replace('/pricing'); return; }
@@ -122,6 +169,8 @@ export default function AddStaffPage() {
           email: email.trim().toLowerCase(),
           code: data.data.code,
           expiresAt: data.data.expires_at,
+          role,
+          className: data.data.class_name || null,
         });
       } else {
         setAlert({ visible: true, type: 'error', message: data.error || 'Failed to generate an invite code.' });
@@ -135,15 +184,21 @@ export default function AddStaffPage() {
 
   const shareCredentials = () => {
     if (result?.kind !== 'credentials') return;
+    const roleLine = result.role === 'class_teacher'
+      ? `Role: Class Teacher${result.className ? ` (${result.className})` : ' (class not yet assigned)'}\n`
+      : '';
     Share.share({
-      message: `You've been added as an admin on Sabino Edu.\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nYou'll be asked to set your own password on first login.`,
+      message: `You've been added as ${result.role === 'class_teacher' ? 'a class teacher' : 'an admin'} on Sabino Edu.\n\n${roleLine}Email: ${result.email}\nTemporary password: ${result.tempPassword}\n\nYou'll be asked to set your own password on first login.`,
     });
   };
 
   const shareCode = () => {
     if (result?.kind !== 'invite') return;
+    const roleLine = result.role === 'class_teacher'
+      ? `Role: Class Teacher${result.className ? ` (${result.className})` : ' (class not yet assigned)'}\n`
+      : '';
     Share.share({
-      message: `You're invited to join Sabino Edu as an admin.\n\nOpen the app, choose "Register with a code", and enter: ${result.code}\n\nThis code expires ${new Date(result.expiresAt).toLocaleString()}.`,
+      message: `You're invited to join Sabino Edu as ${result.role === 'class_teacher' ? 'a class teacher' : 'an admin'}.\n\n${roleLine}Open the app, choose "Register with a code", and enter: ${result.code}\n\nThis code expires ${new Date(result.expiresAt).toLocaleString()}.`,
     });
   };
 
@@ -151,6 +206,8 @@ export default function AddStaffPage() {
     setFullName('');
     setEmail('');
     setPhone('');
+    setRole('admin');
+    setClassName(null);
     setResult(null);
   };
 
@@ -179,6 +236,15 @@ export default function AddStaffPage() {
                 ? `${result.fullName} can log in now with the details below. They'll be asked to set their own password on first login. These credentials were also emailed to ${result.email}.`
                 : `Share this code with ${result.fullName || result.email}. It also went to ${result.email} by email.`}
             </ThemedText>
+
+            {result.role === 'class_teacher' && (
+              <View style={styles.rolePill}>
+                <Ionicons name="school-outline" size={13} color={Colors.accent.gold} />
+                <ThemedText style={styles.rolePillText}>
+                  Class Teacher{result.className ? ` · ${result.className}` : ' · no class assigned yet'}
+                </ThemedText>
+              </View>
+            )}
 
             {result.kind === 'credentials' ? (
               <View style={styles.credBox}>
@@ -238,7 +304,45 @@ export default function AddStaffPage() {
               keyboardType="phone-pad"
             />
 
-            <ThemedText style={[styles.sectionLabel, { marginTop: 8 }]}>HOW WOULD YOU LIKE TO ADD THEM?</ThemedText>
+            <ThemedText style={[styles.sectionLabel, { marginTop: 8 }]}>ROLE</ThemedText>
+            <View style={styles.roleRow}>
+              <TouchableOpacity
+                style={[styles.roleChip, role === 'admin' && styles.roleChipActive]}
+                onPress={() => { setRole('admin'); setClassName(null); }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={15} color={role === 'admin' ? '#0F172A' : Colors.accent.gold} />
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[styles.roleChipTitle, role === 'admin' && styles.roleChipTitleActive]}>Admin</ThemedText>
+                  <ThemedText style={[styles.roleChipSub, role === 'admin' && styles.roleChipSubActive]}>Full school-wide access</ThemedText>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.roleChip, role === 'class_teacher' && styles.roleChipActive]}
+                onPress={() => setRole('class_teacher')}
+              >
+                <Ionicons name="school-outline" size={15} color={role === 'class_teacher' ? '#0F172A' : Colors.accent.gold} />
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[styles.roleChipTitle, role === 'class_teacher' && styles.roleChipTitleActive]}>Class Teacher</ThemedText>
+                  <ThemedText style={[styles.roleChipSub, role === 'class_teacher' && styles.roleChipSubActive]}>Restricted to one class</ThemedText>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {role === 'class_teacher' && (
+              <>
+                <ThemedText style={[styles.sectionLabel, { marginTop: 16 }]}>CLASS (OPTIONAL — CAN BE SET LATER)</ThemedText>
+                <TouchableOpacity style={styles.classPickerBtn} onPress={openClassPicker}>
+                  <Ionicons name="albums-outline" size={16} color={C.textMuted} />
+                  <ThemedText style={styles.classPickerBtnText}>{className || 'Select a class'}</ThemedText>
+                  <Ionicons name="chevron-down" size={14} color={C.textMuted} />
+                </TouchableOpacity>
+                <ThemedText style={styles.classHint}>
+                  Once assigned, this teacher can only create or manage students in this class. You can change or clear it any time from Staff Directory.
+                </ThemedText>
+              </>
+            )}
+
+            <ThemedText style={[styles.sectionLabel, { marginTop: 20 }]}>HOW WOULD YOU LIKE TO ADD THEM?</ThemedText>
 
             <View style={styles.optionCard}>
               <View style={styles.optionIconWrap}>
@@ -278,6 +382,37 @@ export default function AddStaffPage() {
         )}
       </ScrollView>
 
+      <Modal visible={classPickerOpen} transparent animationType="slide" onRequestClose={() => setClassPickerOpen(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setClassPickerOpen(false)}>
+          <TouchableWithoutFeedback>
+            <View style={styles.modalSheet}>
+              <View style={styles.sheetHandle} />
+              <ThemedText style={styles.modalTitle}>Select Class</ThemedText>
+              {loadingClasses ? (
+                <ActivityIndicator size="small" color={Colors.accent.gold} style={{ paddingVertical: 30 }} />
+              ) : classTemplates.length === 0 ? (
+                <ThemedText style={styles.modalEmptyText}>No classes found for your country.</ThemedText>
+              ) : (
+                <FlatList
+                  data={classTemplates}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.modalItem}
+                      onPress={() => { setClassName(item.display_name); setClassPickerOpen(false); }}
+                    >
+                      <ThemedText style={styles.modalItemText}>{item.display_name}</ThemedText>
+                      {className === item.display_name && <Ionicons name="checkmark" size={16} color={Colors.accent.gold} />}
+                    </TouchableOpacity>
+                  )}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                />
+              )}
+            </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+      </Modal>
+
       {alert.visible && (
         <CustomAlert
           type={alert.type}
@@ -300,6 +435,29 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     scrollContent: { padding: isTiny ? 16 : 22, paddingBottom: 60 },
 
     sectionLabel: { color: C.textMuted, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 14 },
+
+    roleRow: { flexDirection: 'row', gap: 10 },
+    roleChip: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: C.actionItemBg, borderRadius: 14, borderWidth: 1.5, borderColor: C.actionItemBorder, padding: 12 },
+    roleChipActive: { backgroundColor: Colors.accent.gold, borderColor: Colors.accent.gold },
+    roleChipTitle: { color: C.text, fontSize: 12, fontWeight: '800' },
+    roleChipTitleActive: { color: '#0F172A' },
+    roleChipSub: { color: C.textMuted, fontSize: 9.5, marginTop: 2, lineHeight: 12 },
+    roleChipSubActive: { color: '#0F172A99' },
+
+    classPickerBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.inputBg, borderRadius: 12, borderWidth: 1, borderColor: C.inputBorder, paddingHorizontal: 14, paddingVertical: 12 },
+    classPickerBtnText: { flex: 1, color: C.inputText, fontSize: 12.5, fontWeight: '600' },
+    classHint: { color: C.textMuted, fontSize: 10, lineHeight: 14, marginTop: 8 },
+
+    rolePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: `${Colors.accent.gold}15`, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 14 },
+    rolePillText: { color: C.text, fontSize: 11, fontWeight: '700' },
+
+    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
+    modalSheet: { backgroundColor: C.modalBg, borderColor: C.cardBorder, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: isTiny ? 16 : 24, borderTopWidth: 1, maxHeight: '75%' },
+    sheetHandle: { width: 36, height: 3, backgroundColor: C.divider, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+    modalTitle: { color: C.text, fontSize: 16, fontWeight: '900', marginBottom: 14, textAlign: 'center' },
+    modalEmptyText: { color: C.textMuted, fontSize: 12, textAlign: 'center', paddingVertical: 20 },
+    modalItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, marginBottom: 4 },
+    modalItemText: { color: C.text, fontSize: 13, fontWeight: '600' },
 
     optionCard: { flexDirection: 'row', gap: 12, backgroundColor: C.actionItemBg, borderRadius: 16, borderWidth: 1, borderColor: C.actionItemBorder, padding: 14, marginBottom: 10 },
     optionIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: `${Colors.accent.gold}15`, justifyContent: 'center', alignItems: 'center' },

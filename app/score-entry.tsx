@@ -36,8 +36,7 @@ interface Subject {
 
 interface Class {
   id: number;
-  country_id: number;
-  display_name: string;
+  class_name: string;
   capacity: number;
 }
 
@@ -221,7 +220,14 @@ export default function ScoreEntryScreen() {
 
   const fetchClasses = async (tokenValue: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/classes`, {
+      // IMPORTANT: /api/classes returns GLOBAL curriculum templates
+      // (global_class_templates ids) — those ids are NOT what
+      // enrollments.class_id references, so using them here silently
+      // pulled the wrong (or zero) students into the scoring sheet.
+      // /api/classes/school returns THIS school's real, instantiated
+      // classes table rows, whose ids are the ones every write/read
+      // endpoint (including /api/scores/sheet) actually filters on.
+      const response = await fetch(`${API_BASE_URL}/api/classes/school`, {
         headers: { 'Authorization': `Bearer ${tokenValue}`, 'Content-Type': 'application/json' },
       });
       if (response.status === 402) { router.replace('/pricing'); return; }
@@ -697,7 +703,7 @@ export default function ScoreEntryScreen() {
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
                         <ThemedText style={[styles.dropdownItemText, isSelected && styles.selectedItemText, { fontSize: 13 }]}>
-                          {item.display_name || item.session_name || item.name}
+                          {item.class_name || item.display_name || item.session_name || item.name}
                         </ThemedText>
                         <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: isSelected ? Colors.accent.gold : C.divider, backgroundColor: isSelected ? Colors.accent.gold : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
                           {isSelected && <Ionicons name="checkmark" size={12} color={Colors.accent.navy} />}
@@ -766,7 +772,7 @@ export default function ScoreEntryScreen() {
                   <ThemedText style={styles.label}>CLASS</ThemedText>
                   <TouchableOpacity style={styles.miniPicker} onPress={() => setActiveModal('class')}>
                     <ThemedText style={selectedClass ? styles.miniPickerText : styles.placeholderText} numberOfLines={1}>
-                      {selectedClass ? selectedClass.display_name : 'Choose...'}
+                      {selectedClass ? selectedClass.class_name : 'Choose...'}
                     </ThemedText>
                     <Ionicons name="school-outline" size={12} color={Colors.accent.gold} />
                   </TouchableOpacity>

@@ -199,7 +199,10 @@ export default function StudentDashboard() {
 
             const [sessionRes, classRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/api/academic-sessions`, { headers: { Authorization: `Bearer ${token}` } }),
-                fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } })
+                // /api/classes/school — real classes.id (what
+                // students.self-enroll's classId is checked against),
+                // not the global_class_templates ids /api/classes returns.
+                fetch(`${API_BASE_URL}/api/classes/school`, { headers: { Authorization: `Bearer ${token}` } })
             ]);
 
             if (sessionRes.status === 401 || sessionRes.status === 403 || classRes.status === 401 || classRes.status === 403) {
@@ -517,7 +520,7 @@ export default function StudentDashboard() {
                                 <View style={{ marginBottom: 20 }}>
                                     <Text style={styles.formLabel}>CLASS</Text>
                                     <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassSelector(!showClassSelector)}>
-                                        <Text style={styles.selectorText}>{classes.find((c: any) => c.id === selectedClassId)?.display_name || 'Select'}</Text>
+                                        <Text style={styles.selectorText}>{classes.find((c: any) => c.id === selectedClassId)?.class_name || 'Select'}</Text>
                                         <Ionicons name="chevron-down" size={18} color="#FACC15" />
                                     </TouchableOpacity>
                                     {showClassSelector && (
@@ -525,7 +528,7 @@ export default function StudentDashboard() {
                                             <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
                                                 {classes.map((c, i) => (
                                                     <TouchableOpacity key={i} style={styles.selectorItem} onPress={() => { setSelectedClassId(c.id); setShowClassSelector(false); }}>
-                                                        <Text style={styles.selectorItemText}>{c.display_name || c.class_name}</Text>
+                                                        <Text style={styles.selectorItemText}>{c.class_name}</Text>
                                                     </TouchableOpacity>
                                                 ))}
                                             </ScrollView>

@@ -23,7 +23,7 @@ import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '@/utils/api-service';
-import { isSchoolOwner } from '@/utils/jwt-decoder';
+import { isSchoolOwner, getTeacherClassScope } from '@/utils/jwt-decoder';
 import { clearAllStorage } from '@/utils/storage';
 import { Colors } from '@/constants/design-system';
 import { ThemedView } from '@/components/themed-view';
@@ -47,7 +47,7 @@ type Student = {
 
 type Class = {
   id: number;
-  display_name: string;
+  class_name: string;
   capacity: number;
 };
 
@@ -73,6 +73,7 @@ export default function StudentsManager() {
     title: string;
     message: string;
     onConfirm?: () => void;
+    confirmLabel?: string;
   }>({
     visible: false,
     type: 'info',
@@ -112,6 +113,9 @@ export default function StudentsManager() {
   // delete data. Defaults to true so a lone owner account (no admins
   // added yet, or token decode fails) never loses its own delete access.
   const [isOwner, setIsOwner] = useState(true);
+  // A class_teacher (see backend middleware/auth.js -> getTeacherClassScope)
+  // is restricted to their own class — null for everyone else.
+  const [classScope, setClassScope] = useState<{ classId: number } | null>(null);
 
   const getToken = async () => {
     return Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
@@ -120,7 +124,10 @@ export default function StudentsManager() {
   useEffect(() => {
     (async () => {
       const token = await getToken();
-      if (token) setIsOwner(isSchoolOwner(token));
+      if (token) {
+        setIsOwner(isSchoolOwner(token));
+        setClassScope(getTeacherClassScope(token));
+      }
     })();
   }, []);
 
@@ -130,7 +137,12 @@ export default function StudentsManager() {
       if (!token) return;
 
       const [classRes, studentRes, sessionRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } }),
+        // NOTE: /api/classes/school — this school's OWN class rows (real
+        // classes.id, what enrollments.class_id actually references).
+        // GET /api/classes (no /school) returns global_class_templates
+        // ids instead, a different id space — display-name source only,
+        // never send its ids back to a write endpoint.
+        fetch(`${API_BASE_URL}/api/classes/school`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/students`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/academic-sessions`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
@@ -230,6 +242,20 @@ export default function StudentsManager() {
   };
 
   const onRefresh = () => { setRefreshing(true); fetchInitialData(); };
+
+  const handleLogout = async () => {
+    setStatusAlert({
+      visible: true,
+      type: 'warning',
+      title: 'Portal Sign-out',
+      message: 'Terminate administrative session?',
+      confirmLabel: 'LOGOUT',
+      onConfirm: async () => {
+        await clearAllStorage();
+        router.replace('/');
+      },
+    });
+  };
 
   const handleSendTemplateToEmail = async () => {
     if (!emailForTemplate.includes('@')) return;
@@ -377,7 +403,7 @@ export default function StudentsManager() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}><Ionicons name="chevron-back" size={20} color={C.text} /></TouchableOpacity>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity style={styles.actionIcon} onPress={() => setBulkUploadVisible(true)}><Ionicons name="cloud-upload-outline" size={18} color={Colors.accent.gold} /></TouchableOpacity>
-              <TouchableOpacity style={styles.addButton} onPress={() => { setForm({ gender: 'Male' }); setDobParts({ year: '', month: '', day: '' }); setEditingId(null); setModalVisible(true); }}><Ionicons name="add" size={22} color={Colors.accent.navy} /></TouchableOpacity>
+              <TouchableOpacity style={styles.addButton} onPress={() => { setForm({ gender: 'Male', classId: classScope?.classId || null }); setDobParts({ year: '', month: '', day: '' }); setEditingId(null); setModalVisible(true); }}><Ionicons name="add" size={22} color={Colors.accent.navy} /></TouchableOpacity>
             </View>
           </View>
           <View style={styles.heroContent}>
@@ -451,7 +477,7 @@ export default function StudentsManager() {
               style={[styles.filterPill, filterClassId !== null && styles.activeFilterPill]}
               onPress={() => {
                 const classOptions = classes.map(c => ({
-                  text: c.display_name,
+                  text: c.class_name,
                   onPress: () => setFilterClassId(c.id)
                 }));
                 Alert.alert(
@@ -465,7 +491,7 @@ export default function StudentsManager() {
               }}
             >
               <Text style={[styles.filterPillText, filterClassId !== null && { color: Colors.accent.gold }]}>
-                Class: {filterClassId !== null ? (classes.find(c => c.id === filterClassId)?.display_name || 'Selected') : 'All'}
+                Class: {filterClassId !== null ? (classes.find(c => c.id === filterClassId)?.class_name || 'Selected') : 'All'}
               </Text>
               <Ionicons name="chevron-down" size={10} color={filterClassId !== null ? Colors.accent.gold : C.textMuted} style={{ marginLeft: 4 }} />
             </TouchableOpacity>
@@ -514,7 +540,7 @@ export default function StudentsManager() {
               <ThemedText style={styles.emptyText}>No students found</ThemedText>
             </View>
           }
-          ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => { }} />}
+          ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={handleLogout} />}
         />
       ) : (
         <FlatList
@@ -578,7 +604,7 @@ export default function StudentsManager() {
               </View>
             </View>
           )}
-          ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={() => { }} />}
+          ListFooterComponent={<Footer themeColor={Colors.accent.gold} onLogout={handleLogout} />}
         />
       )}
 
@@ -617,16 +643,23 @@ export default function StudentsManager() {
                     <ThemedText style={styles.sectionLabel}>ENROLLMENT</ThemedText>
 
                     <ThemedText style={styles.formLabel}>CLASS</ThemedText>
-                    <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassDropdown(!showClassDropdown)}>
-                      <ThemedText style={styles.selectorText}>{classes.find(c => c.id === form.classId)?.display_name || 'Select Class'}</ThemedText>
-                      <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />
+                    <TouchableOpacity
+                      style={[styles.inputSelector, !!classScope && { opacity: 0.6 }]}
+                      onPress={() => !classScope && setShowClassDropdown(!showClassDropdown)}
+                      disabled={!!classScope}
+                    >
+                      <ThemedText style={styles.selectorText}>{classes.find(c => c.id === form.classId)?.class_name || 'Select Class'}</ThemedText>
+                      {!classScope && <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />}
                     </TouchableOpacity>
-                    {showClassDropdown && (
+                    {!!classScope && (
+                      <ThemedText style={styles.classLockHint}>You're a class teacher — new students go into your assigned class.</ThemedText>
+                    )}
+                    {showClassDropdown && !classScope && (
                       <View style={styles.listBox}>
                         <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
                           {classes.map(c => (
                             <TouchableOpacity key={c.id} style={[styles.listItem, form.classId === c.id && styles.listItemActive]} onPress={() => { setForm({ ...form, classId: c.id }); setShowClassDropdown(false); }}>
-                              <ThemedText style={[styles.listItemText, form.classId === c.id && { color: Colors.accent.gold, fontWeight: '800' }]}>{c.display_name}</ThemedText>
+                              <ThemedText style={[styles.listItemText, form.classId === c.id && { color: Colors.accent.gold, fontWeight: '800' }]}>{c.class_name}</ThemedText>
                               {form.classId === c.id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
                             </TouchableOpacity>
                           ))}
@@ -683,6 +716,7 @@ export default function StudentsManager() {
           title={statusAlert.title}
           message={statusAlert.message}
           onConfirm={statusAlert.onConfirm}
+          confirmLabel={statusAlert.confirmLabel}
           onClose={() => setStatusAlert({ ...statusAlert, visible: false })}
         />
       )}
@@ -735,6 +769,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     listItemActive: { backgroundColor: Colors.accent.gold + '10' },
     listItemText: { fontSize: 13, color: C.textSecondary, fontWeight: '600' },
     formLabel: { fontSize: 9, fontWeight: '800', color: C.textLabel, marginBottom: 6 },
+    classLockHint: { fontSize: 9.5, color: C.textMuted, marginTop: -6, marginBottom: 10, lineHeight: 13 },
     noticeBox: { backgroundColor: C.card, borderRadius: 16, padding: 14, marginHorizontal: isTiny ? 16 : 24, marginTop: -20, marginBottom: 16, borderWidth: 1, borderColor: Colors.accent.gold + '20' },
     noticeTitle: { color: Colors.accent.gold, fontSize: 12, fontWeight: '900', marginBottom: 6 },
     noticeText: { color: C.text, fontSize: 12, lineHeight: 18 },

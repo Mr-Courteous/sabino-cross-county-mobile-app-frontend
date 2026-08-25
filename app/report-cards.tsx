@@ -221,7 +221,13 @@ export default function ReportSearchScreen() {
 
       const endpoint = mode === 'student'
         ? `/api/reports/search/students?name=${encodeURIComponent(query)}`
-        : `/api/classes`;
+        // IMPORTANT: /api/classes returns GLOBAL curriculum templates
+        // (global_class_templates ids). GET /api/reports/data/class/:classId
+        // filters enrollments.class_id, which is this school's real
+        // `classes` table id — using the global id here silently
+        // returned wrong/empty class report data (same bug that hit
+        // score entry). /api/classes/school returns the correct ids.
+        : `/api/classes/school`;
 
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: {
@@ -721,7 +727,7 @@ export default function ReportSearchScreen() {
                   <ThemedText style={styles.filterLabel}>SELECT CLASS</ThemedText>
                   <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassSelector(!showClassSelector)}>
                     <ThemedText style={styles.selectorText}>
-                      {classes.find((c: any) => String(c.id) === selectedClass)?.display_name || 'Select Class'}
+                      {classes.find((c: any) => String(c.id) === selectedClass)?.class_name || 'Select Class'}
                     </ThemedText>
                     <Ionicons name={showClassSelector ? "chevron-up" : "chevron-down"} size={16} color={Colors.accent.gold} />
                   </TouchableOpacity>
@@ -730,7 +736,7 @@ export default function ReportSearchScreen() {
                       <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
                         {classes.map((cls: any) => (
                           <TouchableOpacity key={cls.id} style={[styles.selectorItem, selectedClass === String(cls.id) && styles.selectorItemActive]} onPress={() => { setSelectedClass(String(cls.id)); setShowClassSelector(false); }}>
-                            <ThemedText style={[styles.selectorItemText, selectedClass === String(cls.id) && styles.selectorItemTextActive]}>{cls.display_name}</ThemedText>
+                            <ThemedText style={[styles.selectorItemText, selectedClass === String(cls.id) && styles.selectorItemTextActive]}>{cls.class_name}</ThemedText>
                             {selectedClass === String(cls.id) && <Ionicons name="checkmark-circle" size={16} color={Colors.accent.gold} />}
                           </TouchableOpacity>
                         ))}

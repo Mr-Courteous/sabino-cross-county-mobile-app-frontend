@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
-import { isSchoolOwner } from '@/utils/jwt-decoder';
+import { isSchoolOwner, decodeToken } from '@/utils/jwt-decoder';
 import { clearAllStorage } from '@/utils/storage';
 import { useTheme } from '@/contexts/theme-context';
 import { Colors } from '@/constants/design-system';
@@ -41,6 +41,10 @@ export default function DashboardPage() {
   // Defaults to true so a lone owner account (or a token-decode failure)
   // never loses its own access.
   const [isOwner, setIsOwner] = useState(true);
+  // A full admin (not owner, not class_teacher) can see the school-wide
+  // Enrollments screen too — same tier used to gate class-teacher removal
+  // in staff-directory.tsx.
+  const [isFullAdmin, setIsFullAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusAlert, setStatusAlert] = useState<{
@@ -69,6 +73,8 @@ export default function DashboardPage() {
       }
 
       setIsOwner(isSchoolOwner(token));
+      const decoded = decodeToken(token);
+      setIsFullAdmin(!isSchoolOwner(token) && decoded?.staffRole === 'admin');
 
       await loadThemeFromPreferences();
 
@@ -229,7 +235,19 @@ export default function DashboardPage() {
           <View style={styles.actionList}>
             <ActionListItem title="Students" icon="people-outline" onPress={() => router.push('/students_list')} highlight themeColor={Colors.primary.main} C={C} styles={styles} />
             <ActionListItem title="Score Entry" icon="document-text-outline" onPress={() => router.push('/score-entry')} C={C} styles={styles} />
+            {/* Attendance: available to BOTH owner/admin and class_teacher
+                accounts, same as Teaching Assistant — class scoping for a
+                class_teacher is enforced server-side (routes/attendance),
+                so no isOwner gate is needed here. */}
+            <ActionListItem title="Attendance" subtitle="Daily register, weekly grid & term summary" icon="checkmark-done-circle-outline" onPress={() => router.push('/attendance')} C={C} styles={styles} />
             <ActionListItem title="Reports" icon="copy-outline" onPress={() => router.push('/report-cards')} C={C} styles={styles} />
+            {(isOwner || isFullAdmin) && (
+              <ActionListItem title="Enrollments" subtitle="See every student's class & session enrollment" icon="list-outline" onPress={() => router.push('/enrollments')} C={C} styles={styles} />
+            )}
+            {/* Teaching Assistant: available to BOTH the school owner and
+                admin/staff accounts — deliberately no isOwner gate, unlike
+                Institution/Branding/Manage Staff below. */}
+            <ActionListItem title="Teaching Assistant" subtitle="AI-assisted scheme of work, lesson plans & notes" icon="sparkles-outline" onPress={() => router.push('/teacher-ai')} C={C} styles={styles} />
             {isOwner && (
               <ActionListItem title="Institution" icon="business-outline" onPress={() => router.push('/school-profile')} C={C} styles={styles} />
             )}

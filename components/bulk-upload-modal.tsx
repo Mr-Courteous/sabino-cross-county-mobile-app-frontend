@@ -22,8 +22,15 @@ import { API_BASE_URL } from '@/utils/api-service';
 import { Colors } from '@/constants/design-system';
 import { useAppColors } from '@/hooks/use-app-colors';
 import { ThemedText } from '@/components/themed-text';
+import { getTeacherClassScope } from '@/utils/jwt-decoder';
 
-type ClassItem = { id: number; display_name: string; capacity?: number; };
+// NOTE: `class_name`/id here come from GET /api/classes/school — this
+// school's OWN classes table (the real id enrollments.class_id
+// references). GET /api/classes (no /school) returns
+// global_class_templates instead, a different id space; that endpoint
+// is display-name-only and must never feed a classId sent to a write
+// endpoint like POST /api/students/bulk below.
+type ClassItem = { id: number; class_name: string; capacity?: number; };
 type SessionItem = { id: number; session_name: string; year_label?: string; };
 type UploadResult = { success: boolean; count?: number; error?: string; };
 interface BulkUploadModalProps { visible: boolean; onClose: () => void; onUploadComplete: (result: UploadResult) => void; }
@@ -79,6 +86,10 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
 
   const [selectedFile, setSelectedFile] = useState<{ name: string; uri: string; size?: number } | null>(null);
   const [parsedStudents, setParsedStudents] = useState<any[]>([]);
+  // A class_teacher can only bulk-enroll into their own class — locked,
+  // not just pre-selected, so there's no way to pick around it client-side
+  // (the server enforces this too, but the UI shouldn't offer a dead end).
+  const [classScope, setClassScope] = useState<{ classId: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoadingData(true);
@@ -86,12 +97,21 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
     try {
       const token = await getToken();
       if (!token) throw new Error('Auth required.');
+      setClassScope(getTeacherClassScope(token));
       const [classRes, sessionRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/classes/school`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/academic-sessions`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       const [classData, sessionData] = await Promise.all([classRes.json(), sessionRes.json()]);
-      if (classData.success) setClasses(classData.data ?? []);
+      if (classData.success) {
+        const list: ClassItem[] = classData.data ?? [];
+        setClasses(list);
+        const scope = getTeacherClassScope(token);
+        if (scope) {
+          const own = list.find((c) => c.id === scope.classId);
+          if (own) setSelectedClass(own);
+        }
+      }
       if (sessionData.success) setSessions(sessionData.data ?? []);
     } catch (e: any) {
       setDataError(e?.message || 'Data error.');
@@ -204,7 +224,7 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
               <View style={styles.center}>
                 <Ionicons name="checkmark-done-circle" size={54} color="#10B981" />
                 <ThemedText style={styles.successTitle}>Enrolled Successfully</ThemedText>
-                <ThemedText style={styles.successSubtitle}>{uploadedCount} students have been added to {selectedClass?.display_name}</ThemedText>
+                <ThemedText style={styles.successSubtitle}>{uploadedCount} students have been added to {selectedClass?.class_name}</ThemedText>
                 <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
                   <ThemedText style={styles.doneBtnText}>CONTINUE</ThemedText>
                 </TouchableOpacity>
@@ -222,16 +242,23 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
                 )}
 
                 <SectionHeader icon="school-outline" label="CLASS" />
-                <TouchableOpacity style={styles.inputSelector} onPress={() => setShowClassDropdown(!showClassDropdown)}>
-                  <ThemedText style={styles.selectorText}>{selectedClass?.display_name || 'Select Class'}</ThemedText>
-                  <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />
+                <TouchableOpacity
+                  style={[styles.inputSelector, !!classScope && { opacity: 0.6 }]}
+                  onPress={() => !classScope && setShowClassDropdown(!showClassDropdown)}
+                  disabled={!!classScope}
+                >
+                  <ThemedText style={styles.selectorText}>{selectedClass?.class_name || 'Select Class'}</ThemedText>
+                  {!classScope && <Ionicons name="chevron-down" size={18} color={Colors.accent.gold} />}
                 </TouchableOpacity>
-                {showClassDropdown && (
+                {!!classScope && (
+                  <ThemedText style={styles.classLockHint}>You're a class teacher — this upload goes into your assigned class.</ThemedText>
+                )}
+                {showClassDropdown && !classScope && (
                   <View style={styles.listBox}>
                     <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
                       {classes.map(c => (
                         <TouchableOpacity key={c.id} style={[styles.listItem, selectedClass?.id === c.id && styles.listItemActive]} onPress={() => { setSelectedClass(c); setShowClassDropdown(false); }}>
-                          <ThemedText style={[styles.listItemText, selectedClass?.id === c.id && { color: Colors.accent.gold, fontWeight: '800' }]}>{c.display_name}</ThemedText>
+                          <ThemedText style={[styles.listItemText, selectedClass?.id === c.id && { color: Colors.accent.gold, fontWeight: '800' }]}>{c.class_name}</ThemedText>
                           {selectedClass?.id === c.id && <Ionicons name="checkmark-circle" size={18} color={Colors.accent.gold} />}
                         </TouchableOpacity>
                       ))}
@@ -332,6 +359,7 @@ function makeStyles(C: any, width: number) {
     loadingText: { color: C.textMuted, marginTop: 10, fontSize: 11 },
     inputSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.inputBg, borderRadius: 12, paddingHorizontal: 16, height: 48, borderWidth: 1, borderColor: C.inputBorder, marginBottom: 8 },
     selectorText: { color: C.inputText, fontSize: 13, fontWeight: '700' },
+    classLockHint: { fontSize: 9.5, color: C.textMuted, marginTop: -4, marginBottom: 10, lineHeight: 13 },
     listBox: { backgroundColor: C.inputBg, borderRadius: 12, borderWidth: 1, borderColor: C.inputBorder, overflow: 'hidden' },
     listItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: C.divider, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     listItemActive: { backgroundColor: Colors.accent.gold + '10' },

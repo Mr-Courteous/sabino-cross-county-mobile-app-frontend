@@ -7,6 +7,9 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   RefreshControl,
+  Modal,
+  FlatList,
+  TouchableWithoutFeedback,
   useWindowDimensions,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -14,7 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '@/utils/api-service';
-import { isSchoolOwner } from '@/utils/jwt-decoder';
+import { isSchoolOwner, decodeToken } from '@/utils/jwt-decoder';
 import { Colors } from '@/constants/design-system';
 import { CustomAlert } from '@/components/custom-alert';
 import { ThemedText } from '@/components/themed-text';
@@ -27,6 +30,8 @@ interface Admin {
   email: string;
   phone?: string;
   role?: string;
+  class_id?: number | null;
+  class_name?: string | null;
   status: string; // 'active' | 'password_reset_required' | 'invited' | ...
   created_at: string;
 }
@@ -38,10 +43,14 @@ interface PendingInvite {
   email?: string;
   phone?: string;
   role?: string;
+  class_id?: number | null;
+  class_name?: string | null;
   status: string;
   expires_at: string;
   created_at: string;
 }
+
+interface ClassTemplate { id: number; display_name: string; }
 
 export default function StaffDirectoryPage() {
   const router = useRouter();
@@ -53,8 +62,20 @@ export default function StaffDirectoryPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isOwner, setIsOwner] = useState(true);
+  // A full admin (not owner, not class_teacher) can delete class_teacher
+  // accounts but not other admins — see backend DELETE /admins/:staffId.
+  const [isFullAdmin, setIsFullAdmin] = useState(false);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [classModalStaff, setClassModalStaff] = useState<Admin | null>(null);
+  const [classTemplates, setClassTemplates] = useState<ClassTemplate[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [savingClass, setSavingClass] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteStaff, setConfirmDeleteStaff] = useState<Admin | null>(null);
+  const [resendingId, setResendingId] = useState<number | null>(null);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
+  const [confirmRevokeInvite, setConfirmRevokeInvite] = useState<PendingInvite | null>(null);
   const [alert, setAlert] = useState<{ visible: boolean; type: 'success' | 'error' | 'info'; message: string }>({
     visible: false,
     type: 'info',
@@ -74,6 +95,8 @@ export default function StaffDirectoryPage() {
       }
 
       setIsOwner(isSchoolOwner(token));
+      const decoded = decodeToken(token);
+      setIsFullAdmin(!isSchoolOwner(token) && decoded?.staffRole === 'admin');
 
       const res = await fetch(`${API_BASE_URL}/api/staff/admins`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -120,6 +143,134 @@ export default function StaffDirectoryPage() {
     router.push('/add-staff');
   };
 
+  const openClassModal = async (admin: Admin) => {
+    setClassModalStaff(admin);
+    if (classTemplates.length > 0) return;
+    setLoadingClasses(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/classes`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.success) setClassTemplates(data.data || []);
+    } catch (e) {
+      // Non-fatal — the sheet still works for clearing an assignment.
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
+
+  const assignClass = async (className: string | null) => {
+    if (!classModalStaff) return;
+    setSavingClass(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/staff/admins/${classModalStaff.id}/class`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(className ? { className } : { clear: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAdmins((prev) => prev.map((a) => (a.id === classModalStaff.id ? { ...a, class_id: data.data.class_id, class_name: data.data.class_name } : a)));
+        setAlert({ visible: true, type: 'success', message: data.message || 'Class assignment updated.' });
+        setClassModalStaff(null);
+      } else {
+        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to update class assignment.' });
+      }
+    } catch (e) {
+      setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setSavingClass(false);
+    }
+  };
+
+  const canManage = isOwner || isFullAdmin;
+
+  const canDeleteStaff = (a: Admin) => {
+    if (isOwner) return true;
+    if (isFullAdmin) return a.role !== 'admin'; // full admins can't remove other admins
+    return false;
+  };
+
+  const requestDeleteStaff = (a: Admin) => {
+    if (!canDeleteStaff(a)) return;
+    setConfirmDeleteStaff(a);
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmDeleteStaff) return;
+    const target = confirmDeleteStaff;
+    setConfirmDeleteStaff(null);
+    setDeletingId(target.id);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/staff/admins/${target.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAdmins((prev) => prev.filter((a) => a.id !== target.id));
+        setAlert({ visible: true, type: 'success', message: data.message || 'Account removed.' });
+      } else {
+        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to remove this account.' });
+      }
+    } catch (e) {
+      setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const resendInvite = async (inv: PendingInvite) => {
+    setResendingId(inv.id);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/staff/admins/invite/${inv.id}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPendingInvites((prev) => prev.map((p) => (p.id === inv.id ? { ...p, expires_at: data.data.expires_at } : p)));
+        setAlert({ visible: true, type: 'success', message: data.message || 'Invite resent.' });
+      } else {
+        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to resend invite.' });
+      }
+    } catch (e) {
+      setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setResendingId(null);
+    }
+  };
+
+  const requestRevokeInvite = (inv: PendingInvite) => setConfirmRevokeInvite(inv);
+
+  const confirmRevoke = async () => {
+    if (!confirmRevokeInvite) return;
+    const target = confirmRevokeInvite;
+    setConfirmRevokeInvite(null);
+    setRevokingId(target.id);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/staff/admins/invite/${target.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPendingInvites((prev) => prev.filter((p) => p.id !== target.id));
+        setAlert({ visible: true, type: 'success', message: data.message || 'Invite revoked.' });
+      } else {
+        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to revoke invite.' });
+      }
+    } catch (e) {
+      setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
   const isTiny = width < 300;
 
   if (loading) {
@@ -153,10 +304,16 @@ export default function StaffDirectoryPage() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent.gold} />}
       >
-        {!isOwner && (
+        {!canManage && (
           <View style={styles.noticeBanner}>
             <Ionicons name="information-circle-outline" size={16} color={C.textMuted} />
-            <ThemedText style={styles.noticeText}>Only the school owner can add, remove, or manage staff accounts.</ThemedText>
+            <ThemedText style={styles.noticeText}>Only the school owner or an admin can manage staff accounts.</ThemedText>
+          </View>
+        )}
+        {isFullAdmin && (
+          <View style={styles.noticeBanner}>
+            <Ionicons name="information-circle-outline" size={16} color={C.textMuted} />
+            <ThemedText style={styles.noticeText}>As an admin, you can remove teacher accounts. Only the owner can add staff or remove other admins.</ThemedText>
           </View>
         )}
 
@@ -168,25 +325,57 @@ export default function StaffDirectoryPage() {
           </TouchableOpacity>
         )}
 
-        <ThemedText style={styles.sectionLabel}>ACTIVE ADMINS ({admins.length})</ThemedText>
+        <ThemedText style={styles.sectionLabel}>ACTIVE STAFF MEMBERS ({admins.length})</ThemedText>
         {admins.length === 0 ? (
           <View style={styles.emptyCard}>
-            <ThemedText style={styles.emptyText}>No admin accounts yet.</ThemedText>
+            <ThemedText style={styles.emptyText}>No staff member's accounts yet.</ThemedText>
           </View>
         ) : (
           <View style={styles.list}>
-            {admins.map((a) => (
-              <View key={a.id} style={styles.staffCard}>
-                <View style={styles.staffIconWrap}>
-                  <Ionicons name="person-outline" size={18} color={Colors.accent.gold} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.staffName} numberOfLines={1}>{a.full_name}</ThemedText>
-                  <ThemedText style={styles.staffSub} numberOfLines={1}>{a.email}</ThemedText>
-                </View>
-                <StatusBadge status={a.status} />
-              </View>
-            ))}
+            {admins.map((a) => {
+              const isClassTeacher = a.role === 'class_teacher';
+              const tappable = isOwner && isClassTeacher;
+              const deletable = canDeleteStaff(a);
+              return (
+                <TouchableOpacity
+                  key={a.id}
+                  style={styles.staffCard}
+                  onPress={() => tappable && openClassModal(a)}
+                  disabled={!tappable}
+                  activeOpacity={tappable ? 0.75 : 1}
+                >
+                  <View style={styles.staffIconWrap}>
+                    <Ionicons name={isClassTeacher ? 'school-outline' : 'person-outline'} size={18} color={Colors.accent.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.staffName} numberOfLines={1}>{a.full_name}</ThemedText>
+                    <ThemedText style={styles.staffSub} numberOfLines={1}>{a.email}</ThemedText>
+                    {isClassTeacher && (
+                      <View style={styles.roleTagRow}>
+                        <Ionicons name="albums-outline" size={10} color={Colors.accent.gold} />
+                        <ThemedText style={styles.roleTagText}>{a.class_name || 'No class assigned'}</ThemedText>
+                        {isOwner && <ThemedText style={styles.roleTagEdit}> · Tap to change</ThemedText>}
+                      </View>
+                    )}
+                  </View>
+                  <StatusBadge status={a.status} />
+                  {deletable && (
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={() => requestDeleteStaff(a)}
+                      disabled={deletingId === a.id}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      {deletingId === a.id ? (
+                        <ActivityIndicator size="small" color="#EF4444" />
+                      ) : (
+                        <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -205,13 +394,112 @@ export default function StaffDirectoryPage() {
                 <View style={{ flex: 1 }}>
                   <ThemedText style={styles.staffName} numberOfLines={1}>{inv.full_name || inv.email || 'Unnamed invite'}</ThemedText>
                   <ThemedText style={styles.staffSub} numberOfLines={1}>Code: {inv.code}</ThemedText>
+                  <ThemedText style={styles.staffSub} numberOfLines={1}>Expires {new Date(inv.expires_at).toLocaleDateString()}</ThemedText>
+                  {inv.role === 'class_teacher' && (
+                    <View style={styles.roleTagRow}>
+                      <Ionicons name="albums-outline" size={10} color={Colors.accent.gold} />
+                      <ThemedText style={styles.roleTagText}>{inv.class_name || 'No class assigned'}</ThemedText>
+                    </View>
+                  )}
                 </View>
+                {isOwner && (
+                  <View style={styles.inviteActions}>
+                    <TouchableOpacity
+                      style={styles.inviteActionBtn}
+                      onPress={() => resendInvite(inv)}
+                      disabled={resendingId === inv.id}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      {resendingId === inv.id ? (
+                        <ActivityIndicator size="small" color={Colors.accent.gold} />
+                      ) : (
+                        <Ionicons name="refresh-outline" size={16} color={Colors.accent.gold} />
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.inviteActionBtn}
+                      onPress={() => requestRevokeInvite(inv)}
+                      disabled={revokingId === inv.id}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      {revokingId === inv.id ? (
+                        <ActivityIndicator size="small" color="#EF4444" />
+                      ) : (
+                        <Ionicons name="close-circle-outline" size={16} color="#EF4444" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
                 <StatusBadge status="pending" />
               </View>
             ))}
           </View>
         )}
       </ScrollView>
+
+      {confirmDeleteStaff && (
+        <CustomAlert
+          type="warning"
+          message={`Remove ${confirmDeleteStaff.full_name}'s account permanently? They'll lose access immediately. This can't be undone.`}
+          confirmLabel="Remove"
+          onConfirm={confirmDelete}
+          onClose={() => setConfirmDeleteStaff(null)}
+        />
+      )}
+
+      {confirmRevokeInvite && (
+        <CustomAlert
+          type="warning"
+          message={`Revoke the invite for ${confirmRevokeInvite.full_name || confirmRevokeInvite.email}? The code will stop working.`}
+          confirmLabel="Revoke"
+          onConfirm={confirmRevoke}
+          onClose={() => setConfirmRevokeInvite(null)}
+        />
+      )}
+
+      <Modal visible={!!classModalStaff} transparent animationType="slide" onRequestClose={() => setClassModalStaff(null)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => !savingClass && setClassModalStaff(null)}>
+          <TouchableWithoutFeedback>
+            <View style={styles.modalSheet}>
+              <View style={styles.sheetHandle} />
+              <ThemedText style={styles.modalTitle}>Assign Class</ThemedText>
+              <ThemedText style={styles.modalSubtitle}>{classModalStaff?.full_name}</ThemedText>
+
+              <TouchableOpacity
+                style={styles.clearRow}
+                onPress={() => assignClass(null)}
+                disabled={savingClass || !classModalStaff?.class_name}
+              >
+                <Ionicons name="close-circle-outline" size={16} color={C.textMuted} />
+                <ThemedText style={styles.clearRowText}>Clear assignment (unrestricted until reassigned)</ThemedText>
+              </TouchableOpacity>
+
+              {loadingClasses ? (
+                <ActivityIndicator size="small" color={Colors.accent.gold} style={{ paddingVertical: 30 }} />
+              ) : classTemplates.length === 0 ? (
+                <ThemedText style={styles.modalEmptyText}>No classes found for your country.</ThemedText>
+              ) : (
+                <FlatList
+                  data={classTemplates}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.modalItem}
+                      onPress={() => assignClass(item.display_name)}
+                      disabled={savingClass}
+                    >
+                      <ThemedText style={styles.modalItemText}>{item.display_name}</ThemedText>
+                      {classModalStaff?.class_name === item.display_name && <Ionicons name="checkmark" size={16} color={Colors.accent.gold} />}
+                    </TouchableOpacity>
+                  )}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                />
+              )}
+              {savingClass && <ActivityIndicator size="small" color={Colors.accent.gold} style={{ marginTop: 10 }} />}
+            </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+      </Modal>
 
       {alert.visible && (
         <CustomAlert
@@ -279,5 +567,24 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     staffIconWrap: { width: 38, height: 38, borderRadius: 12, backgroundColor: `${Colors.accent.gold}15`, justifyContent: 'center', alignItems: 'center' },
     staffName: { color: C.text, fontSize: 13, fontWeight: '800' },
     staffSub: { color: C.textMuted, fontSize: 10, fontWeight: '600', marginTop: 2 },
+
+    roleTagRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+    roleTagText: { color: Colors.accent.gold, fontSize: 9.5, fontWeight: '700' },
+    roleTagEdit: { color: C.textMuted, fontSize: 9.5, fontWeight: '600' },
+
+    deleteBtn: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#EF444415', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+    inviteActions: { flexDirection: 'row', gap: 6, marginRight: 8 },
+    inviteActionBtn: { width: 30, height: 30, borderRadius: 10, backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.actionItemBorder, justifyContent: 'center', alignItems: 'center' },
+
+    modalOverlay: { flex: 1, backgroundColor: C.modalOverlay, justifyContent: 'flex-end' },
+    modalSheet: { backgroundColor: C.modalBg, borderColor: C.cardBorder, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: isTiny ? 16 : 24, borderTopWidth: 1, maxHeight: '75%' },
+    sheetHandle: { width: 36, height: 3, backgroundColor: C.divider, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+    modalTitle: { color: C.text, fontSize: 16, fontWeight: '900', marginBottom: 4, textAlign: 'center' },
+    modalSubtitle: { color: C.textMuted, fontSize: 11, fontWeight: '600', marginBottom: 14, textAlign: 'center' },
+    modalEmptyText: { color: C.textMuted, fontSize: 12, textAlign: 'center', paddingVertical: 20 },
+    modalItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, marginBottom: 4 },
+    modalItemText: { color: C.text, fontSize: 13, fontWeight: '600' },
+    clearRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 4, marginBottom: 8, borderBottomWidth: 1, borderColor: C.divider },
+    clearRowText: { color: C.textMuted, fontSize: 11.5, fontWeight: '600', flex: 1 },
   });
 }
