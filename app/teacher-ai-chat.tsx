@@ -37,12 +37,12 @@ interface Attachment {
   uri: string;
   mimeType?: string;
   webFile?: any; // the raw web File object — only present/used on Platform.OS === 'web'
-  // 'extracting'/'ready'/'error' only apply to documents (text is pulled
-  // via POST /attachments/extract right after picking). Images are
-  // always 'unsupported' — Sabino AI has no vision input yet, so an
-  // attached image is just a label, not something the AI can read.
-  status?: 'extracting' | 'ready' | 'error' | 'unsupported';
+  // Content is pulled via POST /attachments/extract right after picking,
+  // for both documents (text) and images (base64 data URL) — the chip
+  // shows a spinner while that's in flight, then 'ready' or 'error'.
+  status?: 'extracting' | 'ready' | 'error';
   extractedText?: string;
+  imageDataUrl?: string;
   errorMessage?: string;
 }
 interface LibraryDoc { id: number; docType: string; visibility: string; title: string; fileType: string; }
@@ -185,12 +185,12 @@ export default function TeacherAiChatPage() {
         message: text.trim(),
         conversationId: conversationId || undefined,
         contentType: activeContentType || undefined,
-        // `text` rides along only for attachments that finished
-        // extracting successfully — chat.js folds it into the AI's
-        // context. Failed/unsupported attachments still show up as a
-        // label (type + name) so the AI at least knows something was
-        // attached, but carry no content.
-        attachments: attachments.map((a) => ({ type: a.type, name: a.name, text: a.extractedText })),
+        // `text`/`imageDataUrl` ride along only for attachments that
+        // finished extracting successfully — chat.js folds them into the
+        // AI's context. Failed attachments still show up as a label
+        // (type + name) so the AI at least knows something was attached,
+        // but carry no content.
+        attachments: attachments.map((a) => ({ type: a.type, name: a.name, text: a.extractedText, imageDataUrl: a.imageDataUrl })),
         referenceDocumentId: libraryReference?.id,
       });
 
@@ -356,20 +356,40 @@ export default function TeacherAiChatPage() {
       if (result.canceled) return;
       const asset = result.assets?.[0];
       if (!asset) return;
-      // Sabino AI is text-only (see chat.js) — an attached photo can't
-      // actually be read yet. Still attach it for the teacher's own
-      // reference in the thread, but mark it clearly so it isn't
-      // mistaken for something the AI looked at.
-      setPendingAttachments((prev) => [
-        ...prev,
-        {
-          type: 'image',
-          name: asset.fileName || 'photo.jpg',
-          uri: asset.uri,
-          status: 'unsupported',
-          errorMessage: "Sabino AI can't read images yet",
-        },
-      ]);
+
+      const attachment: Attachment = {
+        type: 'image',
+        name: asset.fileName || 'photo.jpg',
+        uri: asset.uri,
+        mimeType: asset.mimeType || 'image/jpeg',
+        webFile: (asset as any).file,
+        status: 'extracting',
+      };
+      setPendingAttachments((prev) => [...prev, attachment]);
+
+      // Uploads to the same /attachments/extract endpoint as documents —
+      // for images it comes back with a base64 data URL instead of text,
+      // which rides along on the chat message so Sabino AI can actually
+      // see the picture (see chat.js).
+      const token = await getToken();
+      if (!token) { router.replace('/(auth)'); return; }
+      try {
+        const res = await teacherAiApi.extractAttachment(token, attachment);
+        const data = await res.json();
+        setPendingAttachments((prev) =>
+          prev.map((a) =>
+            a.uri !== attachment.uri
+              ? a
+              : data.success
+              ? { ...a, status: 'ready', imageDataUrl: data.data.imageDataUrl }
+              : { ...a, status: 'error', errorMessage: data.error || 'Could not read that image.' }
+          )
+        );
+      } catch (e) {
+        setPendingAttachments((prev) =>
+          prev.map((a) => (a.uri === attachment.uri ? { ...a, status: 'error', errorMessage: 'Network error.' } : a))
+        );
+      }
     } catch (e) {
       setAlert({ visible: true, type: 'error', message: 'Could not attach that image.' });
     }
@@ -593,14 +613,12 @@ export default function TeacherAiChatPage() {
                     name={
                       a.status === 'error'
                         ? 'alert-circle-outline'
-                        : a.status === 'unsupported'
-                        ? 'information-circle-outline'
                         : a.type === 'image'
                         ? 'image-outline'
                         : 'document-outline'
                     }
                     size={12}
-                    color={a.status === 'error' ? '#DC2626' : a.status === 'unsupported' ? Colors.accent.gold : C.text}
+                    color={a.status === 'error' ? '#DC2626' : C.text}
                   />
                 )}
                 <ThemedText
@@ -609,7 +627,6 @@ export default function TeacherAiChatPage() {
                 >
                   {a.name}
                   {a.status === 'error' ? ' — could not be read' : ''}
-                  {a.status === 'unsupported' ? ' — not read by AI' : ''}
                 </ThemedText>
                 <TouchableOpacity onPress={() => removeAttachment(a.uri)}>
                   <Ionicons name="close-circle" size={14} color={C.textMuted} />
