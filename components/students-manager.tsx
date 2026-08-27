@@ -381,7 +381,7 @@ export default function StudentsManager() {
         </View>
         <View style={styles.studentInfo}>
           <ThemedText style={styles.studentName} numberOfLines={1}>{item.first_name} {item.last_name}</ThemedText>
-          <ThemedText style={styles.studentSub}>{item.registration_number || 'No REG'}</ThemedText>
+          <ThemedText style={styles.studentSub}>{item.registration_number || 'No REG'}{item.email ? ` • ${item.email}` : ''}</ThemedText>
         </View>
         <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
       </View>
