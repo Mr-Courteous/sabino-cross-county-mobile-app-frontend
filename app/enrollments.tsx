@@ -67,7 +67,7 @@ export default function EnrollmentsPage() {
   const [classOptions, setClassOptions] = useState<ClassOption[]>([]);
   const [sessionOptions, setSessionOptions] = useState<SessionOption[]>([]);
 
-  const [statusFilter, setStatusFilter] = useState<typeof STATUS_FILTERS[number]>('all');
+  const [statusFilter, setStatusFilter] = useState<typeof STATUS_FILTERS[number]>('active');
   const [classFilter, setClassFilter] = useState<ClassOption | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionOption | null>(null);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
@@ -116,7 +116,8 @@ export default function EnrollmentsPage() {
       }
 
       const params = new URLSearchParams();
-      if (opts?.status && opts.status !== 'all') params.set('status', opts.status);
+      // For now, backend only supports active enrollments. Always request active.
+      params.set('status', 'active');
       if (opts?.classId) params.set('classId', String(opts.classId));
       if (opts?.sessionId) params.set('sessionId', String(opts.sessionId));
 
@@ -213,17 +214,38 @@ export default function EnrollmentsPage() {
 
       <View style={styles.filterRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
-          {STATUS_FILTERS.map((s) => (
-            <TouchableOpacity
-              key={s}
-              style={[styles.statusChip, statusFilter === s && styles.statusChipActive]}
-              onPress={() => applyStatusFilter(s)}
-            >
-              <ThemedText style={[styles.statusChipText, statusFilter === s && styles.statusChipTextActive]}>
-                {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
+          {STATUS_FILTERS.map((s) => {
+            const disabled = s !== 'active';
+            return (
+              <TouchableOpacity
+                key={s}
+                style={[
+                  styles.statusChip,
+                  statusFilter === s && styles.statusChipActive,
+                  disabled && styles.statusChipDisabled
+                ]}
+                disabled={disabled}
+                onPress={() => {
+                  if (disabled) {
+                    setAlert({ visible: true, type: 'info', message: 'This filter is a future feature and is currently unavailable.' });
+                  } else {
+                    applyStatusFilter(s);
+                  }
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ThemedText style={[styles.statusChipText, statusFilter === s && styles.statusChipTextActive, disabled && styles.statusChipTextDisabled]}>
+                    {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </ThemedText>
+                  {disabled && (
+                    <View style={styles.soonBadge}>
+                      <ThemedText style={styles.soonText}>Soon</ThemedText>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
@@ -400,8 +422,12 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     filterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: isTiny ? 16 : 20, marginTop: 12 },
     statusChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.actionItemBorder },
     statusChipActive: { backgroundColor: `${Colors.accent.gold}20`, borderColor: Colors.accent.gold },
+    statusChipDisabled: { opacity: 0.45 },
     statusChipText: { color: C.textMuted, fontSize: 11, fontWeight: '700' },
     statusChipTextActive: { color: Colors.accent.gold, fontWeight: '800' },
+    statusChipTextDisabled: { color: C.textMuted, opacity: 0.7 },
+    soonBadge: { backgroundColor: C.actionItemBg, borderWidth: 1, borderColor: C.actionItemBorder, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+    soonText: { fontSize: 10, fontWeight: '800', color: C.textMuted },
 
     filterPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.actionItemBg, borderRadius: 14, borderWidth: 1, borderColor: C.actionItemBorder, paddingHorizontal: 12, paddingVertical: 9, flex: 1, maxWidth: '48%' },
     filterPillText: { flex: 1, color: C.text, fontSize: 11.5, fontWeight: '700' },

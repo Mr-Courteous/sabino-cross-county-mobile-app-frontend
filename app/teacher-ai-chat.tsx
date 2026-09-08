@@ -11,6 +11,7 @@ import {
   Modal,
   useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -84,6 +85,7 @@ export default function TeacherAiChatPage() {
   const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
   const isTiny = width < 300;
   const scrollRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(!!params.conversationId);
   const [conversationId, setConversationId] = useState<number | null>(
@@ -443,7 +445,7 @@ export default function TeacherAiChatPage() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}>
       <ThemedView style={styles.container}>
         <StatusBar style={C.isDark ? 'light' : 'dark'} />
         <View style={styles.header}>
@@ -650,7 +652,7 @@ export default function TeacherAiChatPage() {
           </View>
         )}
 
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, isTiny ? 10 : 14) }]}>
           <TouchableOpacity onPress={pickDocument} style={styles.composerIconBtn}>
             <Ionicons name="document-attach-outline" size={19} color={C.textMuted} />
           </TouchableOpacity>
