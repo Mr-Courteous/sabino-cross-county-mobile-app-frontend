@@ -16,9 +16,6 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 
-import com.facebook.FacebookSdk
-import com.facebook.appevents.AppEventsLogger
-
 class MainApplication : Application(), ReactApplication {
 
   override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
@@ -43,13 +40,6 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-
-    // Initialize Facebook SDK synchronously before anything else
-    FacebookSdk.setApplicationId("1604773563928085")
-    FacebookSdk.setClientToken("3645128436aefe497756f38f593c3f3a")
-    FacebookSdk.sdkInitialize(applicationContext)
-    AppEventsLogger.activateApp(this)
-
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {

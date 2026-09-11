@@ -16,6 +16,8 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { API_BASE_URL } from '@/utils/api-service';
 import { getToken } from '@/utils/teacher-ai-api';
 import { isSchoolOwner, decodeToken } from '@/utils/jwt-decoder';
@@ -93,6 +95,8 @@ export default function DocumentLibraryPage() {
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(null);
 
   const [reviewModalDoc, setReviewModalDoc] = useState<DocRow | null>(null);
   const [reviewNoteInput, setReviewNoteInput] = useState('');
@@ -247,6 +251,116 @@ export default function DocumentLibraryPage() {
       setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDownload = async (doc: DocRow) => {
+    if (Platform.OS === 'web') {
+      // Web: trigger a browser download via a hidden anchor tag
+      try {
+        setDownloadingId(doc.id);
+        const response = await fetch(doc.fileUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = doc.fileName || `${doc.title}.${doc.fileType}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } catch {
+        window.open(doc.fileUrl, '_blank');
+      } finally {
+        setDownloadingId(null);
+      }
+    } else {
+      // Native (Android/iOS): download to cache then open native share sheet
+      // Same pattern as report-cards.tsx handleDownloadAndShare
+      try {
+        setDownloadingId(doc.id);
+        const safeName = (doc.fileName || `${doc.title.replace(/[^a-zA-Z0-9_\-]/g, '_')}.${doc.fileType}`);
+        const fileUri = `${FileSystem.cacheDirectory}${safeName}`;
+
+        const downloadResult = await FileSystem.downloadAsync(doc.fileUrl, fileUri);
+
+        if (downloadResult.status !== 200) {
+          throw new Error('Failed to download file');
+        }
+
+        const isSharingAvailable = await Sharing.isAvailableAsync();
+        if (!isSharingAvailable) {
+          setAlert({ visible: true, type: 'error', message: 'Sharing is not available on this device.' });
+          return;
+        }
+
+        await Sharing.shareAsync(fileUri, {
+          mimeType: doc.fileType === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          dialogTitle: doc.title,
+          UTI: doc.fileType === 'pdf' ? 'com.adobe.pdf' : 'org.openxmlformats.wordprocessingml.document',
+        });
+      } catch (err: any) {
+        setAlert({ visible: true, type: 'error', message: err.message || 'Could not download file. Please try again.' });
+      } finally {
+        setDownloadingId(null);
+      }
+    }
+  };
+
+  // Save directly to device Downloads folder (Android SAF) or share sheet (iOS fallback)
+  const handleSaveToDevice = async (doc: DocRow) => {
+    if (Platform.OS === 'web') {
+      // Web: same as share (browser download)
+      handleDownload(doc);
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      // iOS has no public Downloads folder — fall back to share sheet
+      handleDownload(doc);
+      return;
+    }
+
+    // Android: use StorageAccessFramework to write directly to Downloads
+    try {
+      setSavingId(doc.id);
+      const safeName = (doc.fileName || `${doc.title.replace(/[^a-zA-Z0-9_\-]/g, '_')}.${doc.fileType}`);
+      const mimeType = doc.fileType === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+      // Step 1: Ask user to pick a folder (only shown once if they pick Downloads)
+      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!permissions.granted) {
+        setAlert({ visible: true, type: 'info', message: 'Folder access was cancelled.' });
+        return;
+      }
+
+      // Step 2: Download file to cache first
+      const cacheUri = `${FileSystem.cacheDirectory}${safeName}`;
+      const downloadResult = await FileSystem.downloadAsync(doc.fileUrl, cacheUri);
+      if (downloadResult.status !== 200) throw new Error('Failed to download file');
+
+      // Step 3: Read cache file as base64
+      const base64 = await FileSystem.readAsStringAsync(cacheUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Step 4: Create the file in the chosen folder and write to it
+      const destUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        permissions.directoryUri,
+        safeName,
+        mimeType,
+      );
+      await FileSystem.writeAsStringAsync(destUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      setAlert({ visible: true, type: 'success', message: `"${doc.title}" saved to your chosen folder.` });
+    } catch (err: any) {
+      setAlert({ visible: true, type: 'error', message: err.message || 'Could not save file to device.' });
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -427,21 +541,19 @@ export default function DocumentLibraryPage() {
           <View style={styles.list}>
             {activeList.map((doc) => (
               <View key={doc.id} style={styles.docCard}>
+                {/* Top row: icon, title, delete */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }} onPress={() => Linking.openURL(doc.fileUrl)} activeOpacity={0.75}>
-                    <View style={styles.docIconWrap}>
-                      <Ionicons name={doc.fileType === 'pdf' ? 'document-text-outline' : 'document-outline'} size={18} color={Colors.accent.gold} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={styles.docTitle} numberOfLines={1}>{doc.title}</ThemedText>
-                      <ThemedText style={styles.docSub} numberOfLines={1}>
-                        {(doc.visibility === 'school' || (tab === 'review' && canManageSchoolDocs)) && doc.uploadedByName ? `${doc.uploadedByName} · ` : ''}
-                        {isAllView ? `${TYPE_LABELS[doc.docType]} · ` : ''}
-                        {doc.fileType.toUpperCase()} · {new Date(doc.createdAt).toLocaleDateString()}
-                      </ThemedText>
-                    </View>
-                    <Ionicons name="open-outline" size={16} color={C.textMuted} />
-                  </TouchableOpacity>
+                  <View style={styles.docIconWrap}>
+                    <Ionicons name={doc.fileType === 'pdf' ? 'document-text-outline' : 'document-outline'} size={18} color={Colors.accent.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.docTitle} numberOfLines={1}>{doc.title}</ThemedText>
+                    <ThemedText style={styles.docSub} numberOfLines={1}>
+                      {(doc.visibility === 'school' || (tab === 'review' && canManageSchoolDocs)) && doc.uploadedByName ? `${doc.uploadedByName} · ` : ''}
+                      {isAllView ? `${TYPE_LABELS[doc.docType]} · ` : ''}
+                      {doc.fileType.toUpperCase()} · {new Date(doc.createdAt).toLocaleDateString()}
+                    </ThemedText>
+                  </View>
                   {canDelete(doc) && (
                     <TouchableOpacity
                       style={styles.deleteBtn}
@@ -455,6 +567,41 @@ export default function DocumentLibraryPage() {
                       )}
                     </TouchableOpacity>
                   )}
+                </View>
+
+                {/* Action buttons row */}
+                <View style={styles.docActionRow}>
+                  {/* Share button */}
+                  <TouchableOpacity
+                    style={[styles.docActionBtn, { borderColor: Colors.accent.gold, backgroundColor: `${Colors.accent.gold}10` }]}
+                    onPress={() => handleDownload(doc)}
+                    disabled={downloadingId === doc.id || savingId === doc.id}
+                  >
+                    {downloadingId === doc.id ? (
+                      <ActivityIndicator size="small" color={Colors.accent.gold} />
+                    ) : (
+                      <>
+                        <Ionicons name="share-social-outline" size={13} color={Colors.accent.gold} />
+                        <ThemedText style={[styles.docActionText, { color: Colors.accent.gold }]}>Share</ThemedText>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Save to Device button (Android-meaningful; iOS shows share sheet) */}
+                  <TouchableOpacity
+                    style={[styles.docActionBtn, { borderColor: '#60A5FA', backgroundColor: 'rgba(96,165,250,0.08)' }]}
+                    onPress={() => handleSaveToDevice(doc)}
+                    disabled={downloadingId === doc.id || savingId === doc.id}
+                  >
+                    {savingId === doc.id ? (
+                      <ActivityIndicator size="small" color="#60A5FA" />
+                    ) : (
+                      <>
+                        <Ionicons name="download-outline" size={13} color="#60A5FA" />
+                        <ThemedText style={[styles.docActionText, { color: '#60A5FA' }]}>Save</ThemedText>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 </View>
 
                 {tab === 'review' && (
@@ -658,6 +805,9 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     docTitle: { color: C.text, fontSize: 13, fontWeight: '800' },
     docSub: { color: C.textMuted, fontSize: 10, fontWeight: '600', marginTop: 2 },
     deleteBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#EF444415', justifyContent: 'center', alignItems: 'center' },
+    docActionRow: { flexDirection: 'row', gap: 8, borderTopWidth: 1, borderColor: C.divider, paddingTop: 10 },
+    docActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
+    docActionText: { fontSize: 11, fontWeight: '800' },
 
     reviewFooter: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderColor: C.divider, paddingTop: 10 },
     reviewNoteText: { flex: 1, color: C.textMuted, fontSize: 10.5, fontStyle: 'italic' },

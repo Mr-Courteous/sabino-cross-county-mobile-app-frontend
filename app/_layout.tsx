@@ -1,8 +1,8 @@
 import { Stack } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { requestAndStorePushToken, setupForegroundPermissionCheck } from '@/utils/push-notifications';
+import React, { useEffect, useState, useRef } from 'react';
+import { requestAndStorePushToken, setupForegroundPermissionCheck, setupPushTokenListener } from '@/utils/push-notifications';
 import { useRouter, useSegments } from 'expo-router';
-import { Platform, ActivityIndicator, View } from 'react-native';
+import { Platform, ActivityIndicator, View, AppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ThemeProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
@@ -220,11 +220,28 @@ Notifications.setNotificationHandler({
 export default function RootLayout() {
 
   useEffect(() => {
+    // Run immediately on mount
     requestAndStorePushToken();
+
+    // Also retry every time the app comes to the foreground.
+    // This recovers from: failed network on first open, fresh install,
+    // OS-level token rotation, or reinstall where the first call silently failed.
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        requestAndStorePushToken();
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {
     const cleanup = setupForegroundPermissionCheck();
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
+    const cleanup = setupPushTokenListener();
     return cleanup;
   }, []);
 

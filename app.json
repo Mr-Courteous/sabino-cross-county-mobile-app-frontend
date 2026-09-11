@@ -35,6 +35,7 @@
       "googleServicesFile": "./google-services.json"
     },
     "plugins": [
+      "@react-native-firebase/app",
       "expo-router",
       "expo-font",
       "expo-secure-store",
