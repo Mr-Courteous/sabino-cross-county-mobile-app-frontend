@@ -1,8 +1,8 @@
 import { Stack } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
-import { requestAndStorePushToken, setupForegroundPermissionCheck, setupPushTokenListener } from '@/utils/push-notifications';
+import { ensurePushPermission, requestAndStorePushToken, setupForegroundPermissionCheck, setupPushTokenListener } from '@/utils/push-notifications';
 import { useRouter, useSegments } from 'expo-router';
-import { Platform, ActivityIndicator, View, AppState } from 'react-native';
+import { Platform, ActivityIndicator, View, AppState, Alert, Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ThemeProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
@@ -208,7 +208,7 @@ function RootLayoutContent() {
   );
 }
 
-// Configure how notifications are displayed
+// Only notifications delivered by the backend are presented to the user.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -218,17 +218,36 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
+  const permissionPromptShown = useRef(false);
 
   useEffect(() => {
-    // Run immediately on mount
-    requestAndStorePushToken();
+    const checkNotificationAccess = async () => {
+      if (Platform.OS === 'web') return;
 
-    // Also retry every time the app comes to the foreground.
-    // This recovers from: failed network on first open, fresh install,
-    // OS-level token rotation, or reinstall where the first call silently failed.
+      const enabled = await ensurePushPermission();
+      if (enabled) {
+        await requestAndStorePushToken();
+        return;
+      }
+
+      if (!permissionPromptShown.current) {
+        permissionPromptShown.current = true;
+        Alert.alert(
+          'Notifications are disabled',
+          'Enable notifications in your phone settings to receive important updates.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+    };
+
+    checkNotificationAccess();
+
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        requestAndStorePushToken();
+        checkNotificationAccess();
       }
     });
 

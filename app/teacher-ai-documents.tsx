@@ -147,20 +147,32 @@ export default function TeacherAiDocumentsPage() {
     router.push({ pathname: '/teacher-ai-editor', params: { type, id: String(id) } } as any);
   };
 
-  // Group by subject · class · term, per addendum §1.4 ("grouped by
-  // subject, class and term").
   const groups = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; rows: DocRow[] }>();
-    for (const doc of docs) {
-      const subjectLabel = doc.subjectId ? subjectsById[doc.subjectId] || `Subject #${doc.subjectId}` : 'No subject';
-      const classLabel = doc.classId ? classesById[doc.classId] || `Class #${doc.classId}` : 'No class';
-      const termLabel = doc.term || 'No term';
-      const key = `${subjectLabel}__${classLabel}__${termLabel}`;
-      if (!map.has(key)) map.set(key, { key, label: `${subjectLabel} · ${classLabel} · ${termLabel}`, rows: [] });
-      map.get(key)!.rows.push(doc);
+    if (tab === 'approved') {
+      return [{ key: 'approved', label: 'Approved Documents', rows: docs }];
     }
-    return Array.from(map.values());
-  }, [docs, subjectsById, classesById]);
+
+    const aiDrafts: DocRow[] = [];
+    const savedDrafts: DocRow[] = [];
+    const approved: DocRow[] = [];
+
+    for (const doc of docs) {
+      if (doc.status === 'approved') {
+        approved.push(doc);
+      } else if (!doc.classId || !doc.subjectId) {
+        aiDrafts.push(doc);
+      } else {
+        savedDrafts.push(doc);
+      }
+    }
+
+    const map = [];
+    if (aiDrafts.length > 0) map.push({ key: 'ai', label: 'AI Generated Drafts', rows: aiDrafts });
+    if (savedDrafts.length > 0) map.push({ key: 'drafts', label: 'Assigned Drafts', rows: savedDrafts });
+    if (approved.length > 0) map.push({ key: 'approved', label: 'Approved Documents', rows: approved });
+
+    return map;
+  }, [docs, tab]);
 
   if (loading) {
     return (
@@ -235,6 +247,8 @@ export default function TeacherAiDocumentsPage() {
                       <ThemedText style={styles.docTitle} numberOfLines={1}>{doc.title || `Untitled ${label}`}</ThemedText>
                       <ThemedText style={styles.docSub} numberOfLines={1}>
                         {tab === 'approved' && doc.teacherName ? `${doc.teacherName} · ` : ''}
+                        {(doc.classId && classesById[doc.classId]) ? `${classesById[doc.classId]} · ` : ''}
+                        {(doc.subjectId && subjectsById[doc.subjectId]) ? `${subjectsById[doc.subjectId]} · ` : ''}
                         Updated {new Date(doc.updatedAt).toLocaleDateString()}
                       </ThemedText>
                     </View>

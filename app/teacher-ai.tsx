@@ -59,7 +59,40 @@ export default function TeacherAiHomePage() {
           <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
         </TouchableOpacity>
 
-        <ThemedText style={styles.sectionLabel}>FILE LIBRARY</ThemedText>
+        <ThemedText style={styles.sectionLabel}>AI GENERATED DOCUMENTS</ThemedText>
+        <ThemedText style={styles.fileLibraryDesc}>
+          Browse your Sabino AI drafts and approved generated documents.
+        </ThemedText>
+        <View style={styles.list}>
+          <TypeRow
+            icon="document-text-outline"
+            title="Generated Schemes of Work"
+            desc="AI generated schemes of work (Drafts & Approved)."
+            onPress={() => router.push({ pathname: '/teacher-ai-documents', params: { type: 'scheme-of-work' } } as any)}
+            C={C}
+            styles={styles}
+          />
+          <TypeRow
+            icon="document-text-outline"
+            title="Generated Lesson Plans"
+            desc="AI generated lesson plans (Drafts & Approved)."
+            onPress={() => router.push({ pathname: '/teacher-ai-documents', params: { type: 'lesson-plans' } } as any)}
+            C={C}
+            styles={styles}
+          />
+          <TypeRow
+            icon="document-text-outline"
+            title="Generated Lesson Notes"
+            desc="AI generated lesson notes (Drafts & Approved)."
+            onPress={() => router.push({ pathname: '/teacher-ai-documents', params: { type: 'lesson-notes' } } as any)}
+            C={C}
+            styles={styles}
+          />
+        </View>
+
+        <View style={{ height: 26 }} />
+
+        <ThemedText style={styles.sectionLabel}>UPLOADED FILE LIBRARY</ThemedText>
         <ThemedText style={styles.fileLibraryDesc}>
           Upload or browse the official school document, or your own personal copy.
         </ThemedText>

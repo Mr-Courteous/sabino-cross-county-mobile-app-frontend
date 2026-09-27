@@ -62,14 +62,14 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || CONFIG_API_BASE_URL || '
  * Gets the Expo push token string.
  * Returns null on simulators, web, or if the user denies permission.
  */
-async function getExpoPushToken(): Promise<string | null> {
+async function getExpoPushToken(requestPermission = true): Promise<string | null> {
   if (!Device.isDevice || Platform.OS === 'web') return null;
 
   try {
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
 
-    if (existing !== 'granted') {
+    if (existing !== 'granted' && requestPermission) {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
@@ -94,6 +94,28 @@ async function getExpoPushToken(): Promise<string | null> {
     console.warn('[Push] Error obtaining Expo push token:', err);
     return null;
   }
+}
+
+/**
+ * Checks notification permission and asks only when the OS has not decided yet.
+ * Returns true when notifications are currently enabled.
+ */
+export async function ensurePushPermission(): Promise<boolean> {
+  if (!Device.isDevice || Platform.OS === 'web') return false;
+
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    if (existing === 'granted') return true;
+
+    if (existing === 'undetermined') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      return status === 'granted';
+    }
+  } catch (err) {
+    console.warn('[Push] Error checking notification permission:', err);
+  }
+
+  return false;
 }
 
 /** Android requires an explicit channel. Safe no-op on iOS. */
@@ -134,7 +156,7 @@ export async function requestAndStorePushToken(): Promise<void> {
   try {
     ensureAndroidChannel();
 
-    const token = await getExpoPushToken();
+    const token = await getExpoPushToken(false);
     if (!token) return;
 
     const res = await fetch(`${API_BASE_URL}/api/notifications/register-token`, {

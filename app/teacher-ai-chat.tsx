@@ -79,7 +79,7 @@ const LIBRARY_DOC_TYPE_LABELS: Record<string, string> = {
 // carries the disclaimer.
 export default function TeacherAiChatPage() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ contentType?: string; conversationId?: string }>();
+  const params = useLocalSearchParams<{ contentType?: string; conversationId?: string; initialPrompt?: string; editingDocId?: string }>();
   const { width } = useWindowDimensions();
   const C = useAppColors();
   const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
@@ -102,7 +102,7 @@ export default function TeacherAiChatPage() {
   // off, since it matches chat.js's `history.slice(-20)` window, not
   // `messages.length` (the filtered, display-only count).
   const [totalMessageCount, setTotalMessageCount] = useState(0);
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState(params.initialPrompt ? String(params.initialPrompt) : '');
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [libraryReference, setLibraryReference] = useState<{ id: number; title: string } | null>(null);
   const [libraryPickerVisible, setLibraryPickerVisible] = useState(false);
@@ -290,11 +290,19 @@ export default function TeacherAiChatPage() {
         });
       }
 
-      const res = await teacherAiApi.createDocument(token, docType, body);
+      const res = params.editingDocId 
+        ? await teacherAiApi.updateDocument(token, docType, params.editingDocId, body)
+        : await teacherAiApi.createDocument(token, docType, body);
+        
       if (res.status === 402) { router.replace('/pricing'); return; }
       const data = await res.json();
       if (data.success) {
-        router.push({ pathname: '/teacher-ai-editor', params: { type: docType, id: String(data.data.id) } } as any);
+        // If we updated an existing document, just go back to it
+        if (params.editingDocId) {
+          router.back();
+        } else {
+          router.push({ pathname: '/teacher-ai-editor', params: { type: docType, id: String(data.data.id) } } as any);
+        }
       } else {
         setAlert({ visible: true, type: 'error', message: data.error || 'Could not save this document.' });
       }
