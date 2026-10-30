@@ -242,6 +242,12 @@ export default function DashboardPage() {
             <ActionListItem title="Attendance" subtitle="Daily register, weekly grid & term summary" icon="checkmark-done-circle-outline" onPress={() => router.push('/attendance')} C={C} styles={styles} />
             <ActionListItem title="Reports" icon="copy-outline" onPress={() => router.push('/report-cards')} C={C} styles={styles} />
             {(isOwner || isFullAdmin) && (
+              <ActionListItem title="Result Template" subtitle="Columns, mark splits (e.g. 10/10/80) & grading" icon="grid-outline" onPress={() => router.push('/assessment-settings')} C={C} styles={styles} />
+            )}
+            {(isOwner || isFullAdmin) && (
+              <ActionListItem title="Academic Setup" subtitle="Classes, arms, subjects & teacher assignments" icon="school-outline" onPress={() => router.push('/academic-setup')} C={C} styles={styles} />
+            )}
+            {(isOwner || isFullAdmin) && (
               <ActionListItem title="Enrollments" subtitle="See every student's class & session enrollment" icon="list-outline" onPress={() => router.push('/enrollments')} C={C} styles={styles} />
             )}
             {/* Teaching Assistant: available to BOTH the school owner and

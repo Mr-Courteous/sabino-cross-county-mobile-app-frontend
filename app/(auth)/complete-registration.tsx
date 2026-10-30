@@ -216,11 +216,19 @@ export default function CompleteRegistrationScreen() {
             }
           }
         }
-        setPaymentStep('info');
-        setCurrentStep('payment');
-
         // ✅ Fire Meta Completed Registration event
         logFbEvent('fb_mobile_complete_registration');
+
+        // Free trial: the server already activated the school for a few days,
+        // so skip the payment step and go straight in. When the trial ends the
+        // normal 402 -> /pricing flow asks them to subscribe.
+        if (res.data.user?.paymentStatus === 'completed' || res.data.user?.trial?.isTrial) {
+          router.replace('/dashboard' as any);
+          return;
+        }
+
+        setPaymentStep('info');
+        setCurrentStep('payment');
       } else throw new Error(res.error || 'Setup failed');
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }

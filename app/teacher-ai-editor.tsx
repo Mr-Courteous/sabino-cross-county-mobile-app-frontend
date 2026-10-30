@@ -54,13 +54,14 @@ export default function TeacherAiEditorPage() {
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [docId, setDocId] = useState<number | null>(id);
-  const [status, setStatus] = useState<'draft' | 'approved'>('draft');
+  const [status, setStatus] = useState<'draft' | 'pending_review' | 'approved'>('draft');
   const [createdVia, setCreatedVia] = useState<'ai' | 'manual'>('manual');
   const [approvedAt, setApprovedAt] = useState<string | null>(null);
   const [approvedByName, setApprovedByName] = useState<string | null>(null);
   const [aiConversationId, setAiConversationId] = useState<string | null>(null);
   const isApproved = status === 'approved';
-  const isReadOnly = isApproved;
+  const isPendingReview = status === 'pending_review';
+  const isReadOnly = isApproved || isPendingReview;
   const [deleting, setDeleting] = useState(false);
 
   // Common fields
@@ -250,21 +251,21 @@ export default function TeacherAiEditorPage() {
     }
   };
 
-  const confirmApprove = () => {
+  const confirmSendForReview = () => {
     if (!docId) {
-      setAlert({ visible: true, type: 'warning', message: 'Save this as a draft first, then approve it.' });
+      setAlert({ visible: true, type: 'warning', message: 'Save this as a draft first, then send it for review.' });
       return;
     }
     setAlert({
       visible: true,
       type: 'warning',
-      message: `Approving locks this ${label.toLowerCase()} from further edits and makes it visible to Admin for oversight. Continue?`,
-      confirmLabel: 'Approve & Save',
-      onConfirm: doApprove,
+      message: `Sending for review will submit this ${label.toLowerCase()} to your admin for approval. You won't be able to edit it until a decision is made. Continue?`,
+      confirmLabel: 'Send for Review',
+      onConfirm: doSendForReview,
     });
   };
 
-  const doApprove = async () => {
+  const doSendForReview = async () => {
     if (!docId) return;
     setApproving(true);
     try {
@@ -274,12 +275,10 @@ export default function TeacherAiEditorPage() {
       if (res.status === 402) { router.replace('/pricing'); return; }
       const data = await res.json();
       if (data.success) {
-        setStatus('approved');
-        setApprovedAt(data.data.approvedAt);
-        setApprovedByName(data.data.approvedByName);
-        setAlert({ visible: true, type: 'success', message: `${label} approved.` });
+        setStatus(data.data?.status ?? 'pending_review');
+        setAlert({ visible: true, type: 'success', message: data.message || `${label} sent for review.` });
       } else {
-        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to approve.' });
+        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to send for review.' });
       }
     } catch (e) {
       setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
@@ -392,6 +391,15 @@ export default function TeacherAiEditorPage() {
             <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
             <ThemedText style={styles.approvedBannerText}>
               Approved{approvedAt ? ` ${new Date(approvedAt).toLocaleDateString()}` : ''}{approvedByName ? ` by ${approvedByName}` : ''}. This document is locked from further edits.
+            </ThemedText>
+          </View>
+        )}
+
+        {isPendingReview && (
+          <View style={[styles.approvedBanner, { backgroundColor: '#F59E0B12', borderColor: '#F59E0B40' }]}>
+            <Ionicons name="time-outline" size={16} color="#F59E0B" />
+            <ThemedText style={styles.approvedBannerText}>
+              This document has been submitted for admin review. You cannot edit it until a decision is made.
             </ThemedText>
           </View>
         )}
@@ -517,12 +525,12 @@ export default function TeacherAiEditorPage() {
       )}
 
       {!isReadOnly && (
-        <View style={styles.footer}>
+      <View style={styles.footer}>
           <TouchableOpacity style={styles.footerBtnOutline} onPress={handleSaveDraft} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color={C.text} /> : <ThemedText style={styles.footerBtnOutlineText}>Save Draft</ThemedText>}
+            {saving ? <ActivityIndicator size="small" color={C.text} /> : <ThemedText style={styles.footerBtnOutlineText}>Save to Archive</ThemedText>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.footerBtnPrimary} onPress={confirmApprove} disabled={approving}>
-            {approving ? <ActivityIndicator size="small" color="#0F172A" /> : <ThemedText style={styles.footerBtnPrimaryText}>Approve & Save</ThemedText>}
+          <TouchableOpacity style={styles.footerBtnPrimary} onPress={confirmSendForReview} disabled={approving}>
+            {approving ? <ActivityIndicator size="small" color="#0F172A" /> : <ThemedText style={styles.footerBtnPrimaryText}>Send for Review</ThemedText>}
           </TouchableOpacity>
         </View>
       )}
@@ -587,11 +595,13 @@ function PickerButton({ value, onPress, disabled, C, styles }: any) {
 
 function StatusPill({ status }: { status: string }) {
   const isApproved = status === 'approved';
-  const color = isApproved ? '#22C55E' : '#F59E0B';
+  const isPending = status === 'pending_review';
+  const color = isApproved ? '#22C55E' : isPending ? '#F59E0B' : '#94A3B8';
+  const label = isApproved ? 'Approved' : isPending ? 'In Review' : 'Draft';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: `${color}15`, borderColor: `${color}40`, borderWidth: 1, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }}>
       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
-      <ThemedText style={{ color, fontSize: 9.5, fontWeight: '800' }}>{isApproved ? 'Approved' : 'Draft'}</ThemedText>
+      <ThemedText style={{ color, fontSize: 9.5, fontWeight: '800' }}>{label}</ThemedText>
     </View>
   );
 }

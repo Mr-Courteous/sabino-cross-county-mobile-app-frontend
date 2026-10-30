@@ -1,0 +1,93 @@
+{
+  "expo": {
+    "name": "Sabino Edu",
+    "slug": "sabino-mobile-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/sabino.jpeg",
+    "scheme": "sabinomobileapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.courteous.sabinomobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.courteous.sabinomobile",
+      "newArchEnabled": true,
+      "versionCode": 47,
+      "permissions": [
+        "com.android.vending.BILLING",
+        "com.google.android.gms.permission.AD_ID"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/sabino.jpeg"
+      },
+      "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": [
+      "@react-native-firebase/app",
+      "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-dev-client",
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/sabino.jpeg",
+          "resizeMode": "cover",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "kotlinVersion": "2.1.20",
+            "extraProguardRules": "-keep class com.dooboolab.RNIap.** { *; }",
+            "enableMinifyInReleaseBuilds": true
+          }
+        }
+      ],
+      [
+        "react-native-iap",
+        {
+          "paymentConfiguration": "android"
+        }
+      ],
+      [
+        "./plugins/withAdIdPermission"
+      ],
+      "expo-mail-composer",
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "1604773563928085",
+          "clientToken": "3645128436aefe497756f38f593c3f3a",
+          "displayName": "Sabino Edu",
+          "advertiserIDCollectionEnabled": true,
+          "autoLogAppEventsEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d21da891-6ad0-487f-8177-ef1c44334aa9"
+      }
+    },
+    "owner": "courteous"
+  }
+}

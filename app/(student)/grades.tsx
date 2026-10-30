@@ -82,6 +82,8 @@ export default function StudentGrades() {
 
     // Data
     const [grades, setGrades] = useState<Grade[]>([]);
+    // Set when the school uses a custom result template (columns come from the server)
+    const [layout, setLayout] = useState<any>(null);
     const [summary, setSummary] = useState<Summary | null>(null);
     const [fetchingMetadata, setFetchingMetadata] = useState(false);
     const [fetchingGrades, setFetchingGrades] = useState(false);
@@ -192,9 +194,11 @@ export default function StudentGrades() {
 
             if (data.success && data.data.length > 0) {
                 setGrades(data.data);
+                setLayout(data.layout || null);
                 setSummary(data.summary);
             } else {
                 setGrades([]);
+                setLayout(null);
                 setSummary(null);
                 setStatusAlert({ visible: true, type: 'info', title: 'No Records', message: 'No scores for this term.' });
             }
@@ -353,6 +357,13 @@ export default function StudentGrades() {
                             
                             const total = (totalCA || 0) + (examScore || 0);
                             const letterGrade = getLetterGrade(total);
+                            // Custom template: the server already computed the cells, total and grade
+                            const lrow = layout?.rows?.find((r: any) => r.subject_name === grade.subject_name);
+                            const shownTotal = lrow ? Number(lrow.total_score) : total;
+                            const shownColor = lrow
+                                ? getLetterGrade(layout.total_max ? (shownTotal / layout.total_max) * 100 : shownTotal).color
+                                : letterGrade.color;
+                            const shownLabel = lrow ? (lrow.grade || '-') : letterGrade.label;
                             
                             return (
                                 <View key={idx} style={styles.gradeCard}>
@@ -360,16 +371,33 @@ export default function StudentGrades() {
                                         <View style={{ flex: 1 }}>
                                             <ThemedText style={styles.subjectName}>{grade.subject_name}</ThemedText>
                                         </View>
-                                        <View style={[styles.gradeCircle, { borderColor: letterGrade.color }]}>
-                                            <ThemedText style={[styles.gradeLetter, { color: letterGrade.color }]}>{letterGrade.label}</ThemedText>
+                                        <View style={[styles.gradeCircle, { borderColor: shownColor }]}>
+                                            <ThemedText style={[styles.gradeLetter, { color: shownColor }]}>{shownLabel}</ThemedText>
                                         </View>
                                     </View>
 
                                     <View style={styles.breakdownContainer}>
+                                        {lrow ? (
+                                            <View style={[styles.breakdownRow, { flexWrap: 'wrap' }]}>
+                                                {layout.columns
+                                                    .filter((c: any) => c.type !== 'computed')
+                                                    .map((c: any) =>
+                                                        c.type === 'text' ? (
+                                                            <View key={c.key} style={{ width: '100%', marginTop: 6 }}>
+                                                                <ThemedText style={styles.totalLabel}>{String(c.label).toUpperCase()}</ThemedText>
+                                                                <ThemedText style={styles.remarkText}>{lrow.cells[c.key] || '-'}</ThemedText>
+                                                            </View>
+                                                        ) : (
+                                                            <ScoreItem key={c.key} label={String(c.label).toUpperCase()} value={lrow.cells[c.key]} max={c.max} styles={styles} />
+                                                        )
+                                                    )}
+                                            </View>
+                                        ) : (
                                         <View style={styles.breakdownRow}>
                                             <ScoreItem label="TOTAL CA" value={totalCA} max={40} styles={styles} />
                                             <ScoreItem label="EXAM" value={grade.exam_score} max={60} highlight styles={styles} />
                                         </View>
+                                        )}
                                     </View>
 
                                     <View style={styles.totalRow}>
@@ -379,7 +407,7 @@ export default function StudentGrades() {
                                                 <ThemedText style={styles.remarkText} numberOfLines={1}>"{grade.teacher_remark}"</ThemedText>
                                             )}
                                         </View>
-                                        <ThemedText style={[styles.totalValue, { color: letterGrade.color }]}>{total}%</ThemedText>
+                                        <ThemedText style={[styles.totalValue, { color: shownColor }]}>{shownTotal}{lrow ? (layout.total_max ? `/${layout.total_max}` : '') : '%'}</ThemedText>
                                     </View>
                                 </View>
                             );

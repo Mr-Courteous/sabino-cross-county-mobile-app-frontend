@@ -198,6 +198,8 @@ function RootLayoutContent() {
         <Stack.Screen name="register-student" options={{ headerShown: true, title: 'Register' }} />
         <Stack.Screen name="students_list" options={{ headerShown: true, title: 'Students' }} />
         <Stack.Screen name="score-entry" options={{ headerShown: true }} />
+        <Stack.Screen name="assessment-settings" options={{ headerShown: false }} />
+        <Stack.Screen name="academic-setup" options={{ headerShown: false }} />
         <Stack.Screen name="attendance" options={{ headerShown: true }} />
         <Stack.Screen name="report-cards" options={{ headerShown: true }} />
         <Stack.Screen name="report-view" options={{ headerShown: true, title: 'Report Card' }} />

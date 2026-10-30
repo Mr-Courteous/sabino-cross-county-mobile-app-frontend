@@ -40,13 +40,30 @@ interface Class {
   capacity: number;
 }
 
+// One input column of the score sheet. Comes from the school's result
+// template (GET /api/scores/sheet -> config.columns); the built-in layout
+// is used when the server doesn't send one.
+interface SheetColumn {
+  key: string;
+  label: string;
+  type: 'number' | 'text';
+  max?: number;
+  counts_toward_total?: boolean;
+}
+
+const DEFAULT_COLUMNS: SheetColumn[] = [
+  { key: 'ca1', label: 'CA1', type: 'number', max: 10, counts_toward_total: true },
+  { key: 'ca2', label: 'CA2', type: 'number', max: 10, counts_toward_total: true },
+  { key: 'ca3', label: 'CA3', type: 'number', max: 10, counts_toward_total: true },
+  { key: 'ca4', label: 'CA4', type: 'number', max: 10, counts_toward_total: true },
+  { key: 'exam', label: 'Exam', type: 'number', max: 60, counts_toward_total: true },
+];
+
+const LEGACY_KEYS = ['ca1', 'ca2', 'ca3', 'ca4', 'exam'];
+
 interface SubjectScore {
   score_id: number | null;
-  ca1: string | number;
-  ca2: string | number;
-  ca3: string | number;
-  ca4: string | number;
-  exam: string | number;
+  [key: string]: string | number | null;
 }
 
 interface StudentMatrixRow {
@@ -78,6 +95,7 @@ export default function ScoreEntryScreen() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [academicSessions, setAcademicSessions] = useState<{ id: number; session_name: string }[]>([]);
   const [matrixData, setMatrixData] = useState<StudentMatrixRow[]>([]);
+  const [columns, setColumns] = useState<SheetColumn[]>(DEFAULT_COLUMNS);
 
   // Selection State
   const [selectedSession, setSelectedSession] = useState<string>('');
@@ -316,6 +334,16 @@ export default function ScoreEntryScreen() {
 
       const results = await Promise.all(promises);
       const matrixMap: Record<number, StudentMatrixRow> = {};
+      const cols: SheetColumn[] =
+        Array.isArray(results[0]?.config?.columns) && results[0].config.columns.length > 0
+          ? results[0].config.columns
+          : DEFAULT_COLUMNS;
+      setColumns(cols);
+      const emptyScore = (): SubjectScore => {
+        const e: SubjectScore = { score_id: null };
+        cols.forEach(c => { e[c.key] = ''; });
+        return e;
+      };
       
       results.forEach((data, index) => {
         const subjectId = selectedSheetSubjects[index].id;
@@ -332,14 +360,13 @@ export default function ScoreEntryScreen() {
               };
             }
             const parsedScoreId = item.score_id && item.score_id > 0 ? parseInt(item.score_id) : null;
-            matrixMap[item.enrollment_id].scores[subjectId] = {
-              score_id: parsedScoreId,
-              ca1: item.ca1_score !== null ? String(item.ca1_score) : '',
-              ca2: item.ca2_score !== null ? String(item.ca2_score) : '',
-              ca3: item.ca3_score !== null ? String(item.ca3_score) : '',
-              ca4: item.ca4_score !== null ? String(item.ca4_score) : '',
-              exam: item.exam_score !== null ? String(item.exam_score) : '',
-            };
+            const entry: SubjectScore = { score_id: parsedScoreId };
+            cols.forEach(c => {
+              // New servers send item.values; older ones only the legacy *_score fields.
+              const v = item.values ? item.values[c.key] : item[`${c.key}_score`];
+              entry[c.key] = v !== undefined && v !== null ? String(v) : '';
+            });
+            matrixMap[item.enrollment_id].scores[subjectId] = entry;
           });
         }
       });
@@ -348,7 +375,7 @@ export default function ScoreEntryScreen() {
       allRows.forEach(row => {
         selectedSheetSubjects.forEach(sub => {
           if (!row.scores[sub.id]) {
-            row.scores[sub.id] = { score_id: null, ca1: '', ca2: '', ca3: '', ca4: '', exam: '' };
+            row.scores[sub.id] = emptyScore();
           }
         });
       });
@@ -368,19 +395,15 @@ export default function ScoreEntryScreen() {
     field: string,
     value: string
   ) => {
-    const numValue = value === '' ? '' : parseFloat(value);
+    const col = columns.find(c => c.key === field);
+    const isText = col?.type === 'text';
+    const numValue: string | number = isText ? value : (value === '' ? '' : parseFloat(value));
     const errorKey = `${enrollmentId}-${subjectId}-${field}`;
     let error = '';
 
-    if (numValue !== '') {
-      if (field === 'exam') {
-        if ((numValue as number) > 60 || (numValue as number) < 0) {
-          error = 'Max 60';
-        }
-      } else {
-        if ((numValue as number) > 10 || (numValue as number) < 0) {
-          error = 'Max 10';
-        }
+    if (!isText && numValue !== '' && col?.max !== undefined) {
+      if ((numValue as number) > col.max || (numValue as number) < 0) {
+        error = `Max ${col.max}`;
       }
     }
 
@@ -409,14 +432,19 @@ export default function ScoreEntryScreen() {
     }));
   };
 
+  const totalMax = columns
+    .filter(c => c.type === 'number' && c.counts_toward_total !== false)
+    .reduce((sum, c) => sum + (c.max || 0), 0);
+
   const calculateTotal = (score: SubjectScore): number => {
     if (!score) return 0;
-    const ca1 = typeof score.ca1 === 'string' ? parseFloat(score.ca1) || 0 : score.ca1 || 0;
-    const ca2 = typeof score.ca2 === 'string' ? parseFloat(score.ca2) || 0 : score.ca2 || 0;
-    const ca3 = typeof score.ca3 === 'string' ? parseFloat(score.ca3) || 0 : score.ca3 || 0;
-    const ca4 = typeof score.ca4 === 'string' ? parseFloat(score.ca4) || 0 : score.ca4 || 0;
-    const exam = typeof score.exam === 'string' ? parseFloat(score.exam) || 0 : score.exam || 0;
-    return (ca1 as number) + (ca2 as number) + (ca3 as number) + (ca4 as number) + (exam as number);
+    return columns
+      .filter(c => c.type === 'number' && c.counts_toward_total !== false)
+      .reduce((sum, c) => {
+        const v = score[c.key];
+        const n = typeof v === 'string' ? parseFloat(v) || 0 : (v as number) || 0;
+        return sum + n;
+      }, 0);
   };
 
   const validateAllScores = (): boolean => {
@@ -427,24 +455,17 @@ export default function ScoreEntryScreen() {
       selectedSheetSubjects.forEach(sub => {
         const score = row.scores[sub.id];
         if (!score) return;
-        ['ca1', 'ca2', 'ca3', 'ca4'].forEach(field => {
-          const val = score[field as keyof SubjectScore];
+        columns.forEach(c => {
+          if (c.type !== 'number' || c.max === undefined) return;
+          const val = score[c.key];
           const numVal = typeof val === 'string' ? parseFloat(val) : (val as number);
           if (!isNaN(numVal) && numVal !== null) {
-             if (numVal > 10 || numVal < 0) {
-                errors[`${row.enrollment_id}-${sub.id}-${field}`] = 'Max 10';
-                isValid = false;
-             }
+            if (numVal > c.max || numVal < 0) {
+              errors[`${row.enrollment_id}-${sub.id}-${c.key}`] = `Max ${c.max}`;
+              isValid = false;
+            }
           }
         });
-        const examVal = score.exam;
-        const numExam = typeof examVal === 'string' ? parseFloat(examVal) : (examVal as number);
-        if (!isNaN(numExam) && numExam !== null) {
-          if (numExam > 60 || numExam < 0) {
-             errors[`${row.enrollment_id}-${sub.id}-exam`] = 'Max 60';
-             isValid = false;
-          }
-        }
       });
     });
 
@@ -462,18 +483,26 @@ export default function ScoreEntryScreen() {
       matrixData.forEach(row => {
          selectedSheetSubjects.forEach(sub => {
             const score = row.scores[sub.id];
-            if (score && (score.ca1 !== '' || score.ca2 !== '' || score.ca3 !== '' || score.ca4 !== '' || score.exam !== '')) {
-               scoresPayload.push({
-                 enrollment_id: row.enrollment_id,
-                 subject_id: sub.id,
-                 term_id: selectedTermId,
-                 sessionId: selectedSessionId,
-                 ca1_score: score.ca1 === '' ? null : parseFloat(String(score.ca1)),
-                 ca2_score: score.ca2 === '' ? null : parseFloat(String(score.ca2)),
-                 ca3_score: score.ca3 === '' ? null : parseFloat(String(score.ca3)),
-                 ca4_score: score.ca4 === '' ? null : parseFloat(String(score.ca4)),
-                 exam_score: score.exam === '' ? null : parseFloat(String(score.exam)),
-               });
+            if (!score) return;
+            const components: Record<string, number | string> = {};
+            columns.forEach(c => {
+              const v = score[c.key];
+              if (v === '' || v === null || v === undefined) return;
+              components[c.key] = c.type === 'number' ? parseFloat(String(v)) : String(v);
+            });
+            if (Object.keys(components).length > 0) {
+              const item: any = {
+                enrollment_id: row.enrollment_id,
+                subject_id: sub.id,
+                term_id: selectedTermId,
+                sessionId: selectedSessionId,
+                components,
+              };
+              // Also send the legacy field names so an older server keeps working.
+              LEGACY_KEYS.forEach(k => {
+                item[`${k}_score`] = k in components ? components[k] : null;
+              });
+              scoresPayload.push(item);
             }
          });
       });
@@ -819,7 +848,7 @@ export default function ScoreEntryScreen() {
                 <View style={styles.scoringGuide}>
                   <Ionicons name="information-circle-outline" size={14} color={Colors.accent.gold} />
                   <ThemedText style={styles.scoringGuideText}>
-                    Scoring Guide: Each CA (Max 10) • Exam (Max 60)
+                    Scoring Guide: {columns.filter(c => c.type === 'number').map(c => `${c.label} (Max ${c.max})`).join(' • ')}
                   </ThemedText>
                 </View>
                 {matrixData.map((row, idx) => (
@@ -852,7 +881,7 @@ export default function ScoreEntryScreen() {
                               <Ionicons name="book-outline" size={12} color={Colors.accent.gold} />
                               <ThemedText style={styles.subjectNameText}>{sub.name.toUpperCase()}</ThemedText>
                               <View style={styles.totalIndicator}>
-                                <ThemedText style={[styles.totalValueText, { color: total > 0 ? Colors.accent.gold : C.textMuted }]}>{total}%</ThemedText>
+                                <ThemedText style={[styles.totalValueText, { color: total > 0 ? Colors.accent.gold : C.textMuted }]}>{totalMax === 100 ? `${total}%` : `${total}/${totalMax}`}</ThemedText>
                               </View>
                               {score?.score_id && isOwner && (
                                 <TouchableOpacity 
@@ -874,36 +903,31 @@ export default function ScoreEntryScreen() {
                             </View>
 
                             <View style={styles.scoreGrid}>
-                              {['ca1', 'ca2', 'ca3', 'ca4'].map(ca => {
-                                const error = scoreErrors[`${row.enrollment_id}-${sub.id}-${ca}`];
+                              {columns.map((col) => {
+                                const error = scoreErrors[`${row.enrollment_id}-${sub.id}-${col.key}`];
+                                const isText = col.type === 'text';
+                                // Every column is styled identically - no colour is tied to a
+                                // column's name or position, so renamed/added columns never look "special".
                                 return (
-                                  <View key={ca} style={styles.scoreInputGroup}>
-                                    <ThemedText style={styles.scoreLabel}>{ca.toUpperCase()} (10)</ThemedText>
+                                  <View
+                                    key={col.key}
+                                    style={[styles.scoreInputGroup, isText ? { flexBasis: '100%' } : null]}
+                                  >
+                                    <ThemedText style={styles.scoreLabel} numberOfLines={1}>
+                                      {isText ? col.label.toUpperCase() : `${col.label.toUpperCase()} (${col.max})`}
+                                    </ThemedText>
                                     <TextInput
-                                      style={[styles.scoreInput, error ? styles.inputError : null]}
-                                      keyboardType="numeric"
-                                      value={String(score ? score[ca as keyof SubjectScore] || '' : '')}
-                                      onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, ca, val)}
-                                      placeholder="0"
+                                      style={[styles.scoreInput, isText ? { textAlign: 'left', paddingHorizontal: 10, fontWeight: '500' } : null, error ? styles.inputError : null]}
+                                      keyboardType={isText ? 'default' : 'numeric'}
+                                      value={String(score ? score[col.key] ?? '' : '')}
+                                      onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, col.key, val)}
+                                      placeholder={isText ? 'Comment' : '0'}
                                       placeholderTextColor={C.textMuted}
-                                      maxLength={4}
+                                      maxLength={isText ? 500 : 6}
                                     />
                                   </View>
                                 );
                               })}
-                              
-                              <View style={[styles.scoreInputGroup, { flex: 1.5 }]}>
-                                <ThemedText style={[styles.scoreLabel, { color: Colors.accent.gold }]}>EXAM (60)</ThemedText>
-                                <TextInput
-                                  style={[styles.scoreInput, styles.examInput, scoreErrors[`${row.enrollment_id}-${sub.id}-exam`] ? styles.inputError : null]}
-                                  keyboardType="numeric"
-                                  value={String(score ? score.exam || '' : '')}
-                                  onChangeText={val => handleMatrixChange(row.enrollment_id, sub.id, 'exam', val)}
-                                  placeholder="0"
-                                  placeholderTextColor={C.textMuted}
-                                  maxLength={4}
-                                />
-                              </View>
                             </View>
                           </View>
                         );
