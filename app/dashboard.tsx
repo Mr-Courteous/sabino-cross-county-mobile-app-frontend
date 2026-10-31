@@ -263,7 +263,7 @@ export default function DashboardPage() {
             {isOwner && (
               <ActionListItem title="Manage Staff" subtitle="Add teachers/admins, invite codes" icon="people-circle-outline" onPress={() => router.push('/staff-directory')} C={C} styles={styles} />
             )}
-            <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2347042423411')} C={C} styles={styles} />
+            <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2348073800260')} C={C} styles={styles} />
           </View>
         </View>
 
@@ -310,7 +310,7 @@ function ActionListItem({ title, subtitle, icon, onPress, themeColor, highlight,
       activeOpacity={0.7}
     >
       <View style={styles.actionListLeft}>
-        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}> 
+        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}>
           <Ionicons name={icon} size={18} color={highlight ? themeColor : Colors.accent.gold} />
         </View>
         <View style={{ flex: 1 }}>
