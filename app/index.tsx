@@ -93,6 +93,24 @@ export default function HomePage() {
                   STUDENTS' LOGIN
                 </ThemedText>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={styles.studentLoginButton}
+                onPress={() => router.push('/(parent)' as any)}
+                accessibilityRole="button"
+                accessibilityLabel="Parents Login"
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={studentIconSize}
+                  color={C.isDark ? "#fff" : "#2563EB"}
+                  style={styles.studentIcon}
+                />
+                <ThemedText style={styles.studentLoginText} numberOfLines={1} adjustsFontSizeToFit>
+                  PARENTS' LOGIN
+                </ThemedText>
+              </TouchableOpacity>
             </View>
           </LinearGradient>
         </ImageBackground>
@@ -208,6 +226,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
       maxWidth: isDesktop ? 620 : 480
     },
 
+    // Three buttons now share the row on wide screens, so the row is a bit wider
     buttonContainer: {
       flexDirection: isWide ? 'row' : 'column',
       alignItems: 'center',
@@ -215,7 +234,7 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
       gap: isWide ? (isDesktop ? 18 : 14) : (isExtraTiny ? 8 : 12),
       marginTop: isExtraTiny ? 20 : isTiny ? 26 : isDesktop ? 42 : 34,
       width: '100%',
-      maxWidth: isWide ? (isDesktop ? 620 : 540) : (isExtraTiny ? '100%' : 380),
+      maxWidth: isWide ? (isDesktop ? 920 : 720) : (isExtraTiny ? '100%' : 380),
       alignSelf: 'center',
     },
 

@@ -38,6 +38,11 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
 
     if (currentSegments[0] === 'pricing') return response;
 
+    // Parents never see the subscription / pricing screens: a 402 on a child's
+    // data just means that school's account is inactive, and the parent
+    // screens show that message themselves.
+    if (currentSegments[0] === '(parent)') return response;
+
     if (!navState.isRedirecting) {
       navState.isRedirecting = true;
 
@@ -132,13 +137,16 @@ function RootLayoutContent() {
       const currentRoot = segments[0] as any;
       const inAuthGroup = !segments.length || currentRoot === '(auth)' || currentRoot === 'index';
       const inStudentGroup = currentRoot === '(student)';
+      const inParentGroup = currentRoot === '(parent)';
       const isPricingPage = currentRoot === 'pricing';
       const isAccessDenied = segments.includes('access-denied');
 
       const isPublicStudentRoute = inStudentGroup && (!segments[1] || ['verify-email', 'verify-otp', 'register', 'forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1]));
 
       if (!token) {
-        if (!inAuthGroup && !isPublicStudentRoute && !isPricingPage && !isAccessDenied) {
+        // Parent sessions are stored separately (parentToken), so the parent area
+        // is allowed here; its own screens check the parent login.
+        if (!inAuthGroup && !isPublicStudentRoute && !isPricingPage && !isAccessDenied && !inParentGroup) {
           router.replace('/' as any);
         }
         return;
@@ -192,6 +200,7 @@ function RootLayoutContent() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(student)" />
+        <Stack.Screen name="(parent)" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" />
@@ -200,6 +209,7 @@ function RootLayoutContent() {
         <Stack.Screen name="score-entry" options={{ headerShown: true }} />
         <Stack.Screen name="assessment-settings" options={{ headerShown: false }} />
         <Stack.Screen name="academic-setup" options={{ headerShown: false }} />
+        <Stack.Screen name="parent-access" options={{ headerShown: false }} />
         <Stack.Screen name="attendance" options={{ headerShown: true }} />
         <Stack.Screen name="report-cards" options={{ headerShown: true }} />
         <Stack.Screen name="report-view" options={{ headerShown: true, title: 'Report Card' }} />

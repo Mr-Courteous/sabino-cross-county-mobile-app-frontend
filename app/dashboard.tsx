@@ -245,7 +245,10 @@ export default function DashboardPage() {
               <ActionListItem title="Result Template" subtitle="Columns, mark splits (e.g. 10/10/80) & grading" icon="grid-outline" onPress={() => router.push('/assessment-settings')} C={C} styles={styles} />
             )}
             {(isOwner || isFullAdmin) && (
-              <ActionListItem title="Academic Setup" subtitle="Classes, arms, subjects & teacher assignments" icon="school-outline" onPress={() => router.push('/academic-setup')} C={C} styles={styles} />
+              <ActionListItem title="Academic Setup" subtitle="Classes, arms & subjects" icon="school-outline" onPress={() => router.push('/academic-setup')} C={C} styles={styles} />
+            )}
+            {(isOwner || isFullAdmin) && (
+              <ActionListItem title="Parent Access" subtitle="Link codes, guardian contacts & linked parents" icon="people-outline" onPress={() => router.push('/parent-access')} C={C} styles={styles} />
             )}
             {(isOwner || isFullAdmin) && (
               <ActionListItem title="Enrollments" subtitle="See every student's class & session enrollment" icon="list-outline" onPress={() => router.push('/enrollments')} C={C} styles={styles} />
@@ -263,7 +266,7 @@ export default function DashboardPage() {
             {isOwner && (
               <ActionListItem title="Manage Staff" subtitle="Add teachers/admins, invite codes" icon="people-circle-outline" onPress={() => router.push('/staff-directory')} C={C} styles={styles} />
             )}
-            <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2348073800260')} C={C} styles={styles} />
+            <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2347042423411')} C={C} styles={styles} />
           </View>
         </View>
 
@@ -310,7 +313,7 @@ function ActionListItem({ title, subtitle, icon, onPress, themeColor, highlight,
       activeOpacity={0.7}
     >
       <View style={styles.actionListLeft}>
-        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}>
+        <View style={[styles.actionListIconWrap, { backgroundColor: highlight ? themeColor + '15' : C.actionIconWrap }]}> 
           <Ionicons name={icon} size={18} color={highlight ? themeColor : Colors.accent.gold} />
         </View>
         <View style={{ flex: 1 }}>
