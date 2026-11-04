@@ -77,6 +77,24 @@ export default function PricingPage() {
   const [error, setError] = useState('');
   const [confirmingMessage, setConfirmingMessage] = useState('');
 
+  // Free trial: a school can pay at any time during the trial (the plan starts today).
+  const [trial, setTrial] = useState<{ isTrial: boolean; daysLeft: number; hoursLeft: number } | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+        if (!token) return;
+        const res = await fetch(`${API_BASE_URL}/api/schools/subscription-info`, { headers: { Authorization: `Bearer ${token}` } });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.success) setTrial(json.data);
+      } catch { /* the screen works the same without it */ }
+    })();
+  }, []);
+  const onTrial = !!trial?.isTrial;
+  const trialLeft = trial
+    ? (trial.hoursLeft < 24 ? `${Math.max(trial.hoursLeft, 1)} hour(s)` : `${trial.daysLeft} day(s)`)
+    : '';
+
   // ── Web checkout fallback state ──────────────────────────────────────────────
   const [webPayLoading, setWebPayLoading] = useState(false);
   const [webPayTxRef, setWebPayTxRef] = useState('');
@@ -330,7 +348,7 @@ export default function PricingPage() {
                 <Ionicons name="ribbon" size={20} color="#FACC15" />
                 <Text style={styles.logoText}>SABINO EDU</Text>
               </View>
-              <Text style={styles.title}>Subscription Renewal</Text>
+              <Text style={styles.title}>{onTrial ? 'Subscribe Now' : 'Subscription Renewal'}</Text>
               <View style={styles.goldBar} />
             </View>
 
@@ -348,9 +366,11 @@ export default function PricingPage() {
               {/* ════════════════════════════════ INFO STEP ═══════════════════════════════ */}
               {step === 'info' && (
                 <>
-                  <Text style={styles.cardTitle}>Account Expired</Text>
+                  <Text style={styles.cardTitle}>{onTrial ? `Free trial • ${trialLeft} left` : 'Account Expired'}</Text>
                   <Text style={styles.cardSubtitle}>
-                    Renew your subscription to maintain access to your school records and premium features.
+                    {onTrial
+                      ? 'Subscribe now so there is no break when your trial ends. Your paid plan starts today.'
+                      : 'Renew your subscription to maintain access to your school records and premium features.'}
                   </Text>
 
                   {isMobilePlatform ? (
@@ -368,7 +388,7 @@ export default function PricingPage() {
                           </View>
 
                           <CustomButton
-                            title={purchasing ? 'PROCESSING...' : 'RENEW VIA GOOGLE PLAY'}
+                            title={purchasing ? 'PROCESSING...' : onTrial ? 'SUBSCRIBE VIA GOOGLE PLAY' : 'RENEW VIA GOOGLE PLAY'}
                             onPress={handlePurchase}
                             disabled={purchasing}
                             loading={purchasing}
@@ -568,6 +588,12 @@ export default function PricingPage() {
                 </View>
               )}
             </View>
+
+            {onTrial && step !== 'success' && (
+              <TouchableOpacity onPress={() => router.replace('/dashboard' as any)} style={{ alignItems: 'center', marginTop: 18, padding: 10 }}>
+                <Text style={{ color: '#FACC15', fontWeight: '800', fontSize: 12, letterSpacing: 0.6 }}>CONTINUE MY FREE TRIAL</Text>
+              </TouchableOpacity>
+            )}
 
             <Text style={styles.footerText}>SECURE RENEWAL SYSTEM • SABINO EDU</Text>
           </ScrollView>

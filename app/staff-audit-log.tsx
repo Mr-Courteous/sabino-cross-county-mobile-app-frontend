@@ -41,6 +41,7 @@ const ACTION_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; label:
   'staff.invited': { icon: 'mail-outline', label: 'sent an invite code', color: '#F59E0B' },
   'staff.invite_revoked': { icon: 'close-circle-outline', label: 'revoked an invite code', color: '#94A3B8' },
   'staff.deactivated': { icon: 'pause-circle-outline', label: 'deactivated an admin account', color: '#EF4444' },
+  'staff.updated': { icon: 'create-outline', label: "edited a staff member's details", color: '#3B82F6' },
   'staff.reactivated': { icon: 'play-circle-outline', label: 'reactivated an admin account', color: '#22C55E' },
   'staff.deleted': { icon: 'trash-outline', label: 'deleted an admin account', color: '#EF4444' },
   'staff.password_changed': { icon: 'key-outline', label: 'changed their password', color: '#3B82F6' },

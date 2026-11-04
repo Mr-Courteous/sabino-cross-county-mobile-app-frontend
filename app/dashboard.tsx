@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   ScrollView,
   StyleSheet,
@@ -47,6 +47,8 @@ export default function DashboardPage() {
   const [isFullAdmin, setIsFullAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Where the school stands (free trial / paid / expired) - shown in the Subscription row
+  const [subInfo, setSubInfo] = useState<{ status: string; isTrial: boolean; daysLeft: number; hoursLeft: number; expiresAt: string | null } | null>(null);
   const [statusAlert, setStatusAlert] = useState<{
     visible: boolean;
     type: 'success' | 'error' | 'warning' | 'info';
@@ -148,6 +150,18 @@ export default function DashboardPage() {
       }
     });
   };
+
+  useFocusEffect(useCallback(() => {
+    (async () => {
+      try {
+        const tk = Platform.OS !== 'web' ? await SecureStore.getItemAsync('userToken') : localStorage.getItem('userToken');
+        if (!tk) return;
+        const res = await fetch(`${API_BASE_URL}/api/schools/subscription-info`, { headers: { Authorization: `Bearer ${tk}` } });
+        const json = await res.json().catch(() => null);
+        setSubInfo(res.ok && json?.success ? json.data : null);
+      } catch { setSubInfo(null); }
+    })();
+  }, []));
 
   if (loading) return (
     <ThemedView style={styles.loader}>
@@ -265,6 +279,34 @@ export default function DashboardPage() {
             )}
             {isOwner && (
               <ActionListItem title="Manage Staff" subtitle="Add teachers/admins, invite codes" icon="people-circle-outline" onPress={() => router.push('/staff-directory')} C={C} styles={styles} />
+            )}
+            {isOwner && (
+              <ActionListItem
+                title="Subscription"
+                subtitle={
+                  !subInfo ? 'Your plan and payments'
+                  : subInfo.isTrial ? `Free trial • ${subInfo.hoursLeft < 24 ? `${Math.max(subInfo.hoursLeft, 1)} hour(s)` : `${subInfo.daysLeft} day(s)`} left • tap to pay`
+                  : subInfo.status === 'completed' || subInfo.status === 'grace_period'
+                    ? `Active until ${subInfo.expiresAt ? new Date(subInfo.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}`
+                    : 'Expired • tap to renew'
+                }
+                icon="card-outline"
+                highlight={!!subInfo?.isTrial}
+                themeColor={Colors.accent.gold}
+                onPress={() => {
+                  // A paid, active plan can't be paid for again (the payment would not be applied), so just show the status.
+                  if (subInfo && !subInfo.isTrial && (subInfo.status === 'completed' || subInfo.status === 'grace_period')) {
+                    setStatusAlert({
+                      visible: true, type: 'info', title: 'Subscription active',
+                      message: `Your plan is active until ${subInfo.expiresAt ? new Date(subInfo.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : 'further notice'}. You can renew when it expires.`,
+                    });
+                  } else {
+                    router.push('/pricing' as any);
+                  }
+                }}
+                C={C}
+                styles={styles}
+              />
             )}
             <ActionListItem title="Chat Support" subtitle="Chat us on WhatsApp if you have any issue" icon="logo-whatsapp" onPress={() => router.push('https://wa.me/2347042423411')} C={C} styles={styles} />
           </View>

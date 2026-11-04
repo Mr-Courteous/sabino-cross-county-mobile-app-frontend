@@ -10,6 +10,8 @@ import {
   Modal,
   FlatList,
   TouchableWithoutFeedback,
+  TextInput,
+  KeyboardAvoidingView,
   useWindowDimensions,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -68,6 +70,11 @@ export default function StaffDirectoryPage() {
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [classModalStaff, setClassModalStaff] = useState<Admin | null>(null);
+  // Edit a staff member's details. Owner: anyone (and may change the role).
+  // Full admin: class teachers only.
+  const [editStaff, setEditStaff] = useState<Admin | null>(null);
+  const [editForm, setEditForm] = useState({ fullName: '', email: '', phone: '', role: 'class_teacher' });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [classTemplates, setClassTemplates] = useState<ClassTemplate[]>([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [savingClass, setSavingClass] = useState(false);
@@ -143,6 +150,48 @@ export default function StaffDirectoryPage() {
     router.push('/add-staff');
   };
 
+  const openEdit = (admin: Admin) => {
+    setEditStaff(admin);
+    setEditForm({ fullName: admin.full_name || '', email: admin.email || '', phone: admin.phone || '', role: admin.role });
+  };
+
+  const saveEdit = async () => {
+    if (!editStaff) return;
+    const body: any = {};
+    if (editForm.fullName.trim() !== (editStaff.full_name || '')) body.fullName = editForm.fullName.trim();
+    if (editForm.email.trim().toLowerCase() !== (editStaff.email || '').toLowerCase()) body.email = editForm.email.trim();
+    if (editForm.phone.trim() !== (editStaff.phone || '')) body.phone = editForm.phone.trim();
+    if (isOwner && editForm.role !== editStaff.role) body.role = editForm.role;
+    if (Object.keys(body).length === 0) { setEditStaff(null); return; }
+    try {
+      setSavingEdit(true);
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/staff/admins/${editStaff.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const updated = data.data?.admin;
+        if (updated) setAdmins((prev) => prev.map((a) => (a.id === editStaff.id ? { ...a, ...updated } : a)));
+        const temp = data.data?.temporaryPassword;
+        setEditStaff(null);
+        setAlert({
+          visible: true,
+          type: 'success',
+          message: `${data.message}${temp ? `\nTemporary password: ${temp}` : ''}`,
+        });
+      } else {
+        setAlert({ visible: true, type: 'error', message: data.error || 'Failed to update staff details.' });
+      }
+    } catch {
+      setAlert({ visible: true, type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const openClassModal = async (admin: Admin) => {
     setClassModalStaff(admin);
     if (classTemplates.length > 0) return;
@@ -185,6 +234,8 @@ export default function StaffDirectoryPage() {
   };
 
   const canManage = isOwner || isFullAdmin;
+  // Owner edits anyone; a full admin edits class teachers (never other admins)
+  const canEditStaff = (a: Admin) => isOwner || (isFullAdmin && a.role !== 'admin');
 
   const canDeleteStaff = (a: Admin) => {
     if (isOwner) return true;
@@ -313,7 +364,7 @@ export default function StaffDirectoryPage() {
         {isFullAdmin && (
           <View style={styles.noticeBanner}>
             <Ionicons name="information-circle-outline" size={16} color={C.textMuted} />
-            <ThemedText style={styles.noticeText}>As an admin, you can remove teacher accounts. Only the owner can add staff or remove other admins.</ThemedText>
+            <ThemedText style={styles.noticeText}>As an admin, you can edit and remove teacher accounts. Only the owner can add staff, change roles, or edit and remove other admins.</ThemedText>
           </View>
         )}
 
@@ -334,7 +385,7 @@ export default function StaffDirectoryPage() {
           <View style={styles.list}>
             {admins.map((a) => {
               const isClassTeacher = a.role === 'class_teacher';
-              const tappable = isOwner && isClassTeacher;
+              const tappable = canEditStaff(a) && isClassTeacher;
               const deletable = canDeleteStaff(a);
               return (
                 <TouchableOpacity
@@ -354,11 +405,21 @@ export default function StaffDirectoryPage() {
                       <View style={styles.roleTagRow}>
                         <Ionicons name="albums-outline" size={10} color={Colors.accent.gold} />
                         <ThemedText style={styles.roleTagText}>{a.class_name || 'No class assigned'}</ThemedText>
-                        {isOwner && <ThemedText style={styles.roleTagEdit}> · Tap to change</ThemedText>}
+                        {tappable && <ThemedText style={styles.roleTagEdit}> · Tap to change</ThemedText>}
                       </View>
                     )}
                   </View>
                   <StatusBadge status={a.status} />
+                  {canEditStaff(a) && (
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={() => openEdit(a)}
+                      accessibilityLabel={`Edit ${a.full_name}`}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="create-outline" size={17} color={Colors.accent.gold} />
+                    </TouchableOpacity>
+                  )}
                   {deletable && (
                     <TouchableOpacity
                       style={styles.deleteBtn}
@@ -456,6 +517,96 @@ export default function StaffDirectoryPage() {
           onClose={() => setConfirmRevokeInvite(null)}
         />
       )}
+
+      <Modal visible={!!editStaff} transparent animationType="slide" onRequestClose={() => !savingEdit && setEditStaff(null)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => !savingEdit && setEditStaff(null)}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSheet}>
+                <View style={styles.sheetHandle} />
+                <ThemedText style={styles.modalTitle}>Edit Staff Details</ThemedText>
+                <ThemedText style={styles.modalSubtitle}>{editStaff?.role === 'class_teacher' ? 'Class teacher' : 'Admin'}</ThemedText>
+
+                {isOwner && (
+                  <View style={{ marginBottom: 14 }}>
+                    <ThemedText style={{ color: C.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 6 }}>ROLE</ThemedText>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {([['class_teacher', 'Class teacher'], ['admin', 'Admin']] as const).map(([value, label]) => (
+                        <TouchableOpacity
+                          key={value}
+                          onPress={() => setEditForm({ ...editForm, role: value })}
+                          disabled={savingEdit}
+                          style={{
+                            flex: 1, minHeight: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5,
+                            borderColor: editForm.role === value ? Colors.accent.gold : C.divider,
+                            backgroundColor: editForm.role === value ? `${Colors.accent.gold}22` : 'transparent',
+                          }}
+                        >
+                          <ThemedText style={{ fontWeight: '800', fontSize: 12, color: editForm.role === value ? Colors.accent.gold : C.textMuted }}>{label}</ThemedText>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {editStaff && editForm.role !== editStaff.role && (
+                      <ThemedText style={{ color: '#F59E0B', fontSize: 11, lineHeight: 16, marginTop: 8 }}>
+                        {editForm.role === 'admin'
+                          ? 'Admins can manage most of the school. This applies the next time they log in, and any class assignment is removed.'
+                          : 'They will only be able to work with their own class. This applies the next time they log in.'}
+                      </ThemedText>
+                    )}
+                  </View>
+                )}
+
+                {([
+                  { key: 'fullName', label: 'FULL NAME', placeholder: 'Full name', keyboardType: 'default', autoCapitalize: 'words' },
+                  { key: 'email', label: 'EMAIL (LOGIN)', placeholder: 'name@example.com', keyboardType: 'email-address', autoCapitalize: 'none' },
+                  { key: 'phone', label: 'PHONE', placeholder: 'Phone number (optional)', keyboardType: 'phone-pad', autoCapitalize: 'none' },
+                ] as const).map((f) => (
+                  <View key={f.key} style={{ marginBottom: 12 }}>
+                    <ThemedText style={{ color: C.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 6 }}>{f.label}</ThemedText>
+                    <TextInput
+                      value={(editForm as any)[f.key]}
+                      onChangeText={(v) => setEditForm({ ...editForm, [f.key]: v })}
+                      placeholder={f.placeholder}
+                      placeholderTextColor={C.textMuted}
+                      keyboardType={f.keyboardType as any}
+                      autoCapitalize={f.autoCapitalize as any}
+                      autoCorrect={false}
+                      editable={!savingEdit}
+                      style={{
+                        height: 46, borderRadius: 12, borderWidth: 1, borderColor: C.divider, color: C.text,
+                        paddingHorizontal: 14, fontSize: 14,
+                        ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
+                      }}
+                    />
+                  </View>
+                ))}
+
+                {editStaff && editForm.email.trim().toLowerCase() !== (editStaff.email || '').toLowerCase() && (
+                  <ThemedText style={{ color: '#F59E0B', fontSize: 11, lineHeight: 16, marginBottom: 12 }}>
+                    {editStaff.status === 'password_reset_required'
+                      ? 'This person has not logged in yet, so a NEW temporary password will be sent to the new email.'
+                      : 'The email is their login. Both the old and the new address will be notified. Their password stays the same.'}
+                  </ThemedText>
+                )}
+
+                <TouchableOpacity
+                  onPress={saveEdit}
+                  disabled={savingEdit || !editForm.fullName.trim() || !editForm.email.trim()}
+                  style={{
+                    backgroundColor: Colors.accent.gold, borderRadius: 14, minHeight: 48, alignItems: 'center', justifyContent: 'center',
+                    opacity: savingEdit || !editForm.fullName.trim() || !editForm.email.trim() ? 0.55 : 1,
+                  }}
+                >
+                  {savingEdit ? <ActivityIndicator color="#0F172A" /> : <ThemedText style={{ color: '#0F172A', fontWeight: '900', letterSpacing: 0.6 }}>SAVE CHANGES</ThemedText>}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setEditStaff(null)} disabled={savingEdit} style={{ alignItems: 'center', padding: 14 }}>
+                  <ThemedText style={{ color: C.textMuted, fontWeight: '700', fontSize: 12 }}>Cancel</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={!!classModalStaff} transparent animationType="slide" onRequestClose={() => setClassModalStaff(null)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => !savingClass && setClassModalStaff(null)}>
