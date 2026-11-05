@@ -36,7 +36,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
 
     console.log(`🔒 [Interceptor] 402 detected on: ${input}`);
 
-    if (currentSegments[0] === 'pricing') return response;
+    if (currentSegments[0] === 'pricing' || currentSegments[0] === 'subscription') return response;
 
     // Parents never see the subscription / pricing screens: a 402 on a child's
     // data just means that school's account is inactive, and the parent
@@ -65,7 +65,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
 
         if (isSubError) {
           const isStudent = currentSegments[0] === '(student)';
-          const targetPath = isStudent ? '/(student)/access-denied' : '/pricing';
+          const targetPath = isStudent ? '/(student)/access-denied' : '/subscription';
 
           console.warn(`⚠️ [Interceptor] Subscription error — redirecting to ${targetPath}`);
           currentRouter.replace(targetPath as any);
@@ -74,7 +74,7 @@ global.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
         }
       }).catch(() => {
         const isStudent = currentSegments[0] === '(student)';
-        const targetPath = isStudent ? '/(student)/access-denied' : '/pricing';
+        const targetPath = isStudent ? '/(student)/access-denied' : '/subscription';
 
         console.warn(`⚠️ [Interceptor] 402 detected (fallback) — redirecting to ${targetPath}`);
         currentRouter.replace(targetPath as any);
@@ -139,6 +139,7 @@ function RootLayoutContent() {
       const inStudentGroup = currentRoot === '(student)';
       const inParentGroup = currentRoot === '(parent)';
       const isPricingPage = currentRoot === 'pricing';
+      const isSubscriptionPage = currentRoot === 'subscription';
       const isAccessDenied = segments.includes('access-denied');
 
       const isPublicStudentRoute = inStudentGroup && (!segments[1] || ['verify-email', 'verify-otp', 'register', 'forgot-password', 'verify-reset-otp', 'reset-password'].includes(segments[1]));
@@ -146,7 +147,7 @@ function RootLayoutContent() {
       if (!token) {
         // Parent sessions are stored separately (parentToken), so the parent area
         // is allowed here; its own screens check the parent login.
-        if (!inAuthGroup && !isPublicStudentRoute && !isPricingPage && !isAccessDenied && !inParentGroup) {
+        if (!inAuthGroup && !isPublicStudentRoute && !isPricingPage && !isSubscriptionPage && !isAccessDenied && !inParentGroup) {
           router.replace('/' as any);
         }
         return;
@@ -215,6 +216,7 @@ function RootLayoutContent() {
         <Stack.Screen name="report-view" options={{ headerShown: true, title: 'Report Card' }} />
         <Stack.Screen name="preferences" options={{ headerShown: true, title: 'Preferences' }} />
         <Stack.Screen name="pricing" options={{ headerShown: false }} />
+        <Stack.Screen name="subscription" options={{ headerShown: false }} />
       </Stack>
     </View>
   );

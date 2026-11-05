@@ -18,14 +18,13 @@ import { CustomAlert } from '@/components/custom-alert';
 import { useAppColors } from '@/hooks/use-app-colors';
 
 /**
- * Academic setup: classes, class arms and the school's own subjects.
+ * Academic setup: classes and the school's own subjects.
  * (Teacher assignments are handled in Manage Staff.)
  */
 
-type Tab = 'classes' | 'arms' | 'subjects';
+type Tab = 'classes' | 'subjects';
 
 interface ClassRow { id: number; class_name: string; capacity: number }
-interface ArmRow { id: number; class_id: number; class_name: string; arm_name: string; student_count: number }
 interface SubjectRow { id: number; name: string; category?: string | null }
 
 const getToken = async () => {
@@ -77,14 +76,11 @@ export default function AcademicSetupScreen() {
   const [loading, setLoading] = useState(true);
 
   const [classes, setClasses] = useState<ClassRow[]>([]);
-  const [arms, setArms] = useState<ArmRow[]>([]);
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
 
   const [newClass, setNewClass] = useState('');
-  const [armClassId, setArmClassId] = useState<number | null>(null);
-  const [newArm, setNewArm] = useState('');
   const [newSubject, setNewSubject] = useState('');
-  const [editing, setEditing] = useState<{ kind: 'class' | 'subject' | 'arm'; id: number; value: string } | null>(null);
+  const [editing, setEditing] = useState<{ kind: 'class' | 'subject'; id: number; value: string } | null>(null);
 
   const [alert, setAlert] = useState<{ visible: boolean; type: 'success' | 'error' | 'warning' | 'info'; title: string; message: string; onConfirm?: () => void; confirmLabel?: string }>({
     visible: false, type: 'info', title: '', message: '',
@@ -118,15 +114,13 @@ export default function AcademicSetupScreen() {
   const loadAll = useCallback(async (tk?: string) => {
     try {
       // Each list loads independently so one failure doesn't blank the others.
-      const [c, a, sub] = await Promise.all([
+      const [c, sub] = await Promise.all([
         api('GET', '/api/classes/school', undefined, tk).catch(() => null),
-        api('GET', '/api/academic-structure/arms', undefined, tk).catch(() => null),
         api('GET', '/api/subjects/school', undefined, tk).catch(() => null),
       ]);
       if (c?.ok) setClasses(c.json.data);
-      if (a?.ok) setArms(a.json.data);
       if (sub?.ok) setSubjects(sub.json.data);
-      const failed = [c, a, sub].find((x) => x && !x.ok);
+      const failed = [c, sub].find((x) => x && !x.ok);
       if (failed) say('error', 'Some data did not load', failed.json.error || 'Please try again.');
     } finally { setLoading(false); }
   }, [api]);
@@ -158,7 +152,6 @@ export default function AcademicSetupScreen() {
     const { kind, id, value } = editing;
     if (kind === 'class') act('PUT', `/api/classes/school/${id}`, { className: value }, undefined, () => setEditing(null));
     if (kind === 'subject') act('PUT', `/api/subjects/school/${id}`, { name: value }, undefined, () => setEditing(null));
-    if (kind === 'arm') act('PUT', `/api/academic-structure/arms/${id}`, { armName: value }, undefined, () => setEditing(null));
   };
 
   const Chip = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => (
@@ -180,7 +173,7 @@ export default function AcademicSetupScreen() {
       </View>
 
       <View style={[styles.row, { paddingHorizontal: 16, gap: 6, marginBottom: 8 }]}>
-        {(['classes', 'arms', 'subjects'] as Tab[]).map((t) => (
+        {(['classes', 'subjects'] as Tab[]).map((t) => (
           <Chip key={t} label={t[0].toUpperCase() + t.slice(1)} active={tab === t} onPress={() => setTab(t)} />
         ))}
       </View>
@@ -193,25 +186,6 @@ export default function AcademicSetupScreen() {
               <EditRow C={C} styles={styles} editing={editing} setEditing={setEditing} saveEdit={saveEdit} key={c.id} kind="class" id={c.id} label={c.class_name}
                 onDelete={() => confirmThen('Archive class?', `"${c.class_name}" will be hidden. Past report cards are kept. A class with active students cannot be archived.`, 'Archive', () => act('DELETE', `/api/classes/school/${c.id}`, undefined, 'Class archived.'))} />
             ))}
-          </>
-        )}
-
-        {tab === 'arms' && (
-          <>
-            <ThemedText style={styles.section}>CLASS</ThemedText>
-            <View style={[styles.row, { flexWrap: 'wrap', gap: 6, marginBottom: 14 }]}>
-              {classes.map((c) => <Chip key={c.id} label={c.class_name} active={armClassId === c.id} onPress={() => setArmClassId(c.id)} />)}
-            </View>
-            {armClassId && (
-              <>
-                <AddBar C={C} styles={styles} value={newArm} onChange={setNewArm} placeholder="Arm name, e.g. A, Gold, Blue" onAdd={() => newArm.trim() && act('POST', '/api/academic-structure/arms', { classId: armClassId, armName: newArm }, 'Arm added.', () => setNewArm(''))} />
-                {arms.filter((a) => a.class_id === armClassId).map((a) => (
-                  <EditRow C={C} styles={styles} editing={editing} setEditing={setEditing} saveEdit={saveEdit} key={a.id} kind="arm" id={a.id} label={a.arm_name} sub={`${a.student_count} student(s)`}
-                    onDelete={() => confirmThen('Remove arm?', a.student_count ? `${a.student_count} student(s) stay in the class but lose this arm.` : 'This arm is empty.', 'Remove', () => act('DELETE', `/api/academic-structure/arms/${a.id}?force=true`, undefined, 'Arm removed.'))} />
-                ))}
-                <ThemedText style={[styles.small, { marginTop: 8 }]}>Place a student in an arm from the Enrollments screen, or via PUT /api/academic-structure/enrollments/:id/arm.</ThemedText>
-              </>
-            )}
           </>
         )}
 

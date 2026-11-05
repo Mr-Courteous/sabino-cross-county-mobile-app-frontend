@@ -42,9 +42,9 @@ export function TrialBanner() {
   return (
     <TouchableOpacity
       activeOpacity={0.88}
-      onPress={() => router.push('/pricing' as any)}
+      onPress={() => router.push('/subscription' as any)}
       accessibilityRole="button"
-      accessibilityLabel="Subscribe now"
+      accessibilityLabel="View subscription details"
       style={{
         marginTop: 15, marginHorizontal: 0, padding: 14, borderRadius: 18,
         borderWidth: 1.5, borderColor: color, backgroundColor: `${color}18`,
@@ -55,11 +55,11 @@ export function TrialBanner() {
       <View style={{ flex: 1 }}>
         <ThemedText style={{ fontWeight: '900', fontSize: 14, color }}>Free trial • {left}</ThemedText>
         <ThemedText style={{ fontSize: 12, marginTop: 2, opacity: 0.85 }}>
-          Subscribe now to keep uninterrupted access. Your plan starts today.
+          Review your subscription details and renew whenever you are ready.
         </ThemedText>
       </View>
       <View style={{ backgroundColor: color, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 }}>
-        <ThemedText style={{ color: '#0F172A', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>SUBSCRIBE</ThemedText>
+        <ThemedText style={{ color: '#0F172A', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>VIEW DETAILS</ThemedText>
       </View>
     </TouchableOpacity>
   );

@@ -91,7 +91,7 @@ export default function DashboardPage() {
 
       // Handle subscription/payment required (402)
       if (schoolRes.status === 402 || sessionRes.status === 402) {
-        router.replace('/pricing');
+        router.replace('/subscription' as any);
         return;
       }
 
@@ -259,7 +259,7 @@ export default function DashboardPage() {
               <ActionListItem title="Result Template" subtitle="Columns, mark splits (e.g. 10/10/80) & grading" icon="grid-outline" onPress={() => router.push('/assessment-settings')} C={C} styles={styles} />
             )}
             {(isOwner || isFullAdmin) && (
-              <ActionListItem title="Academic Setup" subtitle="Classes, arms & subjects" icon="school-outline" onPress={() => router.push('/academic-setup')} C={C} styles={styles} />
+              <ActionListItem title="Academic Setup" subtitle="Classes & subjects" icon="school-outline" onPress={() => router.push('/academic-setup')} C={C} styles={styles} />
             )}
             {(isOwner || isFullAdmin) && (
               <ActionListItem title="Parent Access" subtitle="Link codes, guardian contacts & linked parents" icon="people-outline" onPress={() => router.push('/parent-access')} C={C} styles={styles} />
@@ -284,26 +284,16 @@ export default function DashboardPage() {
               <ActionListItem
                 title="Subscription"
                 subtitle={
-                  !subInfo ? 'Your plan and payments'
-                  : subInfo.isTrial ? `Free trial • ${subInfo.hoursLeft < 24 ? `${Math.max(subInfo.hoursLeft, 1)} hour(s)` : `${subInfo.daysLeft} day(s)`} left • tap to pay`
+                  !subInfo ? 'View your trial, plan status and expiry date'
+                  : subInfo.isTrial ? `Free trial • ${subInfo.hoursLeft < 24 ? `${Math.max(subInfo.hoursLeft, 1)} hour(s)` : `${subInfo.daysLeft} day(s)`} left • view details`
                   : subInfo.status === 'completed' || subInfo.status === 'grace_period'
-                    ? `Active until ${subInfo.expiresAt ? new Date(subInfo.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}`
-                    : 'Expired • tap to renew'
+                    ? `Active until ${subInfo.expiresAt ? new Date(subInfo.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '-'} • view details`
+                    : 'Expired • view details and renew'
                 }
                 icon="card-outline"
                 highlight={!!subInfo?.isTrial}
                 themeColor={Colors.accent.gold}
-                onPress={() => {
-                  // A paid, active plan can't be paid for again (the payment would not be applied), so just show the status.
-                  if (subInfo && !subInfo.isTrial && (subInfo.status === 'completed' || subInfo.status === 'grace_period')) {
-                    setStatusAlert({
-                      visible: true, type: 'info', title: 'Subscription active',
-                      message: `Your plan is active until ${subInfo.expiresAt ? new Date(subInfo.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : 'further notice'}. You can renew when it expires.`,
-                    });
-                  } else {
-                    router.push('/pricing' as any);
-                  }
-                }}
+                onPress={() => router.push('/subscription' as any)}
                 C={C}
                 styles={styles}
               />

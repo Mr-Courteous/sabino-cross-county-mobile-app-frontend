@@ -156,6 +156,10 @@ export default function SchoolPreferencesScreen() {
           uri: asset.uri,
           name: asset.fileName || `${type}.jpg`,
           mimeType: asset.mimeType || 'image/jpeg',
+          // Expo ImagePicker provides the original browser File on web. Keep
+          // it so FormData uploads binary content rather than stringifying the
+          // React Native { uri, name, type } descriptor as "[object Object]".
+          file: Platform.OS === 'web' ? asset.file : undefined,
         };
         if (type === 'logo') {
           setLogoFile(file);
@@ -186,8 +190,14 @@ export default function SchoolPreferencesScreen() {
       formData.append('show_attendance', String(prefs.show_attendance));
 
       if (logoFile) {
-        if (Platform.OS === 'web' && logoFile.file) {
-          formData.append('logo', logoFile.file);
+        if (Platform.OS === 'web') {
+          let browserFile = logoFile.file;
+          if (!browserFile) {
+            const imageResponse = await fetch(logoFile.uri);
+            const imageBlob = await imageResponse.blob();
+            browserFile = new File([imageBlob], logoFile.name || 'logo.jpg', { type: logoFile.mimeType || imageBlob.type || 'image/jpeg' });
+          }
+          formData.append('logo', browserFile, logoFile.name || 'logo.jpg');
         } else {
           const logoData: any = {
             uri: Platform.OS === 'ios' ? logoFile.uri.replace('file://', '') : logoFile.uri,
@@ -201,8 +211,14 @@ export default function SchoolPreferencesScreen() {
       }
 
       if (stampFile) {
-        if (Platform.OS === 'web' && stampFile.file) {
-          formData.append('stamp', stampFile.file);
+        if (Platform.OS === 'web') {
+          let browserFile = stampFile.file;
+          if (!browserFile) {
+            const imageResponse = await fetch(stampFile.uri);
+            const imageBlob = await imageResponse.blob();
+            browserFile = new File([imageBlob], stampFile.name || 'stamp.jpg', { type: stampFile.mimeType || imageBlob.type || 'image/jpeg' });
+          }
+          formData.append('stamp', browserFile, stampFile.name || 'stamp.jpg');
         } else {
           const stampData: any = {
             uri: Platform.OS === 'ios' ? stampFile.uri.replace('file://', '') : stampFile.uri,
@@ -222,8 +238,15 @@ export default function SchoolPreferencesScreen() {
       });
 
       const result = await response.json();
-      if (result.success) {
+      if (response.ok && result.success) {
         await loadThemeFromPreferences();
+        if (result.data) {
+          setPrefs((current) => ({
+            ...current,
+            logo_url: result.data.logo_url || current.logo_url,
+            stamp_url: result.data.stamp_url || current.stamp_url,
+          }));
+        }
         setStatusAlert({
           visible: true,
           type: 'success',
@@ -232,7 +255,6 @@ export default function SchoolPreferencesScreen() {
         });
         setLogoFile(null);
         setStampFile(null);
-        fetchPreferences();
       } else {
         throw new Error(result.error || 'Update failed');
       }

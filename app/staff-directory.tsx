@@ -594,6 +594,7 @@ export default function StaffDirectoryPage() {
                   disabled={savingEdit || !editForm.fullName.trim() || !editForm.email.trim()}
                   style={{
                     backgroundColor: Colors.accent.gold, borderRadius: 14, minHeight: 48, alignItems: 'center', justifyContent: 'center',
+                    marginBottom: 8,
                     opacity: savingEdit || !editForm.fullName.trim() || !editForm.email.trim() ? 0.55 : 1,
                   }}
                 >

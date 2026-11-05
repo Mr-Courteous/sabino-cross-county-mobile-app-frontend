@@ -61,6 +61,8 @@ export default function ReportSearchScreen() {
 
   // Download/share state
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Record<number, boolean>>({});
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   const [statusAlert, setStatusAlert] = useState<{
     visible: boolean;
@@ -315,6 +317,7 @@ export default function ReportSearchScreen() {
 
   const fetchClassReportData = async () => {
     if (!selectedClass) return;
+    setSelectedEnrollmentIds({});
     setLoading(true);
     setError('');
     try {
@@ -335,6 +338,86 @@ export default function ReportSearchScreen() {
       setError('Connection error occurred while fetching reports.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const filteredClassReportData = useMemo(() => classReportData.filter((student: any) =>
+    (student.name || `${student.first_name} ${student.last_name}`)
+      .toLowerCase()
+      .includes(batchSearchQuery.toLowerCase())
+  ), [classReportData, batchSearchQuery]);
+
+  const selectedVisibleStudents = filteredClassReportData.filter((student: any) => selectedEnrollmentIds[student.enrollment_id]);
+  const allVisibleStudentsSelected = filteredClassReportData.length > 0 && selectedVisibleStudents.length === filteredClassReportData.length;
+
+  const toggleStudentSelection = (enrollmentId: number) => {
+    setSelectedEnrollmentIds((current) => ({ ...current, [enrollmentId]: !current[enrollmentId] }));
+  };
+
+  const toggleAllVisibleStudents = () => {
+    const shouldSelect = !allVisibleStudentsSelected;
+    setSelectedEnrollmentIds((current) => {
+      const next = { ...current };
+      filteredClassReportData.forEach((student: any) => {
+        if (shouldSelect) next[student.enrollment_id] = true;
+        else delete next[student.enrollment_id];
+      });
+      return next;
+    });
+  };
+
+  const handleDownloadSelected = async () => {
+    const enrollmentIds = selectedVisibleStudents.map((student: any) => student.enrollment_id);
+    if (enrollmentIds.length === 0 || bulkDownloading) return;
+    setBulkDownloading(true);
+
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Authentication required. Please log in again.');
+
+      const url = `${API_BASE_URL}/api/reports/pdf/bulk?enrollmentIds=${enrollmentIds.join(',')}&term=${selectedTerm}&sessionId=${selectedSession}`;
+      const fileName = `Selected_Report_Cards_Term${selectedTerm}.pdf`;
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) {
+          const result = await response.json().catch(() => null);
+          throw new Error(result?.error || 'Could not download the selected report cards.');
+        }
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+      } else {
+        const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+        const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (downloadResult.status !== 200) throw new Error('Could not download the selected report cards.');
+
+        if (!(await Sharing.isAvailableAsync())) {
+          throw new Error('Sharing is not available on this device.');
+        }
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: `${enrollmentIds.length} Selected Report Cards`,
+          UTI: 'com.adobe.pdf',
+        });
+      }
+    } catch (downloadError: any) {
+      setStatusAlert({
+        visible: true,
+        type: 'error',
+        title: 'Bulk Download Failed',
+        message: downloadError?.message || 'Could not download the selected report cards. Please try again.',
+      });
+    } finally {
+      setBulkDownloading(false);
     }
   };
 
@@ -542,12 +625,24 @@ export default function ReportSearchScreen() {
   const renderClassReportStudent = ({ item }: { item: any }) => {
     const isSent = sentSuccessIds[`${item.enrollment_id}-${selectedTerm}`];
     const isDownloading = downloadingId === `${item.enrollment_id}-${selectedTerm}`;
+    const isSelected = !!selectedEnrollmentIds[item.enrollment_id];
     const isTinyLocal = width < 300;
 
     return (
       <View style={[styles.resultCard, isTinyLocal && { flexDirection: 'column', alignItems: 'flex-start' }]}>
-        <View style={[styles.rankBadge, isTinyLocal && { marginBottom: 12 }]}>
-          <ThemedText style={styles.rankText}>{classReportData.indexOf(item) + 1}</ThemedText>
+        <View style={styles.rankAndSelect}>
+          <TouchableOpacity
+            onPress={() => toggleStudentSelection(item.enrollment_id)}
+            style={styles.selectionButton}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isSelected }}
+            accessibilityLabel={`Select ${item.name}'s report`}
+          >
+            <Ionicons name={isSelected ? 'checkbox' : 'square-outline'} size={22} color={isSelected ? Colors.accent.gold : C.textMuted} />
+          </TouchableOpacity>
+          <View style={styles.rankBadge}>
+            <ThemedText style={styles.rankText}>{classReportData.indexOf(item) + 1}</ThemedText>
+          </View>
         </View>
         <View style={[styles.studentInfo, isTinyLocal && { marginLeft: 0, width: '100%' }]}>
           <ThemedText style={styles.resultTitle}>{item.name}</ThemedText>
@@ -654,13 +749,13 @@ export default function ReportSearchScreen() {
             <View style={styles.modeToggle}>
               <TouchableOpacity
                 style={[styles.modeBtn, mode === 'student' && styles.activeModeBtn]}
-                onPress={() => { setMode('student'); setShowingReportData(false); setResults([]); }}
+                onPress={() => { setMode('student'); setShowingReportData(false); setResults([]); setSelectedEnrollmentIds({}); }}
               >
                 <ThemedText style={[styles.modeBtnText, mode === 'student' && styles.activeModeBtnText]}>Search</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modeBtn, mode === 'class' && styles.activeModeBtn]}
-                onPress={() => { setMode('class'); setResults([]); }}
+                onPress={() => { setMode('class'); setResults([]); setSelectedEnrollmentIds({}); }}
               >
                 <ThemedText style={[styles.modeBtnText, mode === 'class' && styles.activeModeBtnText]}>Batching</ThemedText>
               </TouchableOpacity>
@@ -756,7 +851,7 @@ export default function ReportSearchScreen() {
         {mode === 'class' && showingReportData && (
           <View style={{ paddingHorizontal: 20, paddingTop: 12, gap: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <TouchableOpacity style={styles.backLink} onPress={() => { setShowingReportData(false); setBatchSearchQuery(''); }}>
+              <TouchableOpacity style={styles.backLink} onPress={() => { setShowingReportData(false); setBatchSearchQuery(''); setSelectedEnrollmentIds({}); }}>
                 <Ionicons name="chevron-back" size={18} color={Colors.accent.gold} />
                 <ThemedText style={{ color: Colors.accent.gold, fontWeight: '800', fontSize: 11 }}>BACK TO FILTERS</ThemedText>
               </TouchableOpacity>
@@ -781,6 +876,23 @@ export default function ReportSearchScreen() {
         )}
 
         <View style={styles.listContent}>
+          {showingReportData && !loading && !error && filteredClassReportData.length > 0 && (
+            <View style={styles.bulkToolbar}>
+              <TouchableOpacity style={styles.selectAllButton} onPress={toggleAllVisibleStudents}>
+                <Ionicons name={allVisibleStudentsSelected ? 'checkbox' : 'square-outline'} size={18} color={Colors.accent.gold} />
+                <ThemedText style={styles.selectAllText}>{allVisibleStudentsSelected ? 'Clear visible' : 'Select visible'}</ThemedText>
+              </TouchableOpacity>
+              <ThemedText style={styles.selectedCount}>{selectedVisibleStudents.length} selected</ThemedText>
+              <TouchableOpacity
+                style={[styles.bulkDownloadButton, (!selectedVisibleStudents.length || bulkDownloading) && styles.bulkDownloadDisabled]}
+                onPress={handleDownloadSelected}
+                disabled={!selectedVisibleStudents.length || bulkDownloading}
+              >
+                {bulkDownloading ? <ActivityIndicator size="small" color={Colors.accent.navy} /> : <Ionicons name="download-outline" size={17} color={Colors.accent.navy} />}
+                <ThemedText style={styles.bulkDownloadText}>{bulkDownloading ? 'Preparing...' : `Download (${selectedVisibleStudents.length})`}</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
           {loading ? (
             <View style={styles.centerLoader}>
               <ActivityIndicator color={Colors.accent.gold} />
@@ -793,13 +905,7 @@ export default function ReportSearchScreen() {
             </View>
           ) : (
             <FlatList
-              data={showingReportData
-                ? classReportData.filter(s =>
-                  (s.name || `${s.first_name} ${s.last_name}`)
-                    .toLowerCase()
-                    .includes(batchSearchQuery.toLowerCase())
-                )
-                : results}
+              data={showingReportData ? filteredClassReportData : results}
               keyExtractor={(item) => `report-${item.enrollment_id}`}
               renderItem={showingReportData ? renderClassReportStudent : renderStudentItem}
               scrollEnabled={false}
@@ -995,10 +1101,19 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
     selectorItemTextActive: { color: Colors.accent.gold, fontWeight: '800' },
     backLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     listContent: { paddingHorizontal: isTiny ? 16 : 20, paddingTop: 8, paddingBottom: 100 },
+    bulkToolbar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: 12, marginBottom: 12, borderRadius: 16, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
+    selectAllButton: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    selectAllText: { color: Colors.accent.gold, fontSize: 11, fontWeight: '800' },
+    selectedCount: { flex: 1, minWidth: 55, color: C.textSecondary, fontSize: 11, fontWeight: '700', textAlign: 'right' },
+    bulkDownloadButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 11, backgroundColor: Colors.accent.gold },
+    bulkDownloadDisabled: { opacity: 0.45 },
+    bulkDownloadText: { color: Colors.accent.navy, fontSize: 10, fontWeight: '900' },
     resultCard: { backgroundColor: C.card, borderRadius: 20, padding: isTiny ? 12 : 14, flexDirection: 'row', alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder },
     avatarContainer: { width: isTiny ? 40 : 48, height: isTiny ? 40 : 48, borderRadius: 14, backgroundColor: C.actionItemBg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.accent.gold },
     avatarText: { color: Colors.accent.gold, fontSize: isTiny ? 12 : 14, fontWeight: '800' },
     rankBadge: { width: isTiny ? 40 : 48, height: isTiny ? 40 : 48, borderRadius: 14, backgroundColor: Colors.accent.gold, justifyContent: 'center', alignItems: 'center' },
+    rankAndSelect: { alignItems: 'center', gap: 4 },
+    selectionButton: { minWidth: 32, minHeight: 30, alignItems: 'center', justifyContent: 'center' },
     rankText: { color: Colors.accent.navy, fontSize: isTiny ? 14 : 16, fontWeight: '900' },
     studentInfo: { flex: 1, marginLeft: isTiny ? 10 : 14 },
     resultTitle: { fontSize: isTiny ? 13 : 15, fontWeight: '800', color: C.text, marginBottom: 3 },
