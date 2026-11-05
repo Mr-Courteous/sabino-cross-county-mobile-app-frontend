@@ -1,6 +1,7 @@
 import { View, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Switch, Share } from 'react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { API_BASE_URL } from '@/utils/api-service';
@@ -99,12 +100,21 @@ export default function ParentAccessScreen() {
     if (l.ok) setLinks(l.json.data);
   };
 
+  const copyCode = async (st: StudentRow) => {
+    try {
+      await Clipboard.setStringAsync(st.parent_link_code);
+      setAlert({ type: 'success', title: 'Code copied', message: `Link code ${st.parent_link_code} copied to clipboard.` });
+    } catch {
+      setAlert({ type: 'error', title: 'Copy failed', message: 'Could not copy the link code. Please select and copy it manually.' });
+    }
+  };
+
   const shareCode = async (st: StudentRow) => {
     const message = `Parent access for ${st.first_name} ${st.last_name}\nRegistration number: ${st.registration_number}\nLink code: ${st.parent_link_code}\nOpen the Sabino Edu app, choose "Parents' Login", create an account and tap "Add a child".`;
     try {
-      await Share.share({ message });
+      await Share.share({ message, title: `Parent access for ${st.first_name} ${st.last_name}` });
     } catch {
-      setAlert({ type: 'info', title: 'Parent link details', message });
+      await copyCode(st);
     }
   };
 
@@ -172,7 +182,8 @@ export default function ParentAccessScreen() {
             {openId === st.id && (
               <View style={{ marginTop: 14 }}>
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                  <View style={{ flex: 1 }}><PrimaryButton C={C} title="SHARE CODE" onPress={() => shareCode(st)} /></View>
+                  <View style={{ flex: 1 }}><PrimaryButton C={C} title="COPY CODE" onPress={() => copyCode(st)} /></View>
+                  <View style={{ flex: 1 }}><PrimaryButton C={C} outline title="SHARE" onPress={() => shareCode(st)} /></View>
                   <View style={{ flex: 1 }}><PrimaryButton C={C} outline title="NEW CODE" onPress={() => regenerate(st)} /></View>
                 </View>
 
