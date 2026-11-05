@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,20 @@ import {
   Platform,
   ImageBackground,
   useWindowDimensions,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { useTheme } from '@/contexts/theme-context';
 import { Colors } from '@/constants/design-system';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
+import { CustomButton } from '@/components/custom-button';
 import { useAppColors } from '@/hooks/use-app-colors';
+import { API_BASE_URL } from '@/utils/api-service';
+import { validatePassword } from '@/utils/password-validator';
 
 export default function StudentPreferences() {
   const router = useRouter();
@@ -24,6 +29,60 @@ export default function StudentPreferences() {
   const { themeMode, setThemeMode } = useTheme();
   const C = useAppColors();
   const { styles, isTiny } = useMemo(() => makeStyles(C, width), [C.scheme, width]);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const changePassword = async () => {
+    setPasswordMessage('');
+    setPasswordError('');
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('Complete all password fields.');
+      return;
+    }
+    const validation = validatePassword(newPassword);
+    if (!validation.isValid) {
+      setPasswordError(validation.errorMessage);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('The new passwords do not match.');
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      const token = Platform.OS === 'web'
+        ? localStorage.getItem('studentToken')
+        : await SecureStore.getItemAsync('studentToken');
+      if (!token) throw new Error('Please sign in again to change your password.');
+
+      const formData = new FormData();
+      formData.append('currentPassword', currentPassword);
+      formData.append('newPassword', newPassword);
+      const response = await fetch(`${API_BASE_URL}/api/students/profile`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'Could not change your password.');
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordMessage('Password updated. Use your new password the next time you sign in.');
+    } catch (error: any) {
+      setPasswordError(error?.message || 'Could not change your password.');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -83,6 +142,26 @@ export default function StudentPreferences() {
               styles={styles}
               isTiny={isTiny}
             />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>ACCOUNT SECURITY</Text>
+          <View style={styles.securityCard}>
+            <View style={styles.securityHeading}>
+              <View style={styles.themeIconWrap}><Ionicons name="lock-closed-outline" size={18} color={Colors.accent.gold} /></View>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.themeLabel}>Change password</ThemedText>
+                <ThemedText style={styles.themeSubtitle}>Use a private password instead of the school default.</ThemedText>
+              </View>
+            </View>
+            {passwordError ? <ThemedText style={styles.passwordError}>{passwordError}</ThemedText> : null}
+            {passwordMessage ? <ThemedText style={styles.passwordSuccess}>{passwordMessage}</ThemedText> : null}
+            <TextInput style={styles.passwordInput} value={currentPassword} onChangeText={setCurrentPassword} placeholder="Current password" placeholderTextColor={C.textMuted} secureTextEntry editable={!savingPassword} autoCapitalize="none" />
+            <TextInput style={styles.passwordInput} value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor={C.textMuted} secureTextEntry editable={!savingPassword} autoCapitalize="none" />
+            <TextInput style={styles.passwordInput} value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" placeholderTextColor={C.textMuted} secureTextEntry editable={!savingPassword} autoCapitalize="none" />
+            <ThemedText style={styles.passwordHint}>Use 8+ characters with uppercase, lowercase, a number, and a symbol.</ThemedText>
+            <CustomButton title={savingPassword ? 'UPDATING...' : 'UPDATE PASSWORD'} onPress={changePassword} loading={savingPassword} disabled={savingPassword} variant="premium" style={{ marginTop: 12 }} />
           </View>
         </View>
 
@@ -164,6 +243,12 @@ function makeStyles(C: ReturnType<typeof import('@/hooks/use-app-colors').useApp
       gap: 10,
     },
     infoText: { flex: 1, color: C.isDark ? '#94A3B8' : '#71717A', fontSize: 11, lineHeight: 16, fontWeight: '500' },
+    securityCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16 },
+    securityHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+    passwordInput: { height: 46, borderRadius: 12, borderWidth: 1, borderColor: C.inputBorder, backgroundColor: C.inputBg, paddingHorizontal: 13, color: C.inputText, fontSize: 13, marginTop: 10 },
+    passwordHint: { color: C.textMuted, fontSize: 10, lineHeight: 15, marginTop: 8 },
+    passwordError: { color: '#EF4444', fontSize: 12, lineHeight: 17, marginBottom: 6 },
+    passwordSuccess: { color: '#16A34A', fontSize: 12, lineHeight: 17, marginBottom: 6 },
   });
 
   return { styles, isTiny };

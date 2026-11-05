@@ -225,6 +225,9 @@ export default function BulkUploadModal({ visible, onClose, onUploadComplete }: 
                 <Ionicons name="checkmark-done-circle" size={54} color="#10B981" />
                 <ThemedText style={styles.successTitle}>Enrolled Successfully</ThemedText>
                 <ThemedText style={styles.successSubtitle}>{uploadedCount} students have been added to {selectedClass?.class_name}</ThemedText>
+                <ThemedText style={[styles.successSubtitle, { marginTop: 10 }]}>
+                  Share each student's registration number and the default password 1234567890. Students can change their password after signing in.
+                </ThemedText>
                 <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
                   <ThemedText style={styles.doneBtnText}>CONTINUE</ThemedText>
                 </TouchableOpacity>

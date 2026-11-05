@@ -31,14 +31,14 @@ export default function StudentLogin() {
     const { width } = useWindowDimensions();
     const C = useAppColors();
     const styles = useMemo(() => makeStyles(C, width), [C.scheme, width]);
-    const [email, setEmail] = useState('');
+    const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
     const handleLogin = async () => {
-        if (!email || !password) {
-            setError('Please enter both email and password');
+        if (!identifier || !password) {
+            setError('Please enter your email or registration number and password');
             return;
         }
 
@@ -49,7 +49,7 @@ export default function StudentLogin() {
             const response = await fetch(`${API_BASE_URL}/api/students/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+                body: JSON.stringify({ identifier: identifier.trim(), password }),
             });
 
             const data = await response.json().catch(() => ({}));
@@ -143,12 +143,11 @@ export default function StudentLogin() {
                             )}
 
                             <CustomInput
-                                label="Student Email"
-                                placeholder="name@oags.com"
-                                value={email}
-                                onChangeText={setEmail}
+                                label="Email or Registration Number"
+                                placeholder="Email address or student REG number"
+                                value={identifier}
+                                onChangeText={setIdentifier}
                                 autoCapitalize="none"
-                                keyboardType="email-address"
                                 editable={!loading}
                                 containerStyle={styles.inputContainer}
                                 labelStyle={{ fontSize: 10 }}

@@ -416,7 +416,7 @@ export default function StudentsManager() {
       <View style={styles.noticeBox}>
         <ThemedText style={styles.noticeTitle}>Default student password</ThemedText>
         <ThemedText style={styles.noticeText}>
-          Every student added will have the default password "1234567890". Encourage students to change this password immediately after first login.
+          Students added by staff can sign in with their registration number (or email, if provided) and the default password "1234567890". Encourage them to change it after signing in.
         </ThemedText>
       </View>
 
